@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isDisplayNameAvailable, resolveAuthenticatedUser } from "@/lib/auth";
+import { checkAiQuotaAllowance } from "@/lib/ai-cache-and-ratelimit";
 import {
   evaluateFinancesWithAI,
   planQuestsAndRewardsWithAI,
@@ -14,6 +15,23 @@ import type {
 
 export async function POST(req: Request) {
   const session = await resolveAuthenticatedUser(req);
+  if (!session) {
+    return NextResponse.json(
+      { error: "No autenticado. Inicia sesión para usar el asistente IA." },
+      { status: 401 }
+    );
+  }
+
+  const rateKey = `onboarding:${session.userId}`;
+  if (!checkAiQuotaAllowance(rateKey).allowed) {
+    return NextResponse.json(
+      {
+        error:
+          "Has alcanzado el límite de consultas por minuto. Espera unos segundos e intenta de nuevo.",
+      },
+      { status: 429 }
+    );
+  }
   const body = (await req.json().catch(() => ({}))) as {
     action?:
       | "check_name"
