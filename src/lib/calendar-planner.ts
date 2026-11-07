@@ -106,7 +106,13 @@ export function computeBioCalendarPlan(params: {
   customSkillName?: string;
   vaultCap: number;
 }): BioCalendarPlanResult {
-  const { config, skills, customSkillName = "", vaultCap } = params;
+  const config = {
+    ...DEFAULT_DAILY_SCHEDULE_CONFIG,
+    ...(params?.config || {}),
+  };
+  const skills = Array.isArray(params?.skills) ? params.skills.filter(Boolean) : [];
+  const customSkillName = params?.customSkillName || "";
+  const vaultCap = Math.max(100, Number(params?.vaultCap) || 400000);
 
   const wakeMin = parseTimeToMinutes(config.wake_up_time, 6 * 60);
   const sleepMinRaw = parseTimeToMinutes(config.sleep_time, 22 * 60 + 30);

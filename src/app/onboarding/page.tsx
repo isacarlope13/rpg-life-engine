@@ -2156,7 +2156,7 @@ export default function OnboardingWizardPage() {
                             >
                               <span className="truncate pr-1">{slot.title}</span>
                               <span className="shrink-0 font-mono text-slate-500">
-                                {slot.timeRange.split(" – ")[0]}
+                                {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
                               </span>
                             </div>
                           ))}

@@ -183,6 +183,7 @@ const ARRAY_STATE_KEYS = [
   "ttk_projections",
   "quests",
   "skill_summaries",
+  "user_skills",
   "reading_books",
   "knitting_projects",
   "skill_sessions",
@@ -347,6 +348,48 @@ export function RPGLifeEngineDashboard({
   const [sportsMetricNote, setSportsMetricNote] = useState(
     "Press Banca 80kg / 5km en 24min"
   );
+
+  const bioCalendarPlan = useMemo(() => {
+    return computeBioCalendarPlan({
+      config: {
+        wake_up_time: bioWakeUpTime,
+        sleep_time: bioSleepTime,
+        weekend_wake_up_time: bioWeekendWakeUpTime,
+        weekend_sleep_time: bioWeekendSleepTime,
+        work_days_pattern: bioWorkPattern,
+        work_start_hour: bioWorkStart,
+        work_end_hour: bioWorkEnd,
+        commute_and_meals_minutes: bioCommuteMins,
+        free_slot_preference: bioSlotPref,
+        weekday_free_minutes: bioWeekdayMins,
+        weekend_free_minutes: bioWeekendMins,
+      },
+      skills:
+        ((Array.isArray(state?.user_skills)
+          ? state.user_skills
+          : state?.skill_summaries?.map((s) => ({
+              domain: s.domain,
+              label: s.label,
+              weekly_target_minutes: s.total_minutes || 60,
+            }))) as UserSkillConfig[]) || [],
+      vaultCap: state?.vault_cap_gp || 400000,
+    });
+  }, [
+    bioWakeUpTime,
+    bioSleepTime,
+    bioWeekendWakeUpTime,
+    bioWeekendSleepTime,
+    bioWorkPattern,
+    bioWorkStart,
+    bioWorkEnd,
+    bioCommuteMins,
+    bioSlotPref,
+    bioWeekdayMins,
+    bioWeekendMins,
+    state?.user_skills,
+    state?.skill_summaries,
+    state?.vault_cap_gp,
+  ]);
   const [customSessionTitle, setCustomSessionTitle] = useState(
     "Sesión de Entrenamiento / Práctica Consciente"
   );
@@ -1004,47 +1047,6 @@ export function RPGLifeEngineDashboard({
     );
   }
 
-  const bioCalendarPlan = useMemo(() => {
-    return computeBioCalendarPlan({
-      config: {
-        wake_up_time: bioWakeUpTime,
-        sleep_time: bioSleepTime,
-        weekend_wake_up_time: bioWeekendWakeUpTime,
-        weekend_sleep_time: bioWeekendSleepTime,
-        work_days_pattern: bioWorkPattern,
-        work_start_hour: bioWorkStart,
-        work_end_hour: bioWorkEnd,
-        commute_and_meals_minutes: bioCommuteMins,
-        free_slot_preference: bioSlotPref,
-        weekday_free_minutes: bioWeekdayMins,
-        weekend_free_minutes: bioWeekendMins,
-      },
-      skills:
-        ((state.user_skills ||
-          state.skill_summaries?.map((s) => ({
-            domain: s.domain,
-            label: s.label,
-            weekly_target_minutes: s.total_minutes || 60,
-          }))) as UserSkillConfig[]) || [],
-      vaultCap: state.vault_cap_gp || 400000,
-    });
-  }, [
-    bioWakeUpTime,
-    bioSleepTime,
-    bioWeekendWakeUpTime,
-    bioWeekendSleepTime,
-    bioWorkPattern,
-    bioWorkStart,
-    bioWorkEnd,
-    bioCommuteMins,
-    bioSlotPref,
-    bioWeekdayMins,
-    bioWeekendMins,
-    state.user_skills,
-    state.skill_summaries,
-    state.vault_cap_gp,
-  ]);
-
   const freeCashflowCop =
     state.monthly_income_cop -
     state.fixed_costs_budget_cop -
@@ -1594,7 +1596,7 @@ export function RPGLifeEngineDashboard({
                             >
                               <span className="truncate pr-1">{slot.title}</span>
                               <span className="font-mono text-slate-500 shrink-0">
-                                {slot.timeRange.split(" – ")[0]}
+                                {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
                               </span>
                             </div>
                           ))}
