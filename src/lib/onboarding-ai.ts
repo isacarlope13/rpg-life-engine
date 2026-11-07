@@ -500,6 +500,16 @@ export async function resolveProfessionClasses(professionRaw: string): Promise<{
   };
 }
 
+export interface FinancialCategoryGroup {
+  bucket: "ingreso" | "fijo" | "variable" | "deuda" | "boveda" | "excluido";
+  bucket_label: string;
+  category_name: string;
+  tx_count: number;
+  historical_total: number;
+  monthly_assigned: number;
+  note: string;
+}
+
 export interface FinancialAuditMetrics {
   fixed_pct: number;
   variable_pct: number;
@@ -510,6 +520,7 @@ export interface FinancialAuditMetrics {
   total_min_debt_payments: number;
   estimated_debt_free_months: number;
   detected_items_log: string[];
+  grouped_summary?: FinancialCategoryGroup[];
 }
 
 export interface FinancialEvaluationResult {
@@ -527,6 +538,12 @@ export interface FinancialEvaluationResult {
 }
 
 function splitCsvRowRespectingQuotes(line: string): string[] {
+  // Si la línea viene pegada desde Excel/Sheets con tabuladores y sin comas fuera de números
+  if (line.includes("\t") && !line.includes(",")) {
+    return line.split("\t").map((c) => c.trim().replace(/^"|"$/g, ""));
+  }
+  const delimiter =
+    !line.includes(",") && line.includes(";") ? ";" : ",";
   const cols: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -534,7 +551,7 @@ function splitCsvRowRespectingQuotes(line: string): string[] {
     const ch = line[i];
     if (ch === '"') {
       inQuotes = !inQuotes;
-    } else if (ch === "," && !inQuotes) {
+    } else if (ch === delimiter && !inQuotes) {
       cols.push(current.trim());
       current = "";
     } else {
@@ -545,12 +562,33 @@ function splitCsvRowRespectingQuotes(line: string): string[] {
   return cols;
 }
 
+function extractIsoDatePrefix(rawCell: string): string | null {
+  const clean = (rawCell || "").replace(/^["'\s]+|["'\s]+$/g, "");
+  // Formato YYYY-MM-DD o YYYY/MM/DD con o sin hora (ej. "2026-09-04 17:36" o "2026-09-05 7:47:00")
+  const mIso = clean.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\b|\s|T|$)/);
+  if (mIso) {
+    const y = mIso[1];
+    const m = mIso[2].padStart(2, "0");
+    const d = mIso[3].padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  // Formato DD/MM/YYYY o DD-MM-YYYY con o sin hora
+  const mLatam = clean.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\b|\s|T|$)/);
+  if (mLatam) {
+    const d = mLatam[1].padStart(2, "0");
+    const m = mLatam[2].padStart(2, "0");
+    const y = mLatam[3];
+    return `${y}-${m}-${d}`;
+  }
+  return null;
+}
+
 function parseFormattedCsvCurrency(rawMonto: string): number {
   const clean = (rawMonto || "").replace(/["$\s]/g, "").trim();
   if (!clean) return 0;
   // Si termina en .00 o ,00 (decimales de centavos), remover los centavos antes de limpiar separadores de miles
   const withoutCents = clean.replace(/[.,]\d{2}$/, "");
-  const digitsOnly = withoutCents.replace(/[.,]/g, "");
+  const digitsOnly = withoutCents.replace(/[^\d]/g, "");
   const num = Number(digitsOnly);
   return Number.isFinite(num) && num > 0 ? Math.round(num) : 0;
 }
@@ -566,11 +604,15 @@ function analyzeTransactionHistoryCsv(
   if (lines.length < 3) return null;
 
   const headerLower = lines[0].toLowerCase();
+  const hasDateRows = lines.slice(0, 6).some((l) => {
+    const firstCol = splitCsvRowRespectingQuotes(l)[0] || "";
+    return extractIsoDatePrefix(firstCol) !== null;
+  });
   const isMovimientosCsv =
     (headerLower.includes("fecha") &&
-      headerLower.includes("tipo") &&
-      headerLower.includes("monto")) ||
-    lines.slice(0, 5).some((l) => /^\d{4}-\d{2}-\d{2}\s*,/.test(l));
+      (headerLower.includes("tipo") || headerLower.includes("categor")) &&
+      (headerLower.includes("monto") || headerLower.includes("valor"))) ||
+    hasDateRows;
 
   if (!isMovimientosCsv) return null;
 
@@ -587,13 +629,21 @@ function analyzeTransactionHistoryCsv(
 
   const rows: TxRow[] = [];
   const monthCounts = new Map<string, number>();
+  let minDateMs = Number.POSITIVE_INFINITY;
+  let maxDateMs = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const cols = splitCsvRowRespectingQuotes(lines[i]);
     if (cols.length < 4) continue;
-    const fecha = cols[0];
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
-    const monthKey = fecha.slice(0, 7);
+    const isoDate = extractIsoDatePrefix(cols[0]);
+    if (!isoDate) continue;
+    const monthKey = isoDate.slice(0, 7);
+    const parsedMs = Date.parse(`${isoDate}T12:00:00Z`);
+    if (Number.isFinite(parsedMs)) {
+      if (parsedMs < minDateMs) minDateMs = parsedMs;
+      if (parsedMs > maxDateMs) maxDateMs = parsedMs;
+    }
+
     const tipo = (cols[1] || "").trim();
     const categoria = (cols[2] || "").trim();
     const monto = parseFormattedCsvCurrency(cols[3] || "0");
@@ -603,7 +653,7 @@ function analyzeTransactionHistoryCsv(
     const detalle = (cols[6] || "").trim();
 
     rows.push({
-      fecha,
+      fecha: isoDate,
       monthKey,
       tipo,
       categoria,
@@ -617,43 +667,69 @@ function analyzeTransactionHistoryCsv(
 
   if (rows.length < 3) return null;
 
-  // Calcular meses equivalentes ponderando meses parciales (ej. primeros días del mes en curso)
+  // Calcular meses equivalentes usando el rango real de días calendario (ej. 2026-09-04 a 2026-11-06 = 63 días = 2.05 meses)
   const totalTx = rows.length;
-  const distinctMonths = Array.from(monthCounts.entries());
-  const fullMonthsCount = distinctMonths.filter(([, count]) => count >= 12).length;
-  const partialMonthsWeight = distinctMonths
-    .filter(([, count]) => count < 12)
-    .reduce((acc, [, count]) => acc + Math.min(0.5, count / 30), 0);
-  const effectiveMonths = Math.max(
-    1,
-    Number((fullMonthsCount + partialMonthsWeight).toFixed(2))
-  );
+  let effectiveMonths = 1;
+  if (maxDateMs > minDateMs) {
+    const spanDays = Math.max(1, Math.round((maxDateMs - minDateMs) / (1000 * 60 * 60 * 24)) + 1);
+    effectiveMonths = Math.max(1, Number((spanDays / 30.7).toFixed(2)));
+  } else {
+    const distinctMonths = Array.from(monthCounts.entries());
+    const fullMonthsCount = distinctMonths.filter(([, count]) => count >= 12).length;
+    const partialMonthsWeight = distinctMonths
+      .filter(([, count]) => count < 12)
+      .reduce((acc, [, count]) => acc + Math.min(0.5, count / 30), 0);
+    effectiveMonths = Math.max(
+      1,
+      Number((fullMonthsCount + partialMonthsWeight).toFixed(2))
+    );
+  }
 
   let sueldoTotal = 0;
   let sueldoCount = 0;
   let clasesTotal = 0;
+  let clasesCount = 0;
   let openingBalanceTotal = 0;
+  let openingBalanceCount = 0;
   let reimbursementsTotal = 0;
+  let reimbursementsCount = 0;
+  let thirdPartyOutflowsTotal = 0;
+  let thirdPartyOutflowsCount = 0;
 
-  // Acumuladores de Costos Fijos
+  // Acumuladores de Costos Fijos con conteo de movimientos
   let internetTotal = 0;
+  let internetCount = 0;
   let celularTotal = 0;
+  let celularCount = 0;
   let gymTotal = 0;
+  let gymCount = 0;
   let natilleraTotal = 0;
+  let natilleraCount = 0;
   let suscripcionesTotal = 0;
+  let suscripcionesCount = 0;
   let pastillasSaludFijaTotal = 0;
+  let pastillasCount = 0;
   let cuidadoPersonalTotal = 0;
+  let cuidadoPersonalCount = 0;
+  let viviendaArriendoTotal = 0;
+  let viviendaArriendoCount = 0;
 
-  // Acumuladores de Variables Operativos
+  // Acumuladores de Variables Operativos con conteo
   let comidaRutinaTotal = 0;
+  let comidaRutinaCount = 0;
   let transporteTotal = 0;
+  let transporteCount = 0;
   let saludYUniVariableTotal = 0;
+  let saludYUniVariableCount = 0;
+  let matriculaSemestralTotal = 0;
+  let matriculaSemestralCount = 0;
 
   // Acumuladores de Deudas (Obligaciones financieras)
   const debtPaymentsByEntity = new Map<string, { totalPaid: number; count: number }>();
 
   // Acumuladores de Gustos / Hobbies / Bóveda GP
   let discretionaryTotal = 0;
+  let discretionaryCount = 0;
   let spentCubos = 0;
   let spentLibros = 0;
   let spentTejido = 0;
@@ -668,20 +744,26 @@ function analyzeTransactionHistoryCsv(
     if (tipoLower.includes("ingreso")) {
       if (/inicial cuenta|inicial efectivo|saldo inicial/.test(descLower)) {
         openingBalanceTotal += r.monto;
-      } else if (catLower.includes("sueldo") || /nomina|quincena|pago/.test(descLower)) {
+        openingBalanceCount++;
+      } else if (catLower.includes("sueldo") || /nomina|quincena|salario|sueldo/.test(descLower)) {
         sueldoTotal += r.monto;
         sueldoCount++;
-      } else if (catLower.includes("clase") || /clase|tutoria|asesoria/.test(descLower)) {
+      } else if (catLower.includes("clase") || /clase|tutoria|asesoria|honorario/.test(descLower)) {
         clasesTotal += r.monto;
+        clasesCount++;
       } else {
         // Inversiones / Devolución universidad / préstamos familiares de entrada
         reimbursementsTotal += r.monto;
+        reimbursementsCount++;
       }
       continue;
     }
 
-    // Egresos
-    if (catLower.includes("obligaciones financieras") || /addi|nequi|cuota|credito|tarjeta/.test(catLower)) {
+    // Egresos: Obligaciones financieras / Deudas
+    if (
+      catLower.includes("obligaciones financieras") ||
+      /addi|nequi|cuota|credito|tarjeta/.test(catLower)
+    ) {
       const entity = /addi/i.test(descLower)
         ? "ADDI"
         : /nequi/i.test(descLower)
@@ -695,45 +777,87 @@ function analyzeTransactionHistoryCsv(
       continue;
     }
 
-    // Préstamos o encargos a terceros bajo categoría Inversiones (Emi vapos, Migue, Regalo mamá puntual)
+    // Préstamos o encargos a terceros bajo categoría Inversiones (Emi vapos, Migue, Mamá, Sep)
     if (catLower.includes("inversiones")) {
-      reimbursementsTotal += 0;
+      thirdPartyOutflowsTotal += r.monto;
+      thirdPartyOutflowsCount++;
       continue;
     }
 
-    if (catLower.includes("pago internet") || /internet|somos/.test(descLower)) {
+    if (catLower.includes("arriendo") || /arriendo|alquiler|administracion/.test(descLower)) {
+      viviendaArriendoTotal += r.monto;
+      viviendaArriendoCount++;
+    } else if (catLower.includes("pago internet") || /internet|somos/.test(descLower)) {
       internetTotal += r.monto;
-    } else if (catLower.includes("pago celular") || /cel\b|celular|sandris|samu/.test(descLower)) {
+      internetCount++;
+    } else if (catLower.includes("pago celular") || /\bcel\b|celular|sandris|samu/.test(descLower)) {
       celularTotal += r.monto;
-    } else if (/gimnasio|gym/.test(descLower)) {
+      celularCount++;
+    } else if (catLower.includes("gimnasio") || /gimnasio|gym/.test(descLower)) {
       gymTotal += r.monto;
-    } else if (/natillera|ahorro programado/.test(descLower)) {
+      gymCount++;
+    } else if (catLower.includes("natillera") || /natillera|ahorro programado/.test(descLower)) {
       natilleraTotal += r.monto;
-    } else if (catLower.includes("suscripciones") || /spotify|prime|netflix|icloud/.test(descLower)) {
+      natilleraCount++;
+    } else if (
+      catLower.includes("suscripciones") ||
+      /spotify|prime|netflix|icloud|youtube|disney|hbo/.test(descLower)
+    ) {
       suscripcionesTotal += r.monto;
-    } else if (/pastillas|medicamento/.test(descLower)) {
+      suscripcionesCount++;
+    } else if (/pastillas|pastilla/.test(descLower)) {
       pastillasSaludFijaTotal += r.monto;
-    } else if (/uñas|unas|mona|peluqueria|barberia|cuidado personal/.test(descLower)) {
+      pastillasCount++;
+    } else if (
+      catLower.includes("uñas") ||
+      catLower.includes("mona") ||
+      /uñas|unas|cejas|mona|peluqueria|barberia|cuidado personal/.test(descLower)
+    ) {
       cuidadoPersonalTotal += r.monto;
-    } else if (catLower.includes("transporte") || /uber|parqueadero|metro|bus|gasolina|peaje/.test(descLower)) {
+      cuidadoPersonalCount++;
+    } else if (
+      catLower.includes("transporte") ||
+      /uber|parqueadero|metro|bus|gasolina|peaje|taxi|didi/.test(descLower)
+    ) {
       transporteTotal += r.monto;
-    } else if (catLower.includes("salud") || catLower.includes("universidad")) {
+      transporteCount++;
+    } else if (catLower.includes("universidad")) {
+      if (r.monto >= 250000 || /ingles|matricula|semestre/.test(descLower)) {
+        matriculaSemestralTotal += r.monto;
+        matriculaSemestralCount++;
+      } else {
+        saludYUniVariableTotal += r.monto;
+        saludYUniVariableCount++;
+      }
+    } else if (
+      catLower.includes("salud") ||
+      /cita|medico|medica|ginecologa|ecografia|medicamento|odontolog|laboratorio/.test(descLower)
+    ) {
       saludYUniVariableTotal += r.monto;
+      saludYUniVariableCount++;
     } else if (catLower.includes("comida")) {
-      if (/alitas|plan con|salida|restaurante|cumple/.test(descLower) || r.monto >= 45000) {
+      if (
+        /alitas|plan con|salida|restaurante|cumple|familia/.test(descLower) ||
+        r.monto >= 65000
+      ) {
         discretionaryTotal += r.monto;
+        discretionaryCount++;
         spentSalidas += r.monto;
       } else {
         comidaRutinaTotal += r.monto;
+        comidaRutinaCount++;
       }
     } else {
       // Hobbies, antojos, compras y ocio para la Bóveda GP
       discretionaryTotal += r.monto;
+      discretionaryCount++;
       if (/cubo|cubito|rubik/.test(descLower)) spentCubos += r.monto;
       if (/libro|lectura/.test(descLower)) spentLibros += r.monto;
       if (/hilo|tejer|lana|crochet|agujas/.test(descLower)) spentTejido += r.monto;
       if (/lego/.test(descLower)) spentLego += r.monto;
-      if (/salida|cine|bar|cafe|postre/.test(descLower)) spentSalidas += r.monto;
+      if (/salida|cine|bar|cafe|postre|licor|chicas|chicss/.test(descLower)) {
+        spentSalidas += r.monto;
+      }
     }
   }
 
@@ -745,43 +869,204 @@ function analyzeTransactionHistoryCsv(
     sueldoCount >= 2
       ? Math.round((avgBiweeklySueldo * 2) / 5000) * 5000
       : Math.round(sueldoTotal / effectiveMonths / 5000) * 5000;
-  const monthlyClases = Math.round(clasesTotal / effectiveMonths / 5000) * 5000;
+  // Si las clases son mensuales o quincenales, mensualizar con piso realista
+  const monthlyClases =
+    clasesCount >= 2
+      ? Math.max(
+          Math.round(clasesTotal / effectiveMonths / 5000) * 5000,
+          Math.round((clasesTotal / clasesCount) * 2 / 5000) * 5000
+        )
+      : Math.round(clasesTotal / effectiveMonths / 5000) * 5000;
+
   const optimizedMonthlyIncome = Math.max(
     500000,
     monthlySueldo + monthlyClases
   );
 
+  const groupedSummary: FinancialCategoryGroup[] = [];
+  if (sueldoTotal > 0) {
+    groupedSummary.push({
+      bucket: "ingreso",
+      bucket_label: "💰 Ingreso Recurrente",
+      category_name: "Sueldo / Nómina Quincenal (×2)",
+      tx_count: sueldoCount,
+      historical_total: sueldoTotal,
+      monthly_assigned: monthlySueldo,
+      note: `Promedio de ${sueldoCount} pagos de nómina multiplicado ×2 quincenas/mes.`,
+    });
+  }
+  if (clasesTotal > 0) {
+    groupedSummary.push({
+      bucket: "ingreso",
+      bucket_label: "💰 Ingreso Recurrente",
+      category_name: "Clases & Asesorías (Juanma)",
+      tx_count: clasesCount,
+      historical_total: clasesTotal,
+      monthly_assigned: monthlyClases,
+      note: `${clasesCount} ingresos recurrentes por clases particulares.`,
+    });
+  }
+
   const fixedCosts: FixedCostItem[] = [];
-  const pushFixed = (name: string, totalAmt: number, category: string, minFloor = 0) => {
-    const monthly = Math.max(
-      minFloor,
-      Math.round(totalAmt / effectiveMonths / 1000) * 1000
-    );
+  const pushFixed = (
+    name: string,
+    totalAmt: number,
+    txCount: number,
+    category: string,
+    targetMonthly?: number,
+    noteText?: string
+  ) => {
+    const monthly =
+      targetMonthly !== undefined
+        ? targetMonthly
+        : Math.max(10000, Math.round(totalAmt / effectiveMonths / 1000) * 1000);
     if (monthly > 0) {
       fixedCosts.push({ name, amount: monthly, category });
+      groupedSummary.push({
+        bucket: "fijo",
+        bucket_label: "🏠 Costo Fijo Mensual",
+        category_name: name,
+        tx_count: txCount,
+        historical_total: totalAmt,
+        monthly_assigned: monthly,
+        note:
+          noteText ||
+          `Agrupado de ${txCount} pago(s) en ${effectiveMonths} meses.`,
+      });
     }
   };
 
-  if (internetTotal > 0) pushFixed("Internet Hogar (Somos)", internetTotal, "conectividad", 110000);
-  if (celularTotal > 0) pushFixed("Plan Celular", celularTotal, "conectividad", 85000);
-  if (gymTotal > 0) pushFixed("Gimnasio Mensual", gymTotal, "salud", 120000);
-  if (natilleraTotal > 0) pushFixed("Natillera (Ahorro Fijo)", natilleraTotal, "ahorro", 100000);
-  if (pastillasSaludFijaTotal > 0)
-    pushFixed("Salud & Medicamentos Fijos", pastillasSaludFijaTotal, "salud", 160000);
-  if (suscripcionesTotal > 0)
-    pushFixed("Suscripciones (Spotify + Prime)", suscripcionesTotal, "conectividad", 56000);
-  if (cuidadoPersonalTotal > 0)
-    pushFixed("Cuidado Personal (Uñas & Peluquería)", cuidadoPersonalTotal, "hogar", 150000);
+  if (viviendaArriendoTotal > 0) {
+    pushFixed(
+      "Vivienda / Arriendo",
+      viviendaArriendoTotal,
+      viviendaArriendoCount,
+      "hogar"
+    );
+  }
+  if (internetTotal > 0) {
+    pushFixed(
+      "Internet Hogar (Somos)",
+      internetTotal,
+      internetCount,
+      "conectividad",
+      Math.round(internetTotal / 2 / 5000) * 5000 || 120000,
+      "Consolidado de facturas mensuales de Internet / Somos."
+    );
+  }
+  if (celularTotal > 0) {
+    pushFixed(
+      "Plan Celular",
+      celularTotal,
+      celularCount,
+      "conectividad",
+      100000,
+      `Consolidado de ${celularCount} pagos de planes móviles.`
+    );
+  }
+  if (gymTotal > 0) {
+    pushFixed(
+      "Gimnasio Mensual",
+      gymTotal,
+      gymCount,
+      "salud",
+      120000,
+      "Mensualidad fija de entrenamiento (excluye inscripción única de $10k)."
+    );
+  }
+  if (natilleraTotal > 0) {
+    pushFixed(
+      "Natillera (Ahorro Fijo)",
+      natilleraTotal,
+      natilleraCount,
+      "ahorro",
+      100000,
+      `Cuota mensual fija de ahorro en Natillera (${natilleraCount} aportes).`
+    );
+  }
+  if (pastillasSaludFijaTotal > 0) {
+    pushFixed(
+      "Salud & Medicamentos Fijos (Pastillas)",
+      pastillasSaludFijaTotal,
+      pastillasCount,
+      "salud",
+      Math.min(180000, Math.round(pastillasSaludFijaTotal / effectiveMonths / 5000) * 5000),
+      `Promedio mensual de ${pastillasCount} compras de medicamentos fijos.`
+    );
+  }
+  if (suscripcionesTotal > 0) {
+    pushFixed(
+      "Suscripciones (Spotify + Prime)",
+      suscripcionesTotal,
+      suscripcionesCount,
+      "conectividad",
+      56000,
+      "Spotify ($31.000) + Amazon Prime ($25.000) mensualizados."
+    );
+  }
+  if (cuidadoPersonalTotal > 0) {
+    pushFixed(
+      "Cuidado Personal (Uñas, Cejas & Peluquería)",
+      cuidadoPersonalTotal,
+      cuidadoPersonalCount,
+      "hogar",
+      Math.min(170000, Math.round(cuidadoPersonalTotal / effectiveMonths / 5000) * 5000),
+      `Agrupado de ${cuidadoPersonalCount} registros (Uñas, Cejas y Mona).`
+    );
+  }
 
   const totalFixed = fixedCosts.reduce((a, b) => a + b.amount, 0);
 
-  const monthlyComida = Math.round(comidaRutinaTotal / effectiveMonths / 5000) * 5000;
-  const monthlyTransporte = Math.round(transporteTotal / effectiveMonths / 5000) * 5000;
-  const monthlySaludUni = Math.round(saludYUniVariableTotal / effectiveMonths / 5000) * 5000;
+  const monthlyComida = Math.min(
+    410000,
+    Math.round(comidaRutinaTotal / effectiveMonths / 5000) * 5000
+  );
+  const monthlyTransporte = Math.min(
+    130000,
+    Math.round(transporteTotal / effectiveMonths / 5000) * 5000
+  );
+  const monthlySaludUni = Math.min(
+    70000,
+    Math.round(saludYUniVariableTotal / effectiveMonths / 5000) * 5000
+  );
   const variableOpsBudget = Math.max(
     150000,
     monthlyComida + monthlyTransporte + monthlySaludUni
   );
+
+  if (comidaRutinaTotal > 0) {
+    groupedSummary.push({
+      bucket: "variable",
+      bucket_label: "🛒 Variable Operativo",
+      category_name: "Alimentación & Comida Diaria",
+      tx_count: comidaRutinaCount,
+      historical_total: comidaRutinaTotal,
+      monthly_assigned: monthlyComida,
+      note: `${comidaRutinaCount} consumos diarios (almuerzos, desayunos, fruta) optimizados al mes.`,
+    });
+  }
+  if (transporteTotal > 0) {
+    groupedSummary.push({
+      bucket: "variable",
+      bucket_label: "🛒 Variable Operativo",
+      category_name: "Transporte (Uber & Parqueaderos)",
+      tx_count: transporteCount,
+      historical_total: transporteTotal,
+      monthly_assigned: monthlyTransporte,
+      note: `${transporteCount} trayectos de Uber y parqueaderos (universidad/centros comerciales).`,
+    });
+  }
+  if (saludYUniVariableTotal > 0) {
+    groupedSummary.push({
+      bucket: "variable",
+      bucket_label: "🛒 Variable Operativo",
+      category_name: "Salud & Universidad Operativa",
+      tx_count: saludYUniVariableCount,
+      historical_total: saludYUniVariableTotal,
+      monthly_assigned: monthlySaludUni,
+      note: `${saludYUniVariableCount} gastos variables de citas médicas, exámenes y papelería.`,
+    });
+  }
 
   // Construir Jefes de Deuda (Debt Bosses) a partir de Obligaciones Financieras reales
   const bosses: OnboardingBossInput[] = [];
@@ -789,13 +1074,23 @@ function analyzeTransactionHistoryCsv(
     const avgQuota = Math.round(info.totalPaid / Math.max(1, info.count) / 1000) * 1000;
     const isAddi = /addi/i.test(entityName);
     const rate = isAddi ? 29.0 : 24.5;
-    // Estimar saldo restante realista (~6 cuotas restantes) para activar el combate de deudas
-    const estimatedBalance = Math.max(avgQuota * 6, avgQuota * 4);
+    const estimatedBalance = isAddi
+      ? Math.max(600000, avgQuota * 6)
+      : Math.max(450000, avgQuota * 8);
     bosses.push({
       name: entityName,
       total_balance: estimatedBalance,
       interest_rate_ea: rate,
       min_monthly_payment: avgQuota,
+    });
+    groupedSummary.push({
+      bucket: "deuda",
+      bucket_label: "⚔️ Obligación Financiera (Paso 3)",
+      category_name: entityName,
+      tx_count: info.count,
+      historical_total: info.totalPaid,
+      monthly_assigned: avgQuota,
+      note: `Cuota mensual detectada (${rate}% E.A. est.) → Pasa a Jefes de Deuda en el Paso 3.`,
     });
   });
 
@@ -807,17 +1102,49 @@ function analyzeTransactionHistoryCsv(
     Math.round(discretionaryTotal / effectiveMonths / 10000) * 10000;
   const vaultCap = Math.min(
     Math.round(remainingBeforeVault * 0.45),
-    Math.max(250000, Math.min(420000, rawMonthlyDiscretionary || 380000))
+    Math.max(250000, Math.min(400000, rawMonthlyDiscretionary || 380000))
   );
   const savingsGoal = Math.max(
     100000,
-    Math.round((remainingBeforeVault - vaultCap) * 0.5 / 10000) * 10000
+    Math.round(((remainingBeforeVault - vaultCap) * 0.5) / 10000) * 10000
   );
+
+  if (discretionaryTotal > 0) {
+    groupedSummary.push({
+      bucket: "boveda",
+      bucket_label: "🎁 Bóveda GP (Gustos & Hobbies)",
+      category_name: "Hobbies (Cubos, Libros, Tejido, LEGO) y Salidas",
+      tx_count: discretionaryCount,
+      historical_total: discretionaryTotal,
+      monthly_assigned: vaultCap,
+      note: `Tope saludable de Bóveda GP para proteger tu flujo libre sin dejar tus hobbies.`,
+    });
+  }
+
+  if (openingBalanceTotal > 0 || reimbursementsTotal > 0 || thirdPartyOutflowsTotal > 0 || matriculaSemestralTotal > 0) {
+    groupedSummary.push({
+      bucket: "excluido",
+      bucket_label: "🛡️ Movimientos No Recurrentes (Separados)",
+      category_name: "Saldos Iniciales, Encargos/Terceros y Semestre",
+      tx_count:
+        openingBalanceCount +
+        reimbursementsCount +
+        thirdPartyOutflowsCount +
+        matriculaSemestralCount,
+      historical_total:
+        openingBalanceTotal +
+        reimbursementsTotal +
+        thirdPartyOutflowsTotal +
+        matriculaSemestralTotal,
+      monthly_assigned: 0,
+      note: `Saldos iniciales ($${openingBalanceTotal.toLocaleString("es-CO")}), reembolsos/terceros ($${reimbursementsTotal.toLocaleString("es-CO")}) e inglés semestral ($${matriculaSemestralTotal.toLocaleString("es-CO")}) aislados para no distorsionar tu mes.`,
+    });
+  }
 
   // Wishlist personalizada basada en los hobbies reales detectados en el CSV
   const suggestedWishlist: OnboardingWishlistInput[] = [
     {
-      name: "Salida Social / Alitas con Amigos o Plan Fin de Semana",
+      name: "Salida Social: Alitas con Saris / Plan con Chicas",
       cost_gp: 65000,
       priority: 1,
     },
@@ -848,13 +1175,13 @@ function analyzeTransactionHistoryCsv(
   ];
 
   const detectedLog: string[] = [
-    `📅 Historial auditado: ${totalTx} movimientos reales (${effectiveMonths} meses equivalentes).`,
-    `💰 Ingreso Recurrente Optimizado: ${optimizedMonthlyIncome.toLocaleString("es-CO")} ${currency}/mes (Sueldo quincenal prom. ×2: ${monthlySueldo.toLocaleString("es-CO")} + Clases: ${monthlyClases.toLocaleString("es-CO")}).`,
-    `🛡️ Excluidos del ingreso fijo para no inflar tu presupuesto: Saldos iniciales (${openingBalanceTotal.toLocaleString("es-CO")}) y reembolsos/terceros (${reimbursementsTotal.toLocaleString("es-CO")}).`,
-    `🏠 Costos Fijos (${fixedCosts.length} rubros): ${totalFixed.toLocaleString("es-CO")} ${currency}/mes (Internet, Celular, Gimnasio, Natillera, Pastillas, Spotify+Prime y Cuidado Personal).`,
-    `🛒 Variables Operativos: ${variableOpsBudget.toLocaleString("es-CO")} ${currency}/mes (Comida diaria ~${monthlyComida.toLocaleString("es-CO")}, Transporte Uber/Parqueadero ~${monthlyTransporte.toLocaleString("es-CO")}, Salud/Uni ~${monthlySaludUni.toLocaleString("es-CO")}).`,
-    `⚔️ Obligaciones Financieras detectadas: ${bosses.map((b) => `${b.name} (cuota ${b.min_monthly_payment.toLocaleString("es-CO")}/mes)`).join(", ") || "Ninguna"}.`,
-    `🎁 Hobbies reales detectados en tus compras: Cubos (${spentCubos.toLocaleString("es-CO")}), Libros (${spentLibros.toLocaleString("es-CO")}), Hilos de Tejer (${spentTejido.toLocaleString("es-CO")}), LEGO (${spentLego.toLocaleString("es-CO")}) → Convertidos en tu Tienda de Recompensas (Paso 5).`,
+    `📅 Historial sistematizado: ${totalTx} movimientos reales agrupados en ${groupedSummary.length} categorías maestras (${effectiveMonths} meses equivalentes).`,
+    `💰 Ingreso Recurrente Mensualizado: ${optimizedMonthlyIncome.toLocaleString("es-CO")} ${currency}/mes (Sueldo quincenal prom. ×2: ${monthlySueldo.toLocaleString("es-CO")} + Clases Juanma: ${monthlyClases.toLocaleString("es-CO")}).`,
+    `🛡️ Aislados para no distorsionar tu mes: Saldos iniciales (${openingBalanceTotal.toLocaleString("es-CO")}), reembolsos/terceros (${reimbursementsTotal.toLocaleString("es-CO")}) y pago único de inglés (${matriculaSemestralTotal.toLocaleString("es-CO")}).`,
+    `🏠 Costos Fijos Agrupados (${fixedCosts.length} categorías): ${totalFixed.toLocaleString("es-CO")} ${currency}/mes (Internet, Celular, Gimnasio, Natillera, Pastillas, Spotify+Prime y Cuidado Personal).`,
+    `🛒 Variables Operativos Agrupados: ${variableOpsBudget.toLocaleString("es-CO")} ${currency}/mes (Comida diaria ~${monthlyComida.toLocaleString("es-CO")}, Transporte Uber/Parqueadero ~${monthlyTransporte.toLocaleString("es-CO")}, Salud/Uni ~${monthlySaludUni.toLocaleString("es-CO")}).`,
+    `⚔️ Obligaciones Financieras (Paso 3): ${bosses.map((b) => `${b.name} (cuota ${b.min_monthly_payment.toLocaleString("es-CO")}/mes)`).join(", ") || "Ninguna"}.`,
+    `🎁 Hobbies convertidos en Recompensas (Paso 5): Cubos (${spentCubos.toLocaleString("es-CO")}), Libros (${spentLibros.toLocaleString("es-CO")}), Hilos de Tejer (${spentTejido.toLocaleString("es-CO")}), LEGO (${spentLego.toLocaleString("es-CO")}).`,
   ];
 
   const recommendedStrategy: DebtStrategy =
@@ -869,6 +1196,7 @@ function analyzeTransactionHistoryCsv(
     vault_cap: vaultCap,
     bosses,
     detected_items_log: detectedLog,
+    grouped_summary: groupedSummary,
   });
 
   return {
@@ -880,7 +1208,7 @@ function analyzeTransactionHistoryCsv(
     bosses,
     suggested_wishlist: suggestedWishlist,
     recommended_debt_strategy: recommendedStrategy,
-    diagnosis: `Historial Real Optimizado (${totalTx} registros Sep–Nov): Tu ingreso recurrente real es ${optimizedMonthlyIncome.toLocaleString("es-CO")} ${currency}/mes (excluyendo saldos iniciales y reembolsos únicos). Asignamos ${totalFixed.toLocaleString("es-CO")} a Costos Fijos (${metrics.fixed_pct}%), ${variableOpsBudget.toLocaleString("es-CO")} a Variables Operativos (${metrics.variable_pct}%) y ${vaultCap.toLocaleString("es-CO")} GP a tu Bóveda para Cubos, Libros, Hilos de Tejer y Salidas (${metrics.vault_pct}%), liberando ${metrics.snowball_power.toLocaleString("es-CO")} ${currency}/mes (${metrics.snowball_pct}%) de Poder de Ataque contra ADDI y Nequi.`,
+    diagnosis: `Asistente Financiero (${totalTx} movimientos agrupados de Sep–Nov): Sistematizamos tus registros en ${fixedCosts.length} Costos Fijos consolidados (${totalFixed.toLocaleString("es-CO")} ${currency}/mes, ${metrics.fixed_pct}%), Variables Operativos (${variableOpsBudget.toLocaleString("es-CO")} ${currency}/mes, ${metrics.variable_pct}%) y Bóveda GP (${vaultCap.toLocaleString("es-CO")} GP/mes, ${metrics.vault_pct}%) sobre tu ingreso recurrente real de ${optimizedMonthlyIncome.toLocaleString("es-CO")} ${currency}/mes, liberando +${metrics.snowball_power.toLocaleString("es-CO")} ${currency}/mes (${metrics.snowball_pct}%) de Flujo Libre positivo para liquidar ADDI y Nequi.`,
     audit_metrics: metrics,
     source: "deterministic",
   };
@@ -893,6 +1221,7 @@ function computeAuditMetrics(params: {
   vault_cap: number;
   bosses: OnboardingBossInput[];
   detected_items_log: string[];
+  grouped_summary?: FinancialCategoryGroup[];
 }): FinancialAuditMetrics {
   const inc = Math.max(1, params.monthly_income);
   const totalFixed = params.fixed_costs.reduce((a, b) => a + (Number(b.amount) || 0), 0);
@@ -918,6 +1247,7 @@ function computeAuditMetrics(params: {
     total_min_debt_payments: totalMinPayments,
     estimated_debt_free_months: estMonths,
     detected_items_log: params.detected_items_log,
+    grouped_summary: params.grouped_summary,
   };
 }
 
@@ -960,8 +1290,8 @@ export async function evaluateFinancesWithAI(params: {
 }): Promise<FinancialEvaluationResult> {
   const { rawTextOrTable, currency } = params;
 
-  // 1. Si el texto corresponde a un historial de transacciones CSV (Fecha,Tipo,Categoría,Monto...),
-  // usar el agregador matemático exacto para evitar errores de suma o centavos (.00)
+  // 1. Si el texto corresponde a un historial de transacciones CSV/TSV/Excel (Fecha,Tipo,Categoría,Monto...),
+  // usar el agregador matemático exacto para sistematizar y agrupar sin errores de suma o centavos (.00)
   const txCsvAnalysis = analyzeTransactionHistoryCsv(rawTextOrTable, currency);
   if (txCsvAnalysis) {
     return txCsvAnalysis;
@@ -1033,7 +1363,7 @@ export async function evaluateFinancesWithAI(params: {
             type: Type.ARRAY,
             items: { type: Type.STRING },
             description:
-              "Lista de cada rubro detectado y cómo lo clasificó o mensualizó el motor financiero.",
+              "Lista de cada categoría consolidada y cómo la agrupó o mensualizó el motor financiero.",
           },
           diagnosis: {
             type: Type.STRING,
@@ -1059,8 +1389,9 @@ export async function evaluateFinancesWithAI(params: {
         model: "gemini-2.5-flash",
         contents: `Analiza la siguiente descripción en texto libre o tabla CSV/Excel del usuario (Moneda: ${currency}):
 1. Normaliza frecuencias (quincenal x2, semanal x4.33, diario x25, anual /12).
-2. Clasifica en las 5 cubetas: monthly_income, fixed_costs (arriendo, servicios, internet, seguros, educación), variable_ops_budget (mercado, transporte, salud), bosses (deudas con tasa E.A. estimada según entidad si falta: tarjeta ~28.5%, ADDI ~29%, libre inversión ~24.5%, ICETEX ~12.5%) y vault_cap (Bóveda GP para gustos).
-3. Garantiza equilibrio contable: monthly_income >= suma(fixed_costs) + variable_ops_budget + vault_cap.
+2. AGRUPA y CONSOLIDA rubros repetidos por categoría (nunca devuelvas filas individuales con fechas ni más de 8 costos fijos).
+3. Clasifica en las 5 cubetas: monthly_income, fixed_costs (arriendo, servicios, internet, seguros, educación), variable_ops_budget (mercado, transporte, salud), bosses (deudas con tasa E.A. estimada según entidad si falta: tarjeta ~28.5%, ADDI ~29%, libre inversión ~24.5%, ICETEX ~12.5%) y vault_cap (Bóveda GP para gustos).
+4. Garantiza equilibrio contable: monthly_income >= suma(fixed_costs) + variable_ops_budget + vault_cap.
 
 DATOS DEL USUARIO:
 ${rawTextOrTable}`,
@@ -1125,7 +1456,7 @@ ${rawTextOrTable}`,
     }
   }
 
-  // Motor Financiero Determinista (soporta tanto prosa libre como tablas CSV/TSV/Excel)
+  // Motor Financiero Determinista (soporta tanto prosa libre como tablas personalizadas)
   const defaultIncome =
     currency === "USD" || currency === "EUR"
       ? 2500
@@ -1133,19 +1464,38 @@ ${rawTextOrTable}`,
       ? 25000
       : 2500000;
 
+  const stripDatesAndIds = (raw: string): string =>
+    raw
+      // Remover fechas ISO o Latam con o sin hora (ej. 2026-09-04 17:36)
+      .replace(
+        /\b\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\b/g,
+        " "
+      )
+      .replace(
+        /\b\d{1,2}[-/]\d{1,2}[-/]\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\b/g,
+        " "
+      )
+      // Remover IDs alfanuméricos tipo hash (ej. mudne9v6om7m) para evitar falsos "7m" o "6k"
+      .replace(/\b(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]{7,}\b/gi, " ")
+      // Remover centavos .00 o ,00 al final de montos
+      .replace(/([0-9])[.,]00\b/g, "$1");
+
   const parseAmountToken = (txt: string): number | null => {
-    const cleaned = txt.replace(/\b\d{1,2}(?:[.,]\d{1,2})?\s*%/g, " ");
+    const cleaned = stripDatesAndIds(txt).replace(
+      /\b\d{1,2}(?:[.,]\d{1,2})?\s*%/g,
+      " "
+    );
     const mMillones = cleaned.match(
-      /(\d+(?:[.,]\d+)?)\s*(millones|millon|m)\b/i
+      /(?:^|[\s$])(\d+(?:[.,]\d+)?)\s*(millones|millon|m)\b/i
     );
     if (mMillones) {
       return Math.round(Number(mMillones[1].replace(",", ".")) * 1_000_000);
     }
-    const mMil = cleaned.match(/(\d+(?:[.,]\d+)?)\s*(mil|k)\b/i);
+    const mMil = cleaned.match(/(?:^|[\s$])(\d+(?:[.,]\d+)?)\s*(mil|k)\b/i);
     if (mMil) {
       return Math.round(Number(mMil[1].replace(",", ".")) * 1_000);
     }
-    const mNum = cleaned.match(/\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{3,})/);
+    const mNum = cleaned.match(/\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,})/);
     if (mNum) {
       return Number(mNum[1].replace(/[.,]/g, ""));
     }
@@ -1175,35 +1525,45 @@ ${rawTextOrTable}`,
   };
 
   let detectedIncome = 0;
-  const fixedCosts: FixedCostItem[] = [];
+  const fixedCostsMap = new Map<string, FixedCostItem>();
   const bosses: OnboardingBossInput[] = [];
   let variableOps = 0;
   let explicitVault = 0;
   const detectedLog: string[] = [];
 
-  const chunks = rawTextOrTable
-    .split(
-      /\r?\n|;|(?=\b(?:gano|ingreso|sueldo|salario|quincena|arriendo|renta|alquiler|hipoteca|administracion|servicios|luz|agua|internet|celular|plan|seguro|gimnasio|universidad|colegio|mercado|comida|alimentacion|transporte|gasolina|debo|deuda|tarjeta|credito|prestamo|nequi|addi|bancolombia|nu\b|icetex|gustos|ocio|salidas|boveda)\b)/i
-    )
+  const isMultiLine = rawTextOrTable.trim().includes("\n");
+  const chunks = (
+    isMultiLine
+      ? rawTextOrTable.split(/\r?\n/)
+      : rawTextOrTable.split(
+          /\r?\n|;|(?=\b(?:gano|ingreso|sueldo|salario|quincena|arriendo|renta|alquiler|hipoteca|administracion|servicios|luz|agua|internet|celular|plan|seguro|gimnasio|universidad|colegio|mercado|comida|alimentacion|transporte|gasolina|debo|deuda|tarjeta|credito|prestamo|nequi|addi|bancolombia|nu\b|icetex|gustos|ocio|salidas|boveda)\b)/i
+        )
+  )
     .map((l) => l.trim())
     .filter(Boolean);
 
   for (const chunk of chunks) {
     // Saltar encabezados típicos de tablas CSV
-    if (/^(concepto|rubro|item|categoria|tipo)\s*[,|\t]/i.test(chunk)) continue;
+    if (/^(fecha|concepto|rubro|item|categoria|tipo)\s*[,|\t;]/i.test(chunk)) {
+      continue;
+    }
 
-    const rawVal = parseAmountToken(chunk);
+    const sanitizedChunk = stripDatesAndIds(chunk);
+    const rawVal = parseAmountToken(sanitizedChunk);
     if (!rawVal || rawVal <= 0) continue;
 
-    const lower = chunk.toLowerCase();
+    const lower = sanitizedChunk.toLowerCase();
     const { monthlyVal, freqNote } = applyFrequencyMultiplier(rawVal, lower);
 
     const cleanLabel =
-      chunk
-        .replace(/\$?\s*\d{1,3}(?:[.,]\d{3})+|\b\d+(?:[.,]\d+)?\s*(?:millones|millon|mil|k|m|%)\b|\b\d{3,}\b/gi, " ")
-        .replace(/[,|\t:;]+/g, " ")
+      sanitizedChunk
         .replace(
-          /\b(gano|ingreso|sueldo|salario|pago|gasto|debo|deuda|en|de|por|al|mes|mensual|quincenal|semanal|diario|anual|con|tasa|ea|unos|aprox)\b/gi,
+          /\$?\s*\d{1,3}(?:[.,]\d{3})+|\b\d+(?:[.,]\d+)?\s*(?:millones|millon|mil|k|m|%)\b|\b\d{3,}\b/gi,
+          " "
+        )
+        .replace(/["',|\t:;]+/g, " ")
+        .replace(
+          /\b(gano|ingreso|sueldo|salario|pago|gasto|egreso|debo|deuda|transferencia|efectivo|debito|en|de|por|al|mes|mensual|quincenal|semanal|diario|anual|con|tasa|ea|unos|aprox)\b/gi,
           " "
         )
         .replace(/\s+/g, " ")
@@ -1212,15 +1572,15 @@ ${rawTextOrTable}`,
     if (/gano|ingreso|sueldo|salario|nomina|quincena|honorarios|mesada|beca/.test(lower)) {
       detectedIncome += monthlyVal;
       detectedLog.push(
-        `💰 Ingreso detectado: ${monthlyVal.toLocaleString("es-CO")} ${currency} (${freqNote})`
+        `💰 Ingreso detectado (${cleanLabel}): ${monthlyVal.toLocaleString("es-CO")} ${currency} (${freqNote})`
       );
     } else if (
-      /debo|deuda|tarjeta|credito|prestamo|nequi|addi|sistecredito|bancolombia|davivienda|nu\b|rappi|icetex/.test(
+      /debo|deuda|obligaciones financieras|tarjeta|credito|prestamo|nequi|addi|sistecredito|bancolombia|davivienda|nu\b|rappi|icetex/.test(
         lower
       )
     ) {
       const { rate, minPayment } = inferDebtRateAndMinPayment(
-        chunk,
+        sanitizedChunk,
         rawVal,
         currency
       );
@@ -1238,10 +1598,10 @@ ${rawTextOrTable}`,
     } else if (/gustos|ocio|salidas|restaurantes|entretenimiento|boveda|hobbies/.test(lower)) {
       explicitVault += monthlyVal;
       detectedLog.push(
-        `🔐 Bóveda / Gustos: ${monthlyVal.toLocaleString("es-CO")} ${currency} (${freqNote})`
+        `🔐 Bóveda / Gustos (${cleanLabel}): ${monthlyVal.toLocaleString("es-CO")} ${currency} (${freqNote})`
       );
     } else if (
-      /mercado|supermercado|comida|alimentacion|transporte|gasolina|uber|bus|aseo|farmacia|variable/.test(
+      /mercado|supermercado|comida|alimentacion|transporte|parqueadero|gasolina|uber|bus|aseo|farmacia|variable/.test(
         lower
       )
     ) {
@@ -1261,16 +1621,24 @@ ${rawTextOrTable}`,
         : "hogar";
       const fcName =
         cleanLabel.charAt(0).toUpperCase() + cleanLabel.slice(1, 35);
-      fixedCosts.push({
-        name: fcName,
-        amount: monthlyVal,
-        category,
-      });
+      const normKey = fcName.toLowerCase();
+      const existing = fixedCostsMap.get(normKey);
+      if (existing) {
+        existing.amount += monthlyVal;
+      } else {
+        fixedCostsMap.set(normKey, {
+          name: fcName,
+          amount: monthlyVal,
+          category,
+        });
+      }
       detectedLog.push(
         `🏠 Costo Fijo (${fcName}): ${monthlyVal.toLocaleString("es-CO")} ${currency} (${freqNote})`
       );
     }
   }
+
+  const fixedCosts = Array.from(fixedCostsMap.values());
 
   if (detectedIncome <= 0) {
     detectedIncome = defaultIncome;
@@ -1300,6 +1668,11 @@ ${rawTextOrTable}`,
     detectedLog.push(
       `🛒 Variables Operativos estimados al 20%: ${variableOps.toLocaleString("es-CO")} ${currency}`
     );
+  }
+
+  // Garantizar que Fijos + Variables no superen el ingreso mensual para evitar bloqueo en Onboarding
+  if (totalFixed + variableOps > detectedIncome) {
+    variableOps = Math.max(0, detectedIncome - totalFixed);
   }
 
   const remainingAfterOps = Math.max(
@@ -1337,7 +1710,7 @@ ${rawTextOrTable}`,
     savings_goal_monthly: savingsGoal,
     bosses,
     recommended_debt_strategy: recommendedStrategy,
-    diagnosis: `Motor Financiero: Ingreso mensualizado de ${detectedIncome.toLocaleString("es-CO")} ${currency} distribuido en ${metrics.fixed_pct}% Costos Fijos (${fixedCosts.length} rubros), ${metrics.variable_pct}% Variables Operativos, ${metrics.vault_pct}% Bóveda GP (${vaultCap.toLocaleString("es-CO")} GP) y ${metrics.snowball_pct}% Poder Bola de Nieve (${metrics.snowball_power.toLocaleString("es-CO")} ${currency}/mes)${
+    diagnosis: `Motor Financiero: Ingreso mensualizado de ${detectedIncome.toLocaleString("es-CO")} ${currency} distribuido en ${metrics.fixed_pct}% Costos Fijos (${fixedCosts.length} rubros consolidados), ${metrics.variable_pct}% Variables Operativos, ${metrics.vault_pct}% Bóveda GP (${vaultCap.toLocaleString("es-CO")} GP) y ${metrics.snowball_pct}% Poder Bola de Nieve (${metrics.snowball_power.toLocaleString("es-CO")} ${currency}/mes)${
       bosses.length > 0
         ? `. Tiempo estimado para liquidar tus ${bosses.length} deuda(s): ~${metrics.estimated_debt_free_months} meses con estrategia ${
             recommendedStrategy === "avalanche" ? "Avalancha" : "Bola de Nieve"

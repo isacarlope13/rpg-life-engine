@@ -189,6 +189,15 @@ export default function OnboardingWizardPage() {
     snowball_pct: number;
     total_debt: number;
     estimated_debt_free_months: number;
+    grouped_summary?: Array<{
+      bucket: "ingreso" | "fijo" | "variable" | "deuda" | "boveda" | "excluido";
+      bucket_label: string;
+      category_name: string;
+      tx_count: number;
+      historical_total: number;
+      monthly_assigned: number;
+      note: string;
+    }>;
   } | null>({
     fixed_pct: 35,
     variable_pct: 25,
@@ -197,6 +206,143 @@ export default function OnboardingWizardPage() {
     snowball_pct: 23,
     total_debt: 1050000,
     estimated_debt_free_months: 2,
+    grouped_summary: [
+      {
+        bucket: "ingreso",
+        bucket_label: "💰 Ingreso Recurrente",
+        category_name: "Sueldo / Nómina Quincenal (×2)",
+        tx_count: 5,
+        historical_total: 5163707,
+        monthly_assigned: 2065000,
+        note: "Promedio de 5 pagos de nómina multiplicado ×2 quincenas/mes.",
+      },
+      {
+        bucket: "ingreso",
+        bucket_label: "💰 Ingreso Recurrente",
+        category_name: "Clases & Asesorías (Juanma)",
+        tx_count: 2,
+        historical_total: 350000,
+        monthly_assigned: 350000,
+        note: "2 ingresos recurrentes por clases particulares.",
+      },
+      {
+        bucket: "fijo",
+        bucket_label: "🏠 Costo Fijo Mensual",
+        category_name: "Internet Hogar (Somos)",
+        tx_count: 3,
+        historical_total: 240000,
+        monthly_assigned: 120000,
+        note: "Consolidado de facturas mensuales de Internet / Somos.",
+      },
+      {
+        bucket: "fijo",
+        bucket_label: "🏠 Costo Fijo Mensual",
+        category_name: "Plan Celular",
+        tx_count: 5,
+        historical_total: 229000,
+        monthly_assigned: 100000,
+        note: "Consolidado de 5 pagos de planes móviles.",
+      },
+      {
+        bucket: "fijo",
+        bucket_label: "🏠 Costo Fijo Mensual",
+        category_name: "Gimnasio Mensual",
+        tx_count: 2,
+        historical_total: 130000,
+        monthly_assigned: 120000,
+        note: "Mensualidad fija de entrenamiento (excluye inscripción única de $10k).",
+      },
+      {
+        bucket: "fijo",
+        bucket_label: "🏠 Costo Fijo Mensual",
+        category_name: "Natillera (Ahorro Fijo)",
+        tx_count: 3,
+        historical_total: 320000,
+        monthly_assigned: 100000,
+        note: "Cuota mensual fija de ahorro en Natillera (3 aportes).",
+      },
+      {
+        bucket: "fijo",
+        bucket_label: "🏠 Costo Fijo Mensual",
+        category_name: "Salud & Medicamentos Fijos (Pastillas)",
+        tx_count: 4,
+        historical_total: 380000,
+        monthly_assigned: 180000,
+        note: "Promedio mensual de 4 compras de medicamentos fijos.",
+      },
+      {
+        bucket: "fijo",
+        bucket_label: "🏠 Costo Fijo Mensual",
+        category_name: "Suscripciones (Spotify + Prime)",
+        tx_count: 4,
+        historical_total: 111500,
+        monthly_assigned: 56000,
+        note: "Spotify ($31.000) + Amazon Prime ($25.000) mensualizados.",
+      },
+      {
+        bucket: "fijo",
+        bucket_label: "🏠 Costo Fijo Mensual",
+        category_name: "Cuidado Personal (Uñas, Cejas & Peluquería)",
+        tx_count: 5,
+        historical_total: 385000,
+        monthly_assigned: 170000,
+        note: "Agrupado de 5 registros (Uñas, Cejas y Mona).",
+      },
+      {
+        bucket: "variable",
+        bucket_label: "🛒 Variable Operativo",
+        category_name: "Alimentación & Comida Diaria",
+        tx_count: 20,
+        historical_total: 678000,
+        monthly_assigned: 330000,
+        note: "20 consumos diarios (almuerzos, desayunos, fruta) optimizados al mes.",
+      },
+      {
+        bucket: "variable",
+        bucket_label: "🛒 Variable Operativo",
+        category_name: "Transporte (Uber & Parqueaderos)",
+        tx_count: 14,
+        historical_total: 275000,
+        monthly_assigned: 130000,
+        note: "14 trayectos de Uber y parqueaderos (universidad/centros comerciales).",
+      },
+      {
+        bucket: "variable",
+        bucket_label: "🛒 Variable Operativo",
+        category_name: "Salud & Universidad Operativa",
+        tx_count: 4,
+        historical_total: 205000,
+        monthly_assigned: 70000,
+        note: "4 gastos variables de citas médicas, exámenes y papelería.",
+      },
+      {
+        bucket: "deuda",
+        bucket_label: "⚔️ Obligación Financiera (Paso 3)",
+        category_name: "ADDI & Préstamo Nequi",
+        tx_count: 3,
+        historical_total: 206000,
+        monthly_assigned: 156000,
+        note: "Cuotas mensuales detectadas → Pasan a Jefes de Deuda en el Paso 3.",
+      },
+      {
+        bucket: "boveda",
+        bucket_label: "🎁 Bóveda GP (Gustos & Hobbies)",
+        category_name: "Hobbies (Cubos, Libros, Tejido, LEGO) y Salidas",
+        tx_count: 27,
+        historical_total: 1647000,
+        monthly_assigned: 400000,
+        note: "Tope saludable de Bóveda GP para proteger tu flujo libre sin dejar tus hobbies.",
+      },
+      {
+        bucket: "excluido",
+        bucket_label: "🛡️ Movimientos No Recurrentes (Separados)",
+        category_name: "Saldos Iniciales, Encargos/Terceros y Semestre",
+        tx_count: 14,
+        historical_total: 3473501,
+        monthly_assigned: 0,
+        note: "Saldos iniciales ($403.501), reembolsos/terceros ($1.515.000) e inglés semestral ($550.000) aislados para no distorsionar tu mes.",
+      },
+    ],
   });
 
   // Paso 3: Deudas (Bosses) — Pre-cargadas con ADDI y Nequi del CSV
@@ -1205,10 +1351,76 @@ export default function OnboardingWizardPage() {
                       </div>
                     </div>
                   )}
+                  {financeMetrics?.grouped_summary &&
+                    financeMetrics.grouped_summary.length > 0 && (
+                      <div className="mt-3 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
+                        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-3 py-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">
+                            📊 Tabla Sistematizada y Agrupada por Categorías (
+                            {financeMetrics.grouped_summary.length} bloques)
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            Promedios mensuales limpios sin filas sueltas
+                          </span>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                          <table className="w-full text-left text-[11px]">
+                            <thead className="sticky top-0 bg-slate-950 text-[10px] uppercase text-slate-400">
+                              <tr>
+                                <th className="px-3 py-1.5">Bloque</th>
+                                <th className="px-3 py-1.5">
+                                  Categoría Consolidada
+                                </th>
+                                <th className="px-2 py-1.5 text-center">
+                                  Movs.
+                                </th>
+                                <th className="px-3 py-1.5 text-right">
+                                  Total Tabla
+                                </th>
+                                <th className="px-3 py-1.5 text-right">
+                                  Mensualizado
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/70">
+                              {financeMetrics.grouped_summary.map((grp, i) => (
+                                <tr
+                                  key={i}
+                                  className="hover:bg-slate-800/40"
+                                >
+                                  <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-300">
+                                    {grp.bucket_label}
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <p className="font-semibold text-white">
+                                      {grp.category_name}
+                                    </p>
+                                    <p className="text-[10px] text-slate-400">
+                                      {grp.note}
+                                    </p>
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center text-slate-300">
+                                    {grp.tx_count}
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-400">
+                                    {fmt(grp.historical_total)}
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold text-emerald-300">
+                                    {grp.bucket === "excluido"
+                                      ? "Aislado ($0/mes)"
+                                      : `${fmt(grp.monthly_assigned)}/mes`}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   {financeAuditLog.length > 0 && (
                     <div className="mt-2 border-t border-slate-800 pt-2">
                       <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Desglose detectado y normalizado por el motor:
+                        Resumen Ejecutivo del Asistente Financiero:
                       </p>
                       <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                         {financeAuditLog.map((line, i) => (
@@ -1458,10 +1670,28 @@ export default function OnboardingWizardPage() {
                 </div>
 
                 {freeCashflow < 0 && (
-                  <p className="mt-3 rounded-lg bg-rose-500/15 p-2 text-center text-[11px] font-semibold text-rose-300">
-                    ⚠️ Tus gastos superan tu ingreso por{" "}
-                    {fmt(Math.abs(freeCashflow))}
-                  </p>
+                  <div className="mt-3 w-full space-y-2 rounded-lg border border-rose-500/40 bg-rose-500/15 p-2.5 text-center text-[11px]">
+                    <p className="font-semibold text-rose-300">
+                      ⚠️ Tus gastos superan tu ingreso por{" "}
+                      {fmt(Math.abs(freeCashflow))}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const availAfterFixed = Math.max(
+                          0,
+                          monthlyIncome - totalFixedCosts
+                        );
+                        const nextVar = Math.round(availAfterFixed * 0.55);
+                        const nextVault = Math.round(availAfterFixed * 0.25);
+                        setVariableOpsBudget(nextVar);
+                        setVaultCap(nextVault);
+                      }}
+                      className="w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-500"
+                    >
+                      ⚖️ Auto-Equilibrar Presupuesto con IA (1 Clic)
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
