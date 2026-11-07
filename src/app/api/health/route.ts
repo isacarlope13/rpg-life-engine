@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AI_SKILLS_REGISTRY } from "@/lib/ai-skills-prompts";
+import { getCostShieldStats } from "@/lib/ai-cache-and-ratelimit";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
 export async function GET() {
@@ -10,13 +11,14 @@ export async function GET() {
 
   return NextResponse.json({
     status: "ok",
-    version: "3.2.0-trial-ready",
+    version: "3.3.0-scale-ready",
     timestamp: new Date().toISOString(),
     persistence: {
       supabase_connected: isSupabaseConfigured,
       local_disk_backup_enabled: true,
       pwa_manifest: "/manifest.json",
     },
+    cost_and_scale_shield: getCostShieldStats(),
     ai_engine: {
       gemini_api_configured: hasGeminiKey,
       fallback_deterministic_ready: true,

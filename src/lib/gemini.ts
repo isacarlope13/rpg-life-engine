@@ -6,6 +6,11 @@ import {
   sanitizeParsedExpense,
   sanitizeReceiptSplit,
 } from "./ai-skills-prompts";
+import {
+  checkAiQuotaAllowance,
+  getCachedCatalogSpecs,
+  setCachedCatalogSpecs,
+} from "./ai-cache-and-ratelimit";
 import type {
   BookComplexity,
   ExtractedBookSpecsAI,
@@ -241,6 +246,10 @@ export async function parseExpenseWithGemini(
     return fallback;
   }
 
+  if (!checkAiQuotaAllowance("expense_sms").allowed) {
+    return fallback;
+  }
+
   try {
     const skill = AI_SKILLS_REGISTRY.EXPENSE_SMS_CLASSIFIER;
     const ai = new GoogleGenAI({ apiKey });
@@ -362,6 +371,10 @@ export async function parseReceiptWithGeminiVision(params: {
   })();
 
   if (!apiKey || apiKey === "tu-gemini-api-key") {
+    return fallbackResult;
+  }
+
+  if (!checkAiQuotaAllowance("receipt_vision").allowed) {
     return fallbackResult;
   }
 
@@ -997,7 +1010,20 @@ export async function extractCubeSpecsWithGemini(
   const apiKey = process.env.GEMINI_API_KEY;
   const fallback = extractCubeSpecsDeterministic(rawQuery);
 
+  // 1. Consulta Cache-First (Memoria + Supabase catalog_ai_cache -> $0 costo IA)
+  const cached = await getCachedCatalogSpecs<ExtractedCubeSpecsAI>(
+    "cube",
+    rawQuery
+  );
+  if (cached && cached.model_name) {
+    return cached;
+  }
+
   if (!apiKey || apiKey === "tu-gemini-api-key") {
+    return fallback;
+  }
+
+  if (!checkAiQuotaAllowance("cube_extractor").allowed) {
     return fallback;
   }
 
@@ -1033,6 +1059,7 @@ export async function extractCubeSpecsWithGemini(
             reward_gp_per_solve: merged.reward_gp_per_solve,
             pb_bonus_gp: merged.pb_bonus_gp,
           });
+    await setCachedCatalogSpecs("cube", rawQuery, merged);
     return merged;
   } catch {
     return fallback;
@@ -1405,7 +1432,20 @@ export async function extractBookSpecsWithGemini(
   const apiKey = process.env.GEMINI_API_KEY;
   const fallback = extractBookSpecsDeterministic(rawQuery);
 
+  // 1. Consulta Cache-First (Memoria + Supabase catalog_ai_cache -> $0 costo IA)
+  const cached = await getCachedCatalogSpecs<ExtractedBookSpecsAI>(
+    "book",
+    rawQuery
+  );
+  if (cached && cached.title && cached.total_pages) {
+    return cached;
+  }
+
   if (!apiKey || apiKey === "tu-gemini-api-key") {
+    return fallback;
+  }
+
+  if (!checkAiQuotaAllowance("book_extractor").allowed) {
     return fallback;
   }
 
@@ -1444,6 +1484,7 @@ export async function extractBookSpecsWithGemini(
             gp_per_page: merged.gp_per_page,
             completion_bonus_gp: merged.completion_bonus_gp,
           });
+    await setCachedCatalogSpecs("book", rawQuery, merged);
     return merged;
   } catch {
     return fallback;

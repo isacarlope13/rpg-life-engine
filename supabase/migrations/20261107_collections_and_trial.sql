@@ -1,6 +1,6 @@
 -- ============================================================================
--- MIGRACIÓN DE PRODUCCIÓN: COLECCIONES PERSISTENTES (LIBROS, FRASES, CUBOS)
--- Y BITÁCORA DEL PERIODO DE PRUEBA (PILOTO 30 DÍAS)
+-- MIGRACIÓN DE PRODUCCIÓN: COLECCIONES PERSISTENTES (LIBROS, FRASES, CUBOS),
+-- BITÁCORA DEL PERIODO DE PRUEBA Y ESCUDO DE CACHÉ GLOBAL IA A GRAN ESCALA
 -- ============================================================================
 
 -- 1. Agregar columna JSONB collections_state a public.profiles para sincronizar
@@ -24,5 +24,15 @@ CREATE TABLE IF NOT EXISTS public.profession_class_catalog (
   profession_label TEXT NOT NULL,
   classes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   source TEXT DEFAULT 'gemini',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Tabla de Caché Global IA para Libros y Cubos (Costo $0 en consultas repetidas entre miles de usuarios)
+CREATE TABLE IF NOT EXISTS public.catalog_ai_cache (
+  cache_key TEXT PRIMARY KEY,
+  domain TEXT NOT NULL,
+  raw_query TEXT NOT NULL,
+  specs_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
