@@ -1132,6 +1132,26 @@ export class RPGEngineMemoryStore {
     return newBook;
   }
 
+  updateRubikCubeNotes(params: {
+    cube_id: string;
+    custom_notes?: string;
+    maintenance_needs?: string;
+    recommended_setup?: string;
+  }): RubikCubeCatalogItem | null {
+    const cube = this.rubikCubes.find((c) => c.id === params.cube_id);
+    if (!cube) return null;
+    if (params.custom_notes !== undefined) {
+      cube.custom_notes = params.custom_notes;
+    }
+    if (params.maintenance_needs !== undefined) {
+      cube.maintenance_needs = params.maintenance_needs;
+    }
+    if (params.recommended_setup !== undefined) {
+      cube.recommended_setup = params.recommended_setup;
+    }
+    return cube;
+  }
+
   updateReadingBookGallery(params: {
     book_id: string;
     rating?: number;

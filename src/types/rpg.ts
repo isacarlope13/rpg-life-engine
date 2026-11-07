@@ -73,6 +73,8 @@ export interface RubikCubeCatalogItem extends ExtractedCubeSpecsAI {
   price_paid?: number;
   purchase_date?: string;
   store_or_source?: string;
+  custom_notes?: string;
+  maintenance_needs?: string;
   created_at?: string;
 }
 

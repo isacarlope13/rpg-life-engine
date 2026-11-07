@@ -30,10 +30,15 @@ import {
   Briefcase,
   Timer,
   Play,
+  Pause,
+  Clock,
   Square,
   RotateCcw,
   Trophy,
   ArrowRightLeft,
+  BookMarked,
+  FileText,
+  Settings2,
 } from "lucide-react";
 import {
   BookComplexity,
@@ -422,6 +427,26 @@ export function RPGLifeEngineDashboard({
   );
   const [recordCubeInTreasury, setRecordCubeInTreasury] = useState(false);
 
+  // Modos de Cubos de Rubik: Speedcubing WCA vs. Estudio & Nuevo Cubo vs. Cuaderno de Notas
+  const [rubikSubMode, setRubikSubMode] = useState<"practice" | "study" | "notes">("practice");
+  const [rubikStudyFocus, setRubikStudyFocus] = useState<string>("F2L & Lookahead Fluido");
+  const [rubikStudyNotes, setRubikStudyNotes] = useState<string>("");
+  const [rubikStudyMinutes, setRubikStudyMinutes] = useState<number>(30);
+
+  // Cuaderno de Notas del Cubo (Arsenal Hardware & Setup Log)
+  const [cubeTensionNotes, setCubeTensionNotes] = useState<string>("");
+  const [cubeLubeNotes, setCubeLubeNotes] = useState<string>("");
+  const [cubeMaintenanceNeeds, setCubeMaintenanceNeeds] = useState<string>("");
+  const [cubeAlgsToMaster, setCubeAlgsToMaster] = useState<string>("");
+  const [cubeGeneralNotes, setCubeGeneralNotes] = useState<string>("");
+  const [cubeNotesSuccessMsg, setCubeNotesSuccessMsg] = useState<string | null>(null);
+
+  // Cronómetro Universal en Vivo para Sesiones (Lectura, Tejido, Estudio, Trabajo, Gaming, Deportes, Rubik)
+  const [liveTimerDomain, setLiveTimerDomain] = useState<SkillDomain | null>(null);
+  const [liveTimerSeconds, setLiveTimerSeconds] = useState<number>(0);
+  const [liveTimerPaused, setLiveTimerPaused] = useState<boolean>(false);
+  const liveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Estados de Sesiones de Lectura + Extractor de Ficha Técnica + Galería de Libros
   const [selectedBookId, setSelectedBookId] = useState("book-1");
   const [pagesReadInput, setPagesReadInput] = useState(20);
@@ -607,8 +632,215 @@ export function RPGLifeEngineDashboard({
     fetchState();
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
     };
   }, []);
+
+  // Intervalo del Cronómetro Universal en Vivo
+  useEffect(() => {
+    if (liveTimerDomain && !liveTimerPaused) {
+      liveTimerRef.current = setInterval(() => {
+        setLiveTimerSeconds((s) => s + 1);
+      }, 1000);
+    } else {
+      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+    }
+    return () => {
+      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+    };
+  }, [liveTimerDomain, liveTimerPaused]);
+
+  // Cargar notas del cubo seleccionado al cambiar de cubo o cargar estado
+  useEffect(() => {
+    if (!selectedCubeId || !state) return;
+    const currentCube = state.rubik_cubes?.find((c) => c.id === selectedCubeId);
+    let localSaved: Record<string, string> = {};
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(`rpg_cube_notebook_${selectedCubeId}`);
+        if (raw) localSaved = JSON.parse(raw);
+      } catch {
+        // ignore
+      }
+    }
+    setCubeTensionNotes(
+      localSaved.tensions ?? currentCube?.recommended_setup ?? ""
+    );
+    setCubeLubeNotes(
+      localSaved.lubes ?? (currentCube?.turning_feel_and_cutting || "")
+    );
+    setCubeMaintenanceNeeds(
+      localSaved.maintenance_needs ?? (currentCube?.maintenance_needs || "")
+    );
+    setCubeAlgsToMaster(
+      localSaved.algs_to_master ?? (currentCube?.recommended_alg_set || "")
+    );
+    setCubeGeneralNotes(
+      localSaved.custom_notes ?? (currentCube?.custom_notes || currentCube?.pro_cuber_notes || "")
+    );
+  }, [selectedCubeId, state?.rubik_cubes]);
+
+  const formatStopwatch = (totalSecs: number) => {
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, "0")}:${mins
+        .toString()
+        .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
+    return `${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
+  };
+
+  const startLiveTimer = (domain: SkillDomain) => {
+    if (liveTimerDomain === domain && liveTimerPaused) {
+      setLiveTimerPaused(false);
+      return;
+    }
+    setLiveTimerDomain(domain);
+    setLiveTimerSeconds(0);
+    setLiveTimerPaused(false);
+  };
+
+  const pauseLiveTimer = () => {
+    setLiveTimerPaused(true);
+  };
+
+  const resumeLiveTimer = () => {
+    setLiveTimerPaused(false);
+  };
+
+  const resetLiveTimer = () => {
+    if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+    setLiveTimerDomain(null);
+    setLiveTimerSeconds(0);
+    setLiveTimerPaused(false);
+  };
+
+  const handleSaveCubeNotebook = async () => {
+    if (!selectedCubeId) return;
+    const combinedNotes = [
+      cubeGeneralNotes.trim(),
+      cubeAlgsToMaster.trim() ? `[Casos por dominar]: ${cubeAlgsToMaster.trim()}` : "",
+      cubeLubeNotes.trim() ? `[Lubricación]: ${cubeLubeNotes.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const payload = {
+      tensions: cubeTensionNotes,
+      lubes: cubeLubeNotes,
+      maintenance_needs: cubeMaintenanceNeeds,
+      algs_to_master: cubeAlgsToMaster,
+      custom_notes: cubeGeneralNotes,
+    };
+
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(
+          `rpg_cube_notebook_${selectedCubeId}`,
+          JSON.stringify(payload)
+        );
+      } catch {
+        // ignore
+      }
+    }
+
+    try {
+      await submitSkillSession({
+        action: "update_cube_notes",
+        cube_id: selectedCubeId,
+        notes: combinedNotes,
+        cube_custom_notes: combinedNotes,
+        cube_maintenance_needs: cubeMaintenanceNeeds,
+        cube_recommended_setup: cubeTensionNotes,
+      });
+      setCubeNotesSuccessMsg("¡Notas y mantenimiento del cubo guardados correctamente!");
+      setTimeout(() => setCubeNotesSuccessMsg(null), 3500);
+    } catch {
+      setCubeNotesSuccessMsg("Guardado localmente en tu dispositivo.");
+      setTimeout(() => setCubeNotesSuccessMsg(null), 3500);
+    }
+  };
+
+  const stopAndLogLiveTimer = async (domain: SkillDomain) => {
+    const elapsedMinutes = Math.max(1, Math.round(liveTimerSeconds / 60));
+    resetLiveTimer();
+
+    if (domain === "reading") {
+      setReadingMinutesInput(elapsedMinutes);
+      const parsedSinglePage = quotePageInput ? Number(quotePageInput) : undefined;
+      await submitSkillSession({
+        domain: "reading",
+        book_id: selectedBookId,
+        pages_read: pagesReadInput,
+        duration_minutes: elapsedMinutes,
+        quote_text: quoteTextInput.trim() || undefined,
+        quote_page:
+          parsedSinglePage && parsedSinglePage > 0 ? parsedSinglePage : undefined,
+        quotes_list: sessionQuotes.length > 0 ? sessionQuotes : undefined,
+      });
+      setQuoteTextInput("");
+      setQuotePageInput("");
+      setSessionQuotes([]);
+    } else if (domain === "knitting") {
+      setKnittingMinutesInput(elapsedMinutes);
+      await submitSkillSession({
+        domain: "knitting",
+        project_id: selectedKnitId,
+        rows_completed: rowsCompletedInput,
+        duration_minutes: elapsedMinutes,
+        stitches_notes: stitchesNotesInput,
+      });
+    } else if (domain === "study") {
+      setStudyMinutes(elapsedMinutes);
+      await submitSkillSession({
+        domain: "study",
+        subject: studySubject,
+        study_method: studyMethod,
+        duration_minutes: elapsedMinutes,
+      });
+    } else if (domain === "work") {
+      setWorkMinutes(elapsedMinutes);
+      await submitSkillSession({
+        domain: "work",
+        deliverable: workDeliverable,
+        impact_level: workImpact,
+        duration_minutes: elapsedMinutes,
+      });
+    } else if (domain === "gaming") {
+      setGamingAntiTiltMinutes(elapsedMinutes);
+      await submitSkillSession({
+        domain: "gaming",
+        deliverable: customSessionTitle || gamingGameName,
+        impact_level: "standard",
+        duration_minutes: elapsedMinutes,
+      });
+    } else if (domain === "sports") {
+      setCustomSessionMinutes(elapsedMinutes);
+      await submitSkillSession({
+        domain: "sports",
+        deliverable: customSessionTitle || sportsMetricNote,
+        impact_level: "high_impact",
+        duration_minutes: elapsedMinutes,
+      });
+    } else if (domain === "rubik") {
+      const activeCube =
+        state?.rubik_cubes?.find((c) => c.id === selectedCubeId) ||
+        state?.rubik_cubes?.[0];
+      await submitSkillSession({
+        domain: "rubik",
+        cube_type: cubeType,
+        cube_id: activeCube?.id,
+        cube_model: activeCube?.model_name,
+        algorithm_learned: `${rubikStudyFocus}: ${rubikStudyNotes || "Estudio de nuevo cubo y algoritmos"}`,
+        duration_minutes: elapsedMinutes,
+        title: `Estudio de Cubo (${cubeType}) — ${rubikStudyFocus}`,
+      });
+    }
+  };
 
   // Control del Cronómetro de Cubo de Rubik
   const toggleRubikTimer = () => {
@@ -1777,6 +2009,98 @@ export function RPGLifeEngineDashboard({
           ))}
         </div>
 
+        {/* BANNER FLOTANTE DE SESIÓN EN VIVO ACTIVA (SI CORRE EN SEGUNDO PLANO O EN OTRA PESTAÑA) */}
+        {liveTimerDomain && (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/50 bg-gradient-to-r from-amber-950/80 via-slate-900/90 to-amber-950/80 p-4 shadow-lg shadow-amber-950/30">
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-3.5 w-3.5">
+                <span
+                  className={`absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 ${
+                    liveTimerPaused ? "" : "animate-ping"
+                  }`}
+                />
+                <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-amber-500" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-amber-300" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                    {liveTimerPaused ? "Sesión en Pausa" : "Sesión en Vivo en Curso"} •{" "}
+                    {liveTimerDomain === "reading"
+                      ? "Lectura"
+                      : liveTimerDomain === "rubik"
+                      ? "Cubo de Rubik"
+                      : liveTimerDomain === "knitting"
+                      ? "Tejido"
+                      : liveTimerDomain === "study"
+                      ? "Estudio"
+                      : liveTimerDomain === "work"
+                      ? "Trabajo"
+                      : liveTimerDomain === "gaming"
+                      ? "Gaming"
+                      : "Deportes"}
+                  </span>
+                </div>
+                <div className="font-mono text-2xl font-black tracking-tight text-white">
+                  {formatStopwatch(liveTimerSeconds)}
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    ({Math.max(1, Math.round(liveTimerSeconds / 60))} min acumulados)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {liveTimerPaused ? (
+                <button
+                  type="button"
+                  onClick={resumeLiveTimer}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
+                >
+                  <Play className="h-3.5 w-3.5" /> Reanudar
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={pauseLiveTimer}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
+                >
+                  <Pause className="h-3.5 w-3.5" /> Pausar
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => stopAndLogLiveTimer(liveTimerDomain)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
+              >
+                <Square className="h-3.5 w-3.5" /> Finalizar y Registrar (
+                {Math.max(1, Math.round(liveTimerSeconds / 60))} min)
+              </button>
+
+              <button
+                type="button"
+                onClick={resetLiveTimer}
+                className="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-400 hover:text-rose-300 hover:bg-slate-700 cursor-pointer"
+                title="Descartar cronómetro sin registrar"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Descartar
+              </button>
+
+              {activeSkillTab !== liveTimerDomain && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSkillTab(liveTimerDomain)}
+                  className="rounded-xl border border-amber-500/40 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-950/40 cursor-pointer"
+                >
+                  Ir a Sala ➜
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* 1. APARTADO: CUBOS DE RUBIK (WCA SCRAMBLE + CRONÓMETRO + EXTRACTOR DE ESPECIFICACIONES + ARSENAL WCA) */}
         {activeSkillTab === "rubik" && (() => {
           const activeRubikStats =
@@ -1790,6 +2114,60 @@ export function RPGLifeEngineDashboard({
 
           return (
             <div className="space-y-6">
+              {/* SELECTOR DE SUB-MODOS: PRÁCTICA WCA VS. ESTUDIO & NUEVO CUBO VS. CUADERNO DE NOTAS */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-500/30 bg-slate-950 p-2.5 shadow-lg">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRubikSubMode("practice")}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                      rubikSubMode === "practice"
+                        ? "bg-cyan-600 text-white shadow-lg shadow-cyan-600/30"
+                        : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Zap className="h-4 w-4" />
+                    ⚡ Modo 1: Práctica WCA (Speedcubing)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRubikSubMode("study")}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                      rubikSubMode === "study"
+                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
+                        : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <GraduationCap className="h-4 w-4" />
+                    🎓 Modo 2: Estudio & Nuevo Cubo
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRubikSubMode("notes")}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                      rubikSubMode === "notes"
+                        ? "bg-amber-600 text-white shadow-lg shadow-amber-600/30"
+                        : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <BookMarked className="h-4 w-4" />
+                    📓 Cuaderno de Notas & Mantenimiento
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-400">
+                    Cubo activo:{" "}
+                    <strong className="text-cyan-300">
+                      {activeHardwareCube?.model_name || "3x3"}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              {rubikSubMode === "practice" && (
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
                 <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/80 p-5 lg:col-span-7">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2073,6 +2451,356 @@ export function RPGLifeEngineDashboard({
                   </div>
                 </div>
               </div>
+              )}
+
+              {/* =================================================================
+                  MODO 2: ESTUDIO & APRENDIZAJE DE NUEVO CUBO / ALGORITMOS
+                 ================================================================= */}
+              {rubikSubMode === "study" && (
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+                  <div className="space-y-4 rounded-xl border border-indigo-500/40 bg-slate-950/80 p-5 lg:col-span-7">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <GraduationCap className="h-5 w-5 text-indigo-400" />
+                        <div>
+                          <h4 className="text-base font-bold text-white">
+                            Estudio & Dominio de Nuevo Cubo / Algoritmos
+                          </h4>
+                          <p className="text-xs text-slate-400">
+                            Aprende algoritmos, paridades o reconocimiento sin la presión de un solve cronometrado WCA.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-indigo-500/20 px-2.5 py-0.5 font-mono text-[11px] font-bold text-indigo-300">
+                        +120 XP • +3.500 GP/bloque
+                      </span>
+                    </div>
+
+                    {/* CRONÓMETRO EN VIVO PARA ESTUDIO */}
+                    <div className="flex flex-col items-center justify-center rounded-2xl border border-indigo-500/30 bg-gradient-to-b from-indigo-950/30 to-slate-950 p-6 text-center">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">
+                        {liveTimerDomain === "rubik" && !liveTimerPaused
+                          ? "● Grabando sesión de estudio en vivo"
+                          : liveTimerDomain === "rubik" && liveTimerPaused
+                          ? "⏸ Sesión en Pausa"
+                          : "Cronómetro de Estudio en Vivo"}
+                      </span>
+                      <span className="mt-2 font-mono text-5xl font-black tracking-tight text-indigo-400 sm:text-6xl">
+                        {liveTimerDomain === "rubik"
+                          ? formatStopwatch(liveTimerSeconds)
+                          : "00:00"}
+                      </span>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {liveTimerDomain === "rubik"
+                          ? `${Math.max(1, Math.round(liveTimerSeconds / 60))} minutos acumulados para reclamar`
+                          : "Presiona iniciar al comenzar a estudiar y finalizar al terminar."}
+                      </p>
+
+                      <div className="mt-4 flex flex-wrap gap-2.5 justify-center">
+                        {liveTimerDomain !== "rubik" ? (
+                          <button
+                            type="button"
+                            onClick={() => startLiveTimer("rubik")}
+                            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 cursor-pointer"
+                          >
+                            <Play className="h-4 w-4" /> Iniciar Sesión de Estudio
+                          </button>
+                        ) : (
+                          <>
+                            {liveTimerPaused ? (
+                              <button
+                                type="button"
+                                onClick={resumeLiveTimer}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
+                              >
+                                <Play className="h-4 w-4" /> Reanudar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={pauseLiveTimer}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
+                              >
+                                <Pause className="h-4 w-4" /> Pausar
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              disabled={submitting}
+                              onClick={() => stopAndLogLiveTimer("rubik")}
+                              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-2 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                            >
+                              <Square className="h-4 w-4" /> Finalizar y Reclamar GP
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={resetLiveTimer}
+                              className="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" /> Reset
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* SELECTORES DE ESTUDIO */}
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-slate-400">
+                          Enfoque del Estudio:
+                        </label>
+                        <select
+                          value={rubikStudyFocus}
+                          onChange={(e) => setRubikStudyFocus(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
+                        >
+                          <option value="F2L & Lookahead Fluido">F2L & Lookahead Fluido (Sin pausas)</option>
+                          <option value="Algoritmos OLL">Algoritmos OLL (Orientación Última Capa)</option>
+                          <option value="Algoritmos PLL">Algoritmos PLL (Permutación Última Capa)</option>
+                          <option value="Paridades 4x4 / 5x5">Paridades de Cubos Grandes (OLL/PLL parity)</option>
+                          <option value="Fingertricks & Ergonomía">Fingertricks & Ergonomía de Giro</option>
+                          <option value="Memorización Blindfolded (3x3 BLD)">Memorización Blindfolded (3x3 BLD)</option>
+                          <option value="Nuevo Cubo (Reconocimiento de Colores)">Nuevo Cubo (Reconocimiento de Esquemas)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-slate-400">
+                          Algoritmo, Notas o Caso Practicado:
+                        </label>
+                        <input
+                          type="text"
+                          value={rubikStudyNotes}
+                          onChange={(e) => setRubikStudyNotes(e.target.value)}
+                          placeholder="Ej: Reconocimiento de G-perms en 2 lados, paridad de aristas 4x4..."
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-slate-400">
+                          Duración manual (si no usaste el cronómetro en vivo):
+                        </label>
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="5"
+                            value={rubikStudyMinutes}
+                            onChange={(e) => setRubikStudyMinutes(Math.max(5, Number(e.target.value)))}
+                            className="w-28 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
+                          />
+                          <button
+                            type="button"
+                            disabled={submitting}
+                            onClick={() =>
+                              submitSkillSession({
+                                domain: "rubik",
+                                cube_type: cubeType,
+                                cube_id: activeHardwareCube?.id,
+                                cube_model: activeHardwareCube?.model_name,
+                                algorithm_learned: `${rubikStudyFocus}: ${rubikStudyNotes || "Estudio de nuevo cubo y algoritmos"}`,
+                                duration_minutes: rubikStudyMinutes,
+                                title: `Estudio de Cubo (${cubeType}) — ${rubikStudyFocus}`,
+                              })
+                            }
+                            className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50 cursor-pointer"
+                          >
+                            Registrar {rubikStudyMinutes} min de Estudio Manualmente
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/80 p-5 lg:col-span-5">
+                    <h4 className="text-sm font-bold text-white">
+                      Guía Rápida de Estudio por Categoría ({cubeType})
+                    </h4>
+                    <div className="space-y-2.5 text-xs text-slate-300">
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                        <strong className="text-indigo-300">💡 3x3x3 WCA:</strong>
+                        <p className="mt-1 text-slate-400">
+                          Prioriza Cross en blanco/amarillo, F2L sin rotaciones de cubo (aprender inserciones traseras) y 2-Look OLL/PLL antes de aprender los 57 OLLs completos.
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                        <strong className="text-cyan-300">🧊 4x4x4 (Yau Method):</strong>
+                        <p className="mt-1 text-slate-400">
+                          Centros blanco y amarillo, 3 aristas de la cruz, centros restantes y emparejamiento 3-2-3. Memoriza el algoritmo de paridad OLL: <code>Rw U2 x Rw U2 Rw U2 Rw&apos; U2 Lw U2 Rw&apos; U2 Rw U2 Rw&apos; U2 Rw&apos;</code>.
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                        <strong className="text-amber-300">✨ Megaminx & Pyraminx:</strong>
+                        <p className="mt-1 text-slate-400">
+                          Megaminx: Método Balint o S2L. Pyraminx: V-First o L4E (Last 4 Edges) con reconocimiento de bloques.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* =================================================================
+                  MODO 3: CUADERNO DE NOTAS DEL CUBO (ARSENAL HARDWARE & SETUP LOG)
+                 ================================================================= */}
+              {rubikSubMode === "notes" && (
+                <div className="space-y-5 rounded-2xl border border-amber-500/40 bg-slate-950/90 p-5 shadow-xl">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <BookMarked className="h-5 w-5 text-amber-400" />
+                        <h4 className="text-base font-bold text-white">
+                          Cuaderno de Notas del Cubo: Setup, Mantenimiento & Necesidades
+                        </h4>
+                      </div>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        Anota las tensiones exactas, lubricantes utilizados, necesidades de limpieza o repuestos y los casos que te cuestan dominar con este cubo específico.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">Seleccionar Cubo:</span>
+                      <select
+                        value={activeHardwareCube?.id || ""}
+                        onChange={(e) => {
+                          const chosen = cubesCatalog.find((c) => c.id === e.target.value);
+                          if (chosen) {
+                            setSelectedCubeId(chosen.id);
+                            setCubeType(chosen.cube_type);
+                          }
+                        }}
+                        className="rounded-lg border border-amber-500/40 bg-slate-900 px-3 py-1.5 text-xs font-bold text-amber-300"
+                      >
+                        {cubesCatalog.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            🧊 {c.model_name} ({c.cube_type})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {cubeNotesSuccessMsg && (
+                    <div className="flex items-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-950/30 p-3 text-xs font-bold text-emerald-300">
+                      <Check className="h-4 w-4" />
+                      {cubeNotesSuccessMsg}
+                    </div>
+                  )}
+
+                  {/* FICHA RESUMEN DEL CUBO SELECCIONADO */}
+                  {activeHardwareCube && (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400">Modelo & Marca:</span>
+                        <p className="font-bold text-white">{activeHardwareCube.model_name}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400">Sistema Magnético:</span>
+                        <p className="font-semibold text-cyan-300">{activeHardwareCube.magnetic_system || "MagLev / Imanes"}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400">Acabado Exterior:</span>
+                        <p className="font-semibold text-emerald-300">{activeHardwareCube.surface_finish || "UV Coated"}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400">Peso & Medida:</span>
+                        <p className="font-mono text-amber-300">{activeHardwareCube.weight_grams || 71}g • {activeHardwareCube.size_mm || 55}mm</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* FORMULARIO EDITABLE DE NOTAS DEL CUBO */}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Settings2 className="h-3.5 w-3.5 text-cyan-400" />
+                        ⚙️ Tensiones, Compresión de Resortes & Imanes
+                      </label>
+                      <input
+                        type="text"
+                        value={cubeTensionNotes}
+                        onChange={(e) => setCubeTensionNotes(e.target.value)}
+                        placeholder="Ej: Nivel 3 de compresión, distancia de centro 2, imanes en fuerza media..."
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Zap className="h-3.5 w-3.5 text-blue-400" />
+                        💧 Lubricación Actual & Historial de Lubes
+                      </label>
+                      <input
+                        type="text"
+                        value={cubeLubeNotes}
+                        onChange={(e) => setCubeLubeNotes(e.target.value)}
+                        placeholder="Ej: Pistas con Lubest Pro / Núcleo con Weight 5 para frenado suave..."
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+                        🛠️ Necesidades, Mantenimiento & Pendientes del Cubo
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={cubeMaintenanceNeeds}
+                        onChange={(e) => setCubeMaintenanceNeeds(e.target.value)}
+                        placeholder="Ej: Realizar limpieza profunda de pistas con cepillo; comprar lubricante rápido; cambiar imán de esquina flojo; comprar funda protectora..."
+                        className="w-full rounded-lg border border-rose-500/30 bg-slate-900 px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                        <Trophy className="h-3.5 w-3.5 text-amber-400" />
+                        🎯 Algoritmos y Casos por Dominar con este Cubo
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={cubeAlgsToMaster}
+                        onChange={(e) => setCubeAlgsToMaster(e.target.value)}
+                        placeholder="Ej: G-perm d tarda 2.6s (mejorar agarre), Ja-perm sin regrip, Paridad OLL 4x4..."
+                        className="w-full rounded-lg border border-amber-500/30 bg-slate-900 px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-emerald-400" />
+                      📝 Bitácora Libre, Sensaciones de Giro & Rendimiento
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={cubeGeneralNotes}
+                      onChange={(e) => setCubeGeneralNotes(e.target.value)}
+                      placeholder="Ej: Sensación súper mantecosa tras el break-in de 200 solves. Muy estable en manos frías. Corte de esquinas a 55 grados sin bloqueo..."
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <span className="text-xs text-slate-400">
+                      Las notas se sincronizan automáticamente en tu navegador y en la base de datos de tu perfil.
+                    </span>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={handleSaveCubeNotebook}
+                      className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-5 py-2.5 text-xs font-extrabold text-white shadow hover:bg-amber-500 disabled:opacity-50 cursor-pointer"
+                    >
+                      <Check className="h-4 w-4" />
+                      💾 Guardar en el Cuaderno de Notas del Cubo
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* =================================================================
                   EXTRACTOR DE ESPECIFICACIONES DEL CUBO (IA) & ARSENAL HARDWARE WCA
@@ -2903,6 +3631,74 @@ export function RPGLifeEngineDashboard({
                     <h3 className="text-base font-bold text-white">
                       Registrar Sesión de Lectura
                     </h3>
+                  </div>
+
+                  {/* CRONÓMETRO EN VIVO DE LECTURA (INICIAR / PAUSAR / FINALIZAR) */}
+                  <div className="rounded-xl border border-emerald-500/40 bg-gradient-to-b from-emerald-950/40 to-slate-900/90 p-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-emerald-400" />
+                        <span className="text-xs font-bold text-emerald-300">
+                          {liveTimerDomain === "reading" && !liveTimerPaused
+                            ? "● Leyendo en vivo..."
+                            : liveTimerDomain === "reading" && liveTimerPaused
+                            ? "⏸ Lectura pausada"
+                            : "Lectura con Cronómetro en Vivo"}
+                        </span>
+                      </div>
+                      <span className="font-mono text-xl font-black tracking-tight text-white">
+                        {liveTimerDomain === "reading"
+                          ? formatStopwatch(liveTimerSeconds)
+                          : "00:00"}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {liveTimerDomain !== "reading" ? (
+                        <button
+                          type="button"
+                          onClick={() => startLiveTimer("reading")}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-500 cursor-pointer"
+                        >
+                          <Play className="h-3.5 w-3.5" /> ▶ Iniciar Lectura
+                        </button>
+                      ) : (
+                        <>
+                          {liveTimerPaused ? (
+                            <button
+                              type="button"
+                              onClick={resumeLiveTimer}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
+                            >
+                              <Play className="h-3.5 w-3.5" /> Reanudar
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={pauseLiveTimer}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
+                            >
+                              <Pause className="h-3.5 w-3.5" /> Pausar
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => stopAndLogLiveTimer("reading")}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-3.5 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                          >
+                            <Square className="h-3.5 w-3.5" /> ⏹ Finalizar y Registrar ({Math.max(1, Math.round(liveTimerSeconds / 60))} min)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={resetLiveTimer}
+                            className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1.5 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                          >
+                            <RotateCcw className="h-3 w-3" /> Reset
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs text-slate-400">
@@ -3820,6 +4616,74 @@ export function RPGLifeEngineDashboard({
                   Registrar Sesión de Tejido
                 </h3>
               </div>
+
+              {/* CRONÓMETRO EN VIVO DE TEJIDO */}
+              <div className="rounded-xl border border-amber-500/40 bg-gradient-to-b from-amber-950/40 to-slate-900/90 p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-amber-400" />
+                    <span className="text-xs font-bold text-amber-300">
+                      {liveTimerDomain === "knitting" && !liveTimerPaused
+                        ? "● Tejiendo en vivo..."
+                        : liveTimerDomain === "knitting" && liveTimerPaused
+                        ? "⏸ Tejido en Pausa"
+                        : "Tejido con Cronómetro en Vivo"}
+                    </span>
+                  </div>
+                  <span className="font-mono text-xl font-black tracking-tight text-white">
+                    {liveTimerDomain === "knitting"
+                      ? formatStopwatch(liveTimerSeconds)
+                      : "00:00"}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {liveTimerDomain !== "knitting" ? (
+                    <button
+                      type="button"
+                      onClick={() => startLiveTimer("knitting")}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-amber-500 cursor-pointer"
+                    >
+                      <Play className="h-3.5 w-3.5" /> ▶ Iniciar Tejido
+                    </button>
+                  ) : (
+                    <>
+                      {liveTimerPaused ? (
+                        <button
+                          type="button"
+                          onClick={resumeLiveTimer}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
+                        >
+                          <Play className="h-3.5 w-3.5" /> Reanudar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={pauseLiveTimer}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
+                        >
+                          <Pause className="h-3.5 w-3.5" /> Pausar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => stopAndLogLiveTimer("knitting")}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-600 px-3.5 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Square className="h-3.5 w-3.5" /> ⏹ Finalizar ({Math.max(1, Math.round(liveTimerSeconds / 60))} min)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetLiveTimer}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1.5 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Reset
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
               <div>
                 <label className="text-xs text-slate-400">
                   Proyecto de Tejido:
@@ -3966,6 +4830,74 @@ export function RPGLifeEngineDashboard({
                   Registrar Sesión de Estudio
                 </h3>
               </div>
+
+              {/* CRONÓMETRO EN VIVO DE ESTUDIO */}
+              <div className="rounded-xl border border-indigo-500/40 bg-gradient-to-b from-indigo-950/40 to-slate-900/90 p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-indigo-400" />
+                    <span className="text-xs font-bold text-indigo-300">
+                      {liveTimerDomain === "study" && !liveTimerPaused
+                        ? "● Estudiando en vivo..."
+                        : liveTimerDomain === "study" && liveTimerPaused
+                        ? "⏸ Estudio en Pausa"
+                        : "Estudio con Cronómetro en Vivo"}
+                    </span>
+                  </div>
+                  <span className="font-mono text-xl font-black tracking-tight text-white">
+                    {liveTimerDomain === "study"
+                      ? formatStopwatch(liveTimerSeconds)
+                      : "00:00"}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {liveTimerDomain !== "study" ? (
+                    <button
+                      type="button"
+                      onClick={() => startLiveTimer("study")}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-indigo-500 cursor-pointer"
+                    >
+                      <Play className="h-3.5 w-3.5" /> ▶ Iniciar Estudio
+                    </button>
+                  ) : (
+                    <>
+                      {liveTimerPaused ? (
+                        <button
+                          type="button"
+                          onClick={resumeLiveTimer}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
+                        >
+                          <Play className="h-3.5 w-3.5" /> Reanudar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={pauseLiveTimer}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
+                        >
+                          <Pause className="h-3.5 w-3.5" /> Pausar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => stopAndLogLiveTimer("study")}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 px-3.5 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Square className="h-3.5 w-3.5" /> ⏹ Finalizar y Registrar ({Math.max(1, Math.round(liveTimerSeconds / 60))} min)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetLiveTimer}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1.5 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Reset
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
               <div>
                 <label className="text-xs text-slate-400">
                   Materia / Tema de Estudio:
@@ -4086,6 +5018,74 @@ export function RPGLifeEngineDashboard({
                 <h3 className="text-base font-bold text-white">
                   Registrar Sesión de Trabajo (Deep Work)
                 </h3>
+              </div>
+
+              {/* CRONÓMETRO EN VIVO DE TRABAJO */}
+              <div className="rounded-xl border border-emerald-500/40 bg-gradient-to-b from-emerald-950/40 to-slate-900/90 p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-emerald-300">
+                      {liveTimerDomain === "work" && !liveTimerPaused
+                        ? "● Trabajando en Deep Work en vivo..."
+                        : liveTimerDomain === "work" && liveTimerPaused
+                        ? "⏸ Trabajo en Pausa"
+                        : "Deep Work con Cronómetro en Vivo"}
+                    </span>
+                  </div>
+                  <span className="font-mono text-xl font-black tracking-tight text-white">
+                    {liveTimerDomain === "work"
+                      ? formatStopwatch(liveTimerSeconds)
+                      : "00:00"}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {liveTimerDomain !== "work" ? (
+                    <button
+                      type="button"
+                      onClick={() => startLiveTimer("work")}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-500 cursor-pointer"
+                    >
+                      <Play className="h-3.5 w-3.5" /> ▶ Iniciar Bloque de Trabajo
+                    </button>
+                  ) : (
+                    <>
+                      {liveTimerPaused ? (
+                        <button
+                          type="button"
+                          onClick={resumeLiveTimer}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
+                        >
+                          <Play className="h-3.5 w-3.5" /> Reanudar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={pauseLiveTimer}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
+                        >
+                          <Pause className="h-3.5 w-3.5" /> Pausar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => stopAndLogLiveTimer("work")}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-3.5 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Square className="h-3.5 w-3.5" /> ⏹ Finalizar y Forjar GP ({Math.max(1, Math.round(liveTimerSeconds / 60))} min)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetLiveTimer}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1.5 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Reset
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="text-xs text-slate-400">
@@ -4221,6 +5221,74 @@ export function RPGLifeEngineDashboard({
                         ?.label || "Habilidad Personalizada"
                     }`}
               </h3>
+
+              {/* CRONÓMETRO EN VIVO DE GAMING / DEPORTES */}
+              <div className="rounded-xl border border-slate-700 bg-gradient-to-b from-slate-900/90 to-slate-950 p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-slate-200">
+                      {liveTimerDomain === activeSkillTab && !liveTimerPaused
+                        ? "● Sesión activa en vivo..."
+                        : liveTimerDomain === activeSkillTab && liveTimerPaused
+                        ? "⏸ Sesión pausada"
+                        : "Cronómetro de Sesión en Vivo"}
+                    </span>
+                  </div>
+                  <span className="font-mono text-xl font-black tracking-tight text-white">
+                    {liveTimerDomain === activeSkillTab
+                      ? formatStopwatch(liveTimerSeconds)
+                      : "00:00"}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {liveTimerDomain !== activeSkillTab ? (
+                    <button
+                      type="button"
+                      onClick={() => startLiveTimer(activeSkillTab)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-500 cursor-pointer"
+                    >
+                      <Play className="h-3.5 w-3.5" /> ▶ Iniciar Cronómetro en Vivo
+                    </button>
+                  ) : (
+                    <>
+                      {liveTimerPaused ? (
+                        <button
+                          type="button"
+                          onClick={resumeLiveTimer}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
+                        >
+                          <Play className="h-3.5 w-3.5" /> Reanudar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={pauseLiveTimer}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
+                        >
+                          <Pause className="h-3.5 w-3.5" /> Pausar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => stopAndLogLiveTimer(activeSkillTab)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-3.5 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Square className="h-3.5 w-3.5" /> ⏹ Finalizar y Registrar ({Math.max(1, Math.round(liveTimerSeconds / 60))} min)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetLiveTimer}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1.5 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Reset
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
               <div>
                 <label className="text-xs text-slate-400">
                   Logro, Partida, Entrenamiento o Avance de la Sesión:

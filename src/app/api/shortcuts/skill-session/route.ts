@@ -25,6 +25,7 @@ export interface SkillSessionEndpointRequest {
     | "limit_break"
     | "extract_cube_specs"
     | "add_cube"
+    | "update_cube_notes"
     | "extract_book_specs"
     | "add_book"
     | "update_book_gallery"
@@ -66,6 +67,8 @@ export interface SkillSessionEndpointRequest {
   scramble?: string;
   solves_count?: number;
   algorithm_learned?: string;
+  cube_custom_notes?: string;
+  cube_maintenance_needs?: string;
   // Reading & Book Specs + Gallery & Purchase Tracking
   book_id?: string;
   pages_read?: number;
@@ -225,6 +228,45 @@ export async function POST(req: Request) {
         },
         { status: 201 }
       );
+    }
+
+    if (body.action === "update_cube_notes") {
+      const targetId = body.cube_id || store.rubikCubes[0]?.id;
+      const updated = targetId
+        ? store.updateRubikCubeNotes({
+            cube_id: targetId,
+            custom_notes: body.cube_custom_notes ?? body.notes,
+            maintenance_needs: body.cube_maintenance_needs,
+            recommended_setup: body.cube_recommended_setup,
+          })
+        : null;
+
+      if (isSupabaseConfigured && db && updated) {
+        try {
+          await db
+            .from("rubik_cubes")
+            .update({
+              custom_notes: updated.custom_notes,
+              maintenance_needs: updated.maintenance_needs,
+              recommended_setup: updated.recommended_setup,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", updated.id)
+            .eq("user_id", userId);
+        } catch {
+          // Si la columna aún no está en Supabase, se mantiene en memoria y sync local
+        }
+      }
+
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "update_cube_notes",
+        cube: updated,
+        rubik_cubes: store.rubikCubes,
+        shortcut_tts_message: `Notas del cubo actualizadas con éxito.`,
+      });
     }
 
     if (body.action === "extract_book_specs") {
