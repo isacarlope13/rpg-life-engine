@@ -59,7 +59,9 @@ export default function LoginPage() {
         <div>
           <h1 className="text-xl font-bold text-white">RPG Life-Engine</h1>
           <p className="text-sm text-slate-400">
-            {mode === "login" ? "Inicia sesión para continuar" : "Crea tu cuenta"}
+            {mode === "login"
+              ? "Inicia sesión para continuar"
+              : "Crea tu cuenta (activación inmediata sin esperar correo)"}
           </p>
         </div>
 
@@ -96,68 +98,53 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="w-full rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 cursor-pointer"
         >
-          {submitting ? "Procesando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
+          {submitting
+            ? "Procesando..."
+            : mode === "login"
+            ? "Entrar"
+            : "Crear cuenta y pasar a Onboarding"}
         </button>
 
-        {process.env.NODE_ENV !== "production" && (
-          <div className="space-y-2">
+        {/* Tarjeta de Credenciales Maestras Pre-Calibradas */}
+        <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 p-3 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-amber-300">
+              🔑 Cuenta Maestra Pre-Calibrada
+            </span>
             <button
               type="button"
-              disabled={submitting}
-              onClick={async () => {
+              onClick={() => {
+                setMode("login");
+                setEmail("player1@rpg-life-engine.local");
+                setPassword("RpgLifeEngine2026!");
                 setError(null);
-                setSubmitting(true);
-                try {
-                  const res = await fetch("/api/auth/demo", { method: "POST" });
-                  if (!res.ok) {
-                    setError("No se pudo iniciar el modo demo.");
-                    return;
-                  }
-                  window.location.href = "/";
-                } finally {
-                  setSubmitting(false);
-                }
+                setInfo(null);
               }}
-              className="w-full rounded-lg border border-amber-500/40 py-2 text-sm font-semibold text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"
+              className="rounded bg-amber-500/20 px-2 py-0.5 text-[11px] font-bold text-amber-200 hover:bg-amber-500/30 cursor-pointer"
             >
-              🎮 Entrar en modo demo (Dashboard directo)
-            </button>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={async () => {
-                setError(null);
-                setSubmitting(true);
-                try {
-                  const res = await fetch("/api/auth/demo", { method: "POST" });
-                  if (!res.ok) {
-                    setError("No se pudo iniciar el modo demo.");
-                    return;
-                  }
-                  window.location.href = "/onboarding";
-                } finally {
-                  setSubmitting(false);
-                }
-              }}
-              className="w-full rounded-lg border border-emerald-500/40 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
-            >
-              ✨ Probar Onboarding de Usuario Nuevo (5 pasos)
+              Autocompletar
             </button>
           </div>
-        )}
+          <p className="mt-1 font-mono text-[11px] text-slate-300">
+            Correo: <span className="text-white">player1@rpg-life-engine.local</span>
+            <br />
+            Clave: <span className="text-white">RpgLifeEngine2026!</span>
+          </p>
+        </div>
 
         <button
           type="button"
           onClick={() => {
             setMode(mode === "login" ? "signup" : "login");
             setError(null);
+            setInfo(null);
           }}
-          className="w-full text-center text-xs text-slate-400 hover:text-slate-200"
+          className="w-full text-center text-xs text-slate-400 hover:text-emerald-400 cursor-pointer"
         >
           {mode === "login"
-            ? "¿No tienes cuenta? Regístrate"
+            ? "¿No tienes cuenta? Regístrate (sin confirmación por correo)"
             : "¿Ya tienes cuenta? Inicia sesión"}
         </button>
       </form>
