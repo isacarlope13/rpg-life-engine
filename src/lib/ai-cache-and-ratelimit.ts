@@ -13,7 +13,7 @@
  *    usuario, conmutando de forma transparente al motor determinista local.
  */
 
-import { isSupabaseConfigured, supabaseAdmin } from "./supabase";
+import { isSupabaseConfigured, supabaseAdmin } from "./supabase.ts";
 
 const memoryCatalogCache = new Map<string, unknown>();
 

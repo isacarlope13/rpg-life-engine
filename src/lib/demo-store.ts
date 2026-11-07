@@ -3,6 +3,7 @@ import type {
   BookFormat,
   BossTTKProjection,
   CurrencyCode,
+  DailyScheduleConfig,
   DebtStrategy,
   DebtStrategyComparison,
   ExpenseCategory,
@@ -153,7 +154,23 @@ export class RPGEngineMemoryStore {
     { domain: "knitting", label: "Sesiones de Tejido", weekly_target_minutes: 90, preferred_session_time: "tarde" },
     { domain: "study", label: "Sesiones de Estudio", weekly_target_minutes: 180, preferred_session_time: "manana" },
     { domain: "work", label: "Sesiones de Trabajo", weekly_target_minutes: 240, preferred_session_time: "manana" },
+    { domain: "gaming", label: "Videojuegos / eSports", weekly_target_minutes: 120, preferred_session_time: "noche" },
+    { domain: "sports", label: "Entrenamiento & Deporte", weekly_target_minutes: 180, preferred_session_time: "noche" },
   ];
+
+  dailySchedule: DailyScheduleConfig = {
+    wake_up_time: "06:00",
+    sleep_time: "22:30",
+    weekend_wake_up_time: "08:00",
+    weekend_sleep_time: "23:30",
+    work_days_pattern: "lun_vie",
+    work_start_hour: "08:00",
+    work_end_hour: "17:30",
+    commute_and_meals_minutes: 45,
+    free_slot_preference: "mixed",
+    weekday_free_minutes: 55,
+    weekend_free_minutes: 90,
+  };
 
   vault_cap_gp = 400000;
   vault_remaining_gp = 400000;
@@ -780,6 +797,8 @@ export class RPGEngineMemoryStore {
       { domain: "knitting", label: "Sesiones de Tejido" },
       { domain: "study", label: "Sesiones de Estudio" },
       { domain: "work", label: "Sesiones de Trabajo" },
+      { domain: "gaming", label: "Videojuegos / eSports" },
+      { domain: "sports", label: "Entrenamiento & Deporte" },
     ];
     const domains =
       this.userSkills && this.userSkills.length > 0
@@ -2132,6 +2151,13 @@ export class RPGEngineMemoryStore {
         preferred_session_time: s.preferred_session_time || "noche",
         custom_description: s.custom_description,
       }));
+    }
+
+    if (payload.daily_schedule) {
+      this.dailySchedule = {
+        ...this.dailySchedule,
+        ...payload.daily_schedule,
+      };
     }
 
     if (Array.isArray(payload.quests) && payload.quests.length > 0) {

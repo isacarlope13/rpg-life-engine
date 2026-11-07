@@ -5,12 +5,12 @@ import {
   sanitizeCubeSpecs,
   sanitizeParsedExpense,
   sanitizeReceiptSplit,
-} from "./ai-skills-prompts";
+} from "./ai-skills-prompts.ts";
 import {
   checkAiQuotaAllowance,
   getCachedCatalogSpecs,
   setCachedCatalogSpecs,
-} from "./ai-cache-and-ratelimit";
+} from "./ai-cache-and-ratelimit.ts";
 import type {
   BookComplexity,
   ExtractedBookSpecsAI,

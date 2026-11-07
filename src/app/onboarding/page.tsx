@@ -34,6 +34,7 @@ import type {
   SkillDomain,
   UserSkillConfig,
 } from "@/types/rpg";
+import { computeBioCalendarPlan } from "@/lib/calendar-planner";
 
 const INITIAL_CLASSES: ProfessionClassOption[] = [
   {
@@ -372,15 +373,20 @@ export default function OnboardingWizardPage() {
     }))
   );
 
-  // Configuración del Bloque Inamovible (Trabajo / Universidad = Motor del Sistema)
-  const [workDaysPattern, setWorkDaysPattern] = useState<"lun_vie" | "lun_sab">(
-    "lun_vie"
-  );
+  // Configuración Biológica del Día (Hora de Levantarse -> Bloque Inamovible -> Hora de Acostarse)
+  const [wakeUpTime, setWakeUpTime] = useState("06:00");
+  const [sleepTime, setSleepTime] = useState("22:30");
+  const [weekendWakeUpTime, setWeekendWakeUpTime] = useState("08:00");
+  const [weekendSleepTime, setWeekendSleepTime] = useState("23:30");
+  const [workDaysPattern, setWorkDaysPattern] = useState<
+    "lun_vie" | "lun_sab" | "flexible"
+  >("lun_vie");
   const [workStartHour, setWorkStartHour] = useState("08:00");
   const [workEndHour, setWorkEndHour] = useState("17:30");
+  const [commuteAndMealsMinutes, setCommuteAndMealsMinutes] = useState(45);
   const [freeSlotPreference, setFreeSlotPreference] = useState<
     "after_work" | "before_work" | "mixed"
-  >("after_work");
+  >("mixed");
   const [weekdayFreeMinutes, setWeekdayFreeMinutes] = useState(50);
   const [weekendFreeMinutes, setWeekendFreeMinutes] = useState(90);
 
@@ -760,6 +766,19 @@ export default function OnboardingWizardPage() {
         ),
         main_goal: mainGoal.trim() || undefined,
         goal_deadline: goalDeadline || undefined,
+        daily_schedule: {
+          wake_up_time: wakeUpTime,
+          sleep_time: sleepTime,
+          weekend_wake_up_time: weekendWakeUpTime,
+          weekend_sleep_time: weekendSleepTime,
+          work_days_pattern: workDaysPattern,
+          work_start_hour: workStartHour,
+          work_end_hour: workEndHour,
+          commute_and_meals_minutes: commuteAndMealsMinutes,
+          free_slot_preference: freeSlotPreference,
+          weekday_free_minutes: weekdayFreeMinutes,
+          weekend_free_minutes: weekendFreeMinutes,
+        },
       };
 
       const res = await fetch("/api/onboarding", {
@@ -783,134 +802,40 @@ export default function OnboardingWizardPage() {
     }
   };
 
-  // Generador automático de Calendario Semanal y Mensual alrededor del Trabajo Inamovible
+  // Generador automático de Calendario Biológico Semanal y Mensual (Hora de Levantarse a Hora de Acostarse)
   const calendarPlan = useMemo(() => {
-    const dayNames = [
-      { key: "Lun", label: "Lunes", isWeekend: false, isWorkDay: true },
-      { key: "Mar", label: "Martes", isWeekend: false, isWorkDay: true },
-      { key: "Mié", label: "Miércoles", isWeekend: false, isWorkDay: true },
-      { key: "Jue", label: "Jueves", isWeekend: false, isWorkDay: true },
-      { key: "Vie", label: "Viernes", isWeekend: false, isWorkDay: true },
-      {
-        key: "Sáb",
-        label: "Sábado",
-        isWeekend: true,
-        isWorkDay: workDaysPattern === "lun_sab",
+    return computeBioCalendarPlan({
+      config: {
+        wake_up_time: wakeUpTime,
+        sleep_time: sleepTime,
+        weekend_wake_up_time: weekendWakeUpTime,
+        weekend_sleep_time: weekendSleepTime,
+        work_days_pattern: workDaysPattern,
+        work_start_hour: workStartHour,
+        work_end_hour: workEndHour,
+        commute_and_meals_minutes: commuteAndMealsMinutes,
+        free_slot_preference: freeSlotPreference,
+        weekday_free_minutes: weekdayFreeMinutes,
+        weekend_free_minutes: weekendFreeMinutes,
       },
-      { key: "Dom", label: "Domingo", isWeekend: true, isWorkDay: false },
-    ];
-
-    const nonWorkSkills = skills.filter((s) => s.domain !== "work");
-    const allRotatable: Array<{
-      domain: SkillDomain;
-      label: string;
-    }> = [
-      ...(nonWorkSkills.length > 0 ? nonWorkSkills : skills).map((s) => ({
-        domain: s.domain,
-        label: s.label,
-      })),
-      ...(customSkillName.trim()
-        ? [
-            {
-              domain: "general" as SkillDomain,
-              label: customSkillName.trim(),
-            },
-          ]
-        : []),
-    ];
-
-    const weeklyGpTarget = Math.max(100, Math.round(vaultCap / 4));
-    const gpPerDay = Math.max(25, Math.round(weeklyGpTarget / 7));
-
-    const weeklyMinutesByDomain: Record<string, number> = {};
-    const preferredTimeByDomain: Record<string, PreferredSessionTime> = {};
-
-    // El bloque de Trabajo (motor del sistema) acumula sus minutos en los días laborales
-    const workDaysCount = workDaysPattern === "lun_sab" ? 6 : 5;
-    weeklyMinutesByDomain["work"] = workDaysCount * 60;
-    preferredTimeByDomain["work"] = "manana";
-
-    let cursor = 0;
-    const days = dayNames.map((d, idx) => {
-      const totalDayMins = d.isWorkDay ? weekdayFreeMinutes : weekendFreeMinutes;
-      const slotLabel = d.isWorkDay
-        ? freeSlotPreference === "before_work"
-          ? `06:15 – 07:15 (Antes de ${workStartHour})`
-          : freeSlotPreference === "mixed" && idx % 2 === 0
-          ? `06:30 (Mañana) / Después de ${workEndHour}`
-          : `${workEndHour} +1h (Noche libre)`
-        : "10:00 – 12:00 (Mañana / Tarde Libre)";
-
-      const prefTime: PreferredSessionTime = !d.isWorkDay
-        ? "tarde"
-        : freeSlotPreference === "before_work"
-        ? "manana"
-        : "noche";
-
-      const firstSkill =
-        allRotatable[cursor % Math.max(1, allRotatable.length)];
-      cursor++;
-      const secondSkill =
-        allRotatable.length > 1
-          ? allRotatable[cursor % allRotatable.length]
-          : null;
-      if (secondSkill && (!d.isWorkDay || totalDayMins >= 45)) {
-        cursor++;
-      }
-
-      const scheduled =
-        secondSkill && (!d.isWorkDay || totalDayMins >= 45)
-          ? [
-              {
-                ...firstSkill,
-                minutes: Math.round(totalDayMins * 0.55),
-              },
-              {
-                ...secondSkill,
-                minutes: Math.max(15, totalDayMins - Math.round(totalDayMins * 0.55)),
-              },
-            ]
-          : [
-              {
-                ...firstSkill,
-                minutes: totalDayMins,
-              },
-            ];
-
-      for (const item of scheduled) {
-        if (!item) continue;
-        weeklyMinutesByDomain[item.domain] =
-          (weeklyMinutesByDomain[item.domain] || 0) + item.minutes;
-        preferredTimeByDomain[item.domain] = prefTime;
-      }
-
-      return {
-        ...d,
-        immovableBlock: d.isWorkDay
-          ? `🔒 ${workStartHour} – ${workEndHour} · Trabajo / Estudio (Inamovible)`
-          : "🌿 Día sin bloque laboral fijo",
-        freeWindowLabel: slotLabel,
-        scheduled,
-        totalDayMins,
-        gpUnlocked: gpPerDay,
-      };
+      skills,
+      customSkillName,
+      vaultCap,
     });
-
-    return {
-      days,
-      weeklyMinutesByDomain,
-      preferredTimeByDomain,
-      weeklyGpTarget,
-    };
   }, [
-    skills,
-    customSkillName,
+    wakeUpTime,
+    sleepTime,
+    weekendWakeUpTime,
+    weekendSleepTime,
     workDaysPattern,
     workStartHour,
     workEndHour,
+    commuteAndMealsMinutes,
     freeSlotPreference,
     weekdayFreeMinutes,
     weekendFreeMinutes,
+    skills,
+    customSkillName,
     vaultCap,
   ]);
 
@@ -1915,19 +1840,136 @@ export default function OnboardingWizardPage() {
             </div>
 
             <p className="text-xs text-slate-400">
-              No tienes que adivinar cuántos minutos semanales poner: indica tu{" "}
-              <strong>horario inamovible de Trabajo / Estudio</strong> (que es
-              el motor base del sistema) y el planificador distribuirá todas tus
-              habilidades en un calendario semanal para que las desarrolles
-              todas durante las 4 semanas del mes y liberes el 100% de tu
-              Bóveda.
+              Indica <strong>a qué hora te levantas y a qué hora te acuestas</strong>{" "}
+              normalmente, junto con tu horario inamovible de Trabajo/Estudio.
+              El motor analizará tus horas de sueño y tus ventanas libres reales
+              (mañana vs tarde/noche) para planear tu calendario completo hora
+              por hora desde que despiertas hasta que duermes.
             </p>
 
-            {/* 1. CONFIGURADOR DEL BLOQUE INAMOVIBLE (TRABAJO / UNIVERSIDAD) */}
+            {/* 1A. RITMO BIOLÓGICO: HORA DE LEVANTARSE Y ACOSTARSE */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                  ☀️🌙 1A. Tu Ritmo Biológico (¿A qué hora te levantas y a qué hora te acuestas?)
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                    calendarPlan.sleepHealthStatus.level === "optimal"
+                      ? "bg-emerald-500/20 text-emerald-300"
+                      : calendarPlan.sleepHealthStatus.level === "critical"
+                      ? "bg-rose-500/20 text-rose-300"
+                      : "bg-amber-500/20 text-amber-200"
+                  }`}
+                >
+                  {calendarPlan.sleepHealthStatus.label}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+                <div>
+                  <label className="block text-[11px] text-slate-300">
+                    ☀️ Te levantas (Lun–Vie)
+                  </label>
+                  <input
+                    type="time"
+                    value={wakeUpTime}
+                    onChange={(e) => setWakeUpTime(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-300">
+                    🌙 Te acuestas (Lun–Vie)
+                  </label>
+                  <input
+                    type="time"
+                    value={sleepTime}
+                    onChange={(e) => setSleepTime(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-300">
+                    ☀️ Te levantas (Fin de Sem.)
+                  </label>
+                  <input
+                    type="time"
+                    value={weekendWakeUpTime}
+                    onChange={(e) => setWeekendWakeUpTime(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-300">
+                    🌙 Te acuestas (Fin de Sem.)
+                  </label>
+                  <input
+                    type="time"
+                    value={weekendSleepTime}
+                    onChange={(e) => setWeekendSleepTime(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-300">
+                    🍽️ Traslado / Cena Post-Trabajo
+                  </label>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={15}
+                      max={180}
+                      step={15}
+                      value={commuteAndMealsMinutes}
+                      onChange={(e) =>
+                        setCommuteAndMealsMinutes(
+                          Math.max(15, Number(e.target.value))
+                        )
+                      }
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
+                    />
+                    <span className="text-[11px] text-slate-400">min</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumen de diagnóstico biológico */}
+              <div className="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-slate-800/80 bg-slate-950/60 p-2.5 text-[11px] sm:grid-cols-3">
+                <div>
+                  <span className="text-slate-400">Vigilia Activa (Lun–Vie):</span>{" "}
+                  <strong className="text-white">
+                    {calendarPlan.awakeHoursWeekday}h despierto
+                  </strong>{" "}
+                  <span className="text-slate-500">
+                    ({calendarPlan.sleepHoursWeekday}h sueño)
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Ventana Mañana Real:</span>{" "}
+                  <strong className="text-cyan-300">
+                    {calendarPlan.morningWindowMinsWeekday} min libres
+                  </strong>{" "}
+                  <span className="text-slate-500">(antes de trabajar)</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Ventana Tarde/Noche Real:</span>{" "}
+                  <strong className="text-emerald-300">
+                    {calendarPlan.eveningWindowMinsWeekday} min libres
+                  </strong>{" "}
+                  <span className="text-slate-500">(antes de dormir)</span>
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-amber-200/90">
+                💡 {calendarPlan.sleepHealthStatus.recommendation}
+              </p>
+            </div>
+
+            {/* 1B. CONFIGURADOR DEL BLOQUE INAMOVIBLE (TRABAJO / UNIVERSIDAD) */}
             <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-indigo-300">
-                  🔒 1. Define tu Bloque Inamovible (Trabajo / Clases = Motor
+                  🔒 1B. Define tu Bloque Inamovible (Trabajo / Clases = Motor
                   del Sistema)
                 </span>
                 <span className="rounded-full bg-indigo-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-200">
@@ -1944,13 +1986,14 @@ export default function OnboardingWizardPage() {
                     value={workDaysPattern}
                     onChange={(e) =>
                       setWorkDaysPattern(
-                        e.target.value as "lun_vie" | "lun_sab"
+                        e.target.value as "lun_vie" | "lun_sab" | "flexible"
                       )
                     }
                     className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
                   >
                     <option value="lun_vie">Lunes a Viernes</option>
                     <option value="lun_sab">Lunes a Sábado</option>
+                    <option value="flexible">Horario Flexible / Remoto</option>
                   </select>
                 </div>
                 <div>
@@ -1977,7 +2020,7 @@ export default function OnboardingWizardPage() {
                 </div>
                 <div>
                   <label className="block text-[11px] text-slate-300">
-                    Ventana Libre Preferida
+                    ¿Cuándo prefieres entrenar tus Skills?
                   </label>
                   <select
                     value={freeSlotPreference}
@@ -1991,14 +2034,20 @@ export default function OnboardingWizardPage() {
                     }
                     className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
                   >
-                    <option value="after_work">Después del Trabajo (Noche)</option>
-                    <option value="before_work">Antes del Trabajo (Mañana)</option>
-                    <option value="mixed">Mixto (Mañana + Noche)</option>
+                    <option value="mixed">
+                      Mixto Inteligente (Mañana + Noche)
+                    </option>
+                    <option value="after_work">
+                      Después del Trabajo (Tarde / Noche)
+                    </option>
+                    <option value="before_work">
+                      Antes del Trabajo (Mañana Temprano)
+                    </option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-[11px] text-slate-300">
-                    Tiempo Libre (Lun-Vie / FinSem)
+                    Meta Diaria Skills (Lun-Vie / FinSem)
                   </label>
                   <div className="mt-1 flex items-center gap-1">
                     <input
@@ -2013,7 +2062,7 @@ export default function OnboardingWizardPage() {
                         )
                       }
                       className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white"
-                      title="Minutos libres por día entre semana"
+                      title="Minutos para habilidades por día entre semana"
                     />
                     <input
                       type="number"
@@ -2027,24 +2076,25 @@ export default function OnboardingWizardPage() {
                         )
                       }
                       className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white"
-                      title="Minutos libres por día en fin de semana"
+                      title="Minutos para habilidades por día en fin de semana"
                     />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 2. CALENDARIO VISUAL SEMANAL Y PROYECCIÓN MENSUAL (4 SEMANAS) */}
+            {/* 2. CALENDARIO VISUAL SEMANAL HORA POR HORA (DE LEVANTARSE A ACOSTARSE) */}
             <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
-                    🗓️ 2. Tu Calendario Semanal Tipo (Repetido 4 Semanas = 100%
-                    de las Habilidades en el Mes)
+                    🗓️ 2. Tu Calendario Biológico Semanal (De Hora de Levantarse
+                    a Hora de Acostarse)
                   </span>
                   <p className="text-[11px] text-slate-400">
-                    Cada día combina tu bloque inamovible de Trabajo con 1 o 2
-                    habilidades rotativas para desbloquear{" "}
+                    Cada día estructura tu rutina completa desde que despiertas
+                    hasta que duermes, rotando tus habilidades con horarios exactos
+                    para desbloquear{" "}
                     <span className="font-semibold text-amber-300">
                       {fmt(calendarPlan.weeklyGpTarget)}/semana
                     </span>{" "}
@@ -2063,40 +2113,53 @@ export default function OnboardingWizardPage() {
                       <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
                         <span className="font-bold text-white">{d.label}</span>
                         <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
-                          {d.totalDayMins}m libres
+                          {d.totalDayMins}m skills
                         </span>
                       </div>
 
-                      {/* Bloque Inamovible */}
-                      <div
-                        className={`mt-2 rounded-lg p-1.5 text-[10px] ${
-                          d.isWorkDay
-                            ? "border border-indigo-500/30 bg-indigo-950/40 text-indigo-200"
-                            : "border border-slate-800 bg-slate-950/50 text-slate-400"
-                        }`}
-                      >
-                        {d.immovableBlock}
+                      {/* Hora de Levantarse y Dormir del Día */}
+                      <div className="mt-1.5 flex items-center justify-between rounded-md bg-slate-950/80 px-2 py-1 text-[10px] text-amber-200">
+                        <span>☀️ {d.wakeUpTime}</span>
+                        <span>🌙 {d.sleepTime}</span>
                       </div>
 
-                      {/* Ventana de Santuario */}
-                      <p className="mt-2 text-[10px] font-semibold text-cyan-300">
-                        ⚡ {d.freeWindowLabel}
-                      </p>
-
-                      <div className="mt-1 space-y-1">
+                      {/* Habilidades Programadas con Horario Exacto */}
+                      <div className="mt-2 space-y-1.5">
                         {d.scheduled.map((item, i) => (
                           <div
                             key={i}
-                            className="rounded-lg border border-emerald-500/30 bg-emerald-950/25 px-2 py-1 text-[11px] text-white"
+                            className="rounded-lg border border-emerald-500/30 bg-emerald-950/25 px-2 py-1.5 text-[11px] text-white"
                           >
-                            <p className="font-semibold leading-tight">
+                            <div className="flex items-center justify-between text-[10px] font-semibold text-cyan-300">
+                              <span>
+                                ⏰ {item.timeRange}
+                              </span>
+                              <span className="text-emerald-300">
+                                {item.minutes}m
+                              </span>
+                            </div>
+                            <p className="mt-0.5 font-semibold leading-tight">
                               {item.label}
                             </p>
-                            <span className="text-[10px] text-emerald-300">
-                              {item.minutes} min
-                            </span>
                           </div>
                         ))}
+                      </div>
+
+                      {/* Línea de tiempo resumida del día */}
+                      <div className="mt-2 space-y-1 border-t border-slate-800/70 pt-1.5">
+                        {d.timeline
+                          .filter((slot) => slot.kind !== "skill")
+                          .map((slot, sIdx) => (
+                            <div
+                              key={sIdx}
+                              className="flex items-center justify-between text-[9px] text-slate-400"
+                            >
+                              <span className="truncate pr-1">{slot.title}</span>
+                              <span className="shrink-0 font-mono text-slate-500">
+                                {slot.timeRange.split(" – ")[0]}
+                              </span>
+                            </div>
+                          ))}
                       </div>
                     </div>
 

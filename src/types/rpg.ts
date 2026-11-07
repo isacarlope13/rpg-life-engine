@@ -367,6 +367,20 @@ export interface SkillSuggestionInput {
   weekly_target_minutes: number;
 }
 
+export interface DailyScheduleConfig {
+  wake_up_time: string;
+  sleep_time: string;
+  weekend_wake_up_time: string;
+  weekend_sleep_time: string;
+  work_days_pattern: "lun_vie" | "lun_sab" | "flexible";
+  work_start_hour: string;
+  work_end_hour: string;
+  commute_and_meals_minutes: number;
+  free_slot_preference: "after_work" | "before_work" | "mixed";
+  weekday_free_minutes: number;
+  weekend_free_minutes: number;
+}
+
 export interface OnboardingPayload {
   display_name: string;
   profession?: string;
@@ -384,6 +398,7 @@ export interface OnboardingPayload {
   debt_strategy: DebtStrategy;
   bosses: OnboardingBossInput[];
   skills: UserSkillConfig[];
+  daily_schedule?: DailyScheduleConfig;
   custom_skill_suggestion?: SkillSuggestionInput | null;
   quests?: OnboardingQuestInput[];
   wishlist: OnboardingWishlistInput[];
