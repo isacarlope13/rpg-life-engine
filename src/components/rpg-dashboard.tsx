@@ -1926,6 +1926,14 @@ export function RPGLifeEngineDashboard({
               🏠 Portada / Landing
             </a>
             <a
+              href="/privacidad"
+              target="_blank"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300 transition"
+              title="Política de Tratamiento de Datos Personales (Habeas Data)"
+            >
+              🛡️ Privacidad & Datos
+            </a>
+            <a
               href="/onboarding"
               className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300"
             >

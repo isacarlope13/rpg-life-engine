@@ -105,6 +105,17 @@ export default function LoginPage() {
         {error && <p className="text-sm text-rose-400">{error}</p>}
         {info && <p className="text-sm text-emerald-400">{info}</p>}
 
+        <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+          Al continuar, autorizas el tratamiento de tus datos conforme a nuestra{" "}
+          <Link
+            href="/privacidad"
+            target="_blank"
+            className="text-emerald-400 underline hover:text-emerald-300 font-medium"
+          >
+            Política de Privacidad & Habeas Data
+          </Link>.
+        </p>
+
         <button
           type="submit"
           disabled={submitting}

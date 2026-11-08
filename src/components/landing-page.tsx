@@ -124,6 +124,9 @@ export function LandingPage() {
             >
               📖 Manual Oficial
             </a>
+            <Link href="/privacidad" className="hover:text-emerald-400 transition">
+              🛡️ Privacidad & Datos
+            </Link>
           </nav>
 
           <div className="flex items-center gap-2.5">
@@ -583,6 +586,9 @@ export function LandingPage() {
             </a>
             <Link href="/quick" className="hover:text-emerald-400 transition">
               ⚡ Modo Móvil 5s
+            </Link>
+            <Link href="/privacidad" className="hover:text-emerald-400 transition font-semibold text-slate-300">
+              🛡️ Política de Tratamiento de Datos (Habeas Data)
             </Link>
             <a
               href="https://rpg-life-engine-production.up.railway.app/api/health"
