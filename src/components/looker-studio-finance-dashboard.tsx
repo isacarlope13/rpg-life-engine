@@ -15,7 +15,6 @@ import {
   Plus,
   Download,
   Upload,
-  ExternalLink,
   Layers,
   ShoppingBag,
   Swords,
@@ -28,6 +27,9 @@ import {
   Sparkles,
   RefreshCw,
   FileSpreadsheet,
+  Activity,
+  ArrowRight,
+  Target,
 } from "lucide-react";
 import type { FinancialMovementRecord } from "@/types/rpg";
 import { INITIAL_FINANCIAL_MOVEMENTS } from "@/lib/initial-financial-movements";
@@ -37,10 +39,34 @@ interface LookerStudioFinanceDashboardProps {
   onMovementAdded?: (movement: FinancialMovementRecord) => void;
   currency?: string;
   monthlyFreeCashflow?: number;
-  // Slots para Wishlist y Debt Bosses si se desea verlos integrados
+  // Slots para Wishlist y Debt Bosses
   wishlistSlot?: React.ReactNode;
   debtBossesSlot?: React.ReactNode;
 }
+
+// Paleta de colores consistente para categorías
+const CATEGORY_COLORS: Record<string, string> = {
+  Sueldo: "#10b981", // Esmeralda
+  Inversiones: "#059669", // Verde bosque
+  Comida: "#f97316", // Naranja
+  Transporte: "#06b6d4", // Cian
+  Universidad: "#3b82f6", // Azul
+  Entretenimiento: "#8b5cf6", // Púrpura
+  "Pago Celular": "#0ea5e9", // Azul cielo
+  "Pago internet": "#6366f1", // Índigo
+  Natillera: "#ec4899", // Rosa
+  Gimnasio: "#14b8a6", // Teal
+  Uñas: "#f43f5e", // Rosa fuerte
+  Varios: "#64748b", // Pizarra
+  Salud: "#22c55e", // Verde claro
+  salud: "#22c55e",
+  Clases: "#a855f7", // Violeta
+  "Obligaciones financieras": "#e11d48", // Rojo
+  Bobadas: "#fbbf24", // Ámbar
+  Mona: "#d946ef", // Fucsia
+};
+
+const DEFAULT_COLOR = "#94a3b8";
 
 export function LookerStudioFinanceDashboard({
   initialMovements = INITIAL_FINANCIAL_MOVEMENTS,
@@ -57,17 +83,20 @@ export function LookerStudioFinanceDashboard({
       : INITIAL_FINANCIAL_MOVEMENTS;
   });
 
-  // Pestaña activa dentro del módulo de finanzas
+  // Pestaña activa dentro del módulo de finanzas (100% nativa sin iframes externos)
   const [activeSubTab, setActiveSubTab] = useState<
-    "analytics" | "movements" | "looker_embed" | "wishlist" | "debts"
+    "analytics" | "trends" | "movements" | "wishlist" | "debts"
   >("analytics");
 
-  // Filtros interactivos globales estilo Looker Studio
+  // Filtros interactivos globales
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<"all" | "Ingreso" | "Gasto">("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedMethod, setSelectedMethod] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+
+  // Categoría resaltada en el gráfico Donut
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
 
   // Paginación y ordenación de la tabla
   const [sortField, setSortField] = useState<"fecha" | "monto" | "categoria">("fecha");
@@ -122,23 +151,18 @@ export function LookerStudioFinanceDashboard({
   // Filtrado reactivo en tiempo real
   const filteredMovements = useMemo(() => {
     return movements.filter((m) => {
-      // Filtro de mes
       if (selectedMonth !== "all" && !m.fecha.startsWith(selectedMonth)) {
         return false;
       }
-      // Filtro de tipo
       if (selectedType !== "all" && m.tipo !== selectedType) {
         return false;
       }
-      // Filtro de categoría
       if (selectedCategory !== "all" && m.categoria !== selectedCategory) {
         return false;
       }
-      // Filtro de método de pago
       if (selectedMethod !== "all" && m.metodo_pago !== selectedMethod) {
         return false;
       }
-      // Buscador
       if (searchQuery.trim().length > 0) {
         const q = searchQuery.toLowerCase();
         const inDesc = (m.descripcion || "").toLowerCase().includes(q);
@@ -151,24 +175,30 @@ export function LookerStudioFinanceDashboard({
     });
   }, [movements, selectedMonth, selectedType, selectedCategory, selectedMethod, searchQuery]);
 
-  // Métricas agregadas (Scorecards de Looker Studio)
+  // Métricas y agregados avanzados
   const metrics = useMemo(() => {
     let totalIngresos = 0;
     let totalGastos = 0;
     const catMap: Record<string, number> = {};
     const methodMap: Record<string, { total: number; count: number }> = {};
     const monthlyMap: Record<string, { ingresos: number; gastos: number }> = {};
+    const dailyMap: Record<string, { ingresos: number; gastos: number }> = {};
 
     filteredMovements.forEach((m) => {
       const ym = m.fecha.substring(0, 7) || "Sin fecha";
+      const ymd = m.fecha.substring(0, 10) || "Sin fecha";
+
       if (!monthlyMap[ym]) monthlyMap[ym] = { ingresos: 0, gastos: 0 };
+      if (!dailyMap[ymd]) dailyMap[ymd] = { ingresos: 0, gastos: 0 };
 
       if (m.tipo === "Ingreso") {
         totalIngresos += m.monto;
         monthlyMap[ym].ingresos += m.monto;
+        dailyMap[ymd].ingresos += m.monto;
       } else {
         totalGastos += m.monto;
         monthlyMap[ym].gastos += m.monto;
+        dailyMap[ymd].gastos += m.monto;
         catMap[m.categoria] = (catMap[m.categoria] || 0) + m.monto;
       }
 
@@ -182,12 +212,13 @@ export function LookerStudioFinanceDashboard({
     const savingsRate =
       totalIngresos > 0 ? Math.round((balanceNeto / totalIngresos) * 100) : 0;
 
-    // Top categorías de gastos
+    // Top categorías de gastos ordenadas
     const sortedCategories = Object.entries(catMap)
       .map(([cat, total]) => ({
         categoria: cat,
         total,
         percentage: totalGastos > 0 ? Math.round((total / totalGastos) * 100) : 0,
+        color: CATEGORY_COLORS[cat] || DEFAULT_COLOR,
       }))
       .sort((a, b) => b.total - a.total);
 
@@ -198,6 +229,16 @@ export function LookerStudioFinanceDashboard({
     const dailyAvgExpense =
       activeExpenseDays > 0 ? Math.round(totalGastos / activeExpenseDays) : 0;
 
+    // Lista diaria ordenada para el gráfico de línea/área temporal
+    const sortedDaily = Object.entries(dailyMap)
+      .map(([dateStr, vals]) => ({
+        date: dateStr,
+        ingresos: vals.ingresos,
+        gastos: vals.gastos,
+        net: vals.ingresos - vals.gastos,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
     return {
       totalIngresos,
       totalGastos,
@@ -207,9 +248,31 @@ export function LookerStudioFinanceDashboard({
       methodMap,
       monthlyMap,
       dailyAvgExpense,
+      sortedDaily,
       totalCount: filteredMovements.length,
     };
   }, [filteredMovements]);
+
+  // Cálculos geométricos para el gráfico Donut SVG
+  const donutSlices = useMemo(() => {
+    const radius = 50;
+    const circumference = 2 * Math.PI * radius; // ~314.159
+    let accumulated = 0;
+
+    return metrics.sortedCategories.map((item) => {
+      const slicePct = metrics.totalGastos > 0 ? item.total / metrics.totalGastos : 0;
+      const strokeLength = slicePct * circumference;
+      const strokeOffset = -accumulated;
+      accumulated += strokeLength;
+
+      return {
+        ...item,
+        strokeLength,
+        strokeOffset,
+        circumference,
+      };
+    });
+  }, [metrics.sortedCategories, metrics.totalGastos]);
 
   // Ordenación de la lista para la tabla
   const sortedMovements = useMemo(() => {
@@ -254,6 +317,7 @@ export function LookerStudioFinanceDashboard({
     setSelectedMethod("all");
     setSearchQuery("");
     setCurrentPage(1);
+    setHoveredCategory(null);
   };
 
   const handleCreateMovement = (e: React.FormEvent) => {
@@ -270,7 +334,9 @@ export function LookerStudioFinanceDashboard({
       tipo: newTipo,
       categoria: newCategoria.trim() || "Varios",
       monto: parsedMonto,
-      descripcion: newDescripcion.trim() || (newTipo === "Ingreso" ? "Ingreso registrado" : "Gasto registrado"),
+      descripcion:
+        newDescripcion.trim() ||
+        (newTipo === "Ingreso" ? "Ingreso registrado" : "Gasto registrado"),
       metodo_pago: newMetodo,
       detalle: newDetalle.trim(),
     };
@@ -283,7 +349,6 @@ export function LookerStudioFinanceDashboard({
     setSaveSuccessMsg(`¡${newTipo} de $${parsedMonto.toLocaleString("es-CO")} guardado con éxito!`);
     setTimeout(() => setSaveSuccessMsg(""), 3500);
 
-    // Reset modal
     setNewMonto("");
     setNewDescripcion("");
     setNewDetalle("");
@@ -291,7 +356,16 @@ export function LookerStudioFinanceDashboard({
   };
 
   const handleExportCSV = () => {
-    const headers = ["Fecha", "Tipo", "Categoría", "Monto", "Descripción", "Método de Pago", "Detalle", "ID Registro"];
+    const headers = [
+      "Fecha",
+      "Tipo",
+      "Categoría",
+      "Monto",
+      "Descripción",
+      "Método de Pago",
+      "Detalle",
+      "ID Registro",
+    ];
     const rows = filteredMovements.map((m) => [
       `"${m.fecha}"`,
       `"${m.tipo}"`,
@@ -307,7 +381,7 @@ export function LookerStudioFinanceDashboard({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Finanzas_LookerStudio_${selectedMonth}_export.csv`);
+    link.setAttribute("download", `Finanzas_Nativas_${selectedMonth}_export.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -376,7 +450,7 @@ export function LookerStudioFinanceDashboard({
   return (
     <div className="space-y-6">
       {/* =====================================================================
-          1. HEADER Y SWITCHER DE SUB-VISTAS FINANCIERAS
+          1. HEADER Y SWITCHER DE SUB-VISTAS FINANCIERAS (100% NATIVO)
          ===================================================================== */}
       <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-950 p-6 shadow-xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -386,11 +460,11 @@ export function LookerStudioFinanceDashboard({
                 <BarChart3 className="h-4 w-4" />
               </span>
               <h2 className="text-xl font-extrabold text-white">
-                Módulo Financiero — Estructura Looker Studio
+                Módulo Financiero Autónomo (Motor Analítico Nativo)
               </h2>
             </div>
             <p className="text-xs text-slate-400">
-              Analítica ejecutiva de Ingresos, Gastos, Balance Neto y Flujo de Fondos basada en tu reporte de Google Data Studio.
+              Analítica de Ingresos, Gastos, Balance Neto y Visualizaciones Gráficas integradas directamente en la plataforma, sin dependencias externas ni iframes.
             </p>
           </div>
 
@@ -409,7 +483,7 @@ export function LookerStudioFinanceDashboard({
             <button
               onClick={handleExportCSV}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 transition cursor-pointer"
-              title="Descargar datos en CSV compatible con Looker Studio"
+              title="Descargar datos en CSV"
             >
               <Download className="h-3.5 w-3.5 text-emerald-400" /> Exportar
             </button>
@@ -422,7 +496,7 @@ export function LookerStudioFinanceDashboard({
           </div>
         )}
 
-        {/* SUB-TABS SELECTOR */}
+        {/* SUB-TABS SELECTOR NATIVO */}
         <div className="mt-6 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
           <button
             onClick={() => setActiveSubTab("analytics")}
@@ -432,7 +506,17 @@ export function LookerStudioFinanceDashboard({
                 : "bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <PieChart className="h-3.5 w-3.5" /> Dashboard Looker Studio
+            <PieChart className="h-3.5 w-3.5" /> 📊 Panel Ejecutivo & Donut
+          </button>
+          <button
+            onClick={() => setActiveSubTab("trends")}
+            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer ${
+              activeSubTab === "trends"
+                ? "bg-indigo-600 text-white shadow-lg ring-1 ring-indigo-400/50"
+                : "bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-white"
+            }`}
+          >
+            <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> 📈 Tendencias & Flujo Diario
           </button>
           <button
             onClick={() => setActiveSubTab("movements")}
@@ -442,17 +526,7 @@ export function LookerStudioFinanceDashboard({
                 : "bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <FileSpreadsheet className="h-3.5 w-3.5" /> Tabla de Movimientos ({filteredMovements.length})
-          </button>
-          <button
-            onClick={() => setActiveSubTab("looker_embed")}
-            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer ${
-              activeSubTab === "looker_embed"
-                ? "bg-indigo-600 text-white shadow-lg ring-1 ring-indigo-400/50"
-                : "bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-white"
-            }`}
-          >
-            <ExternalLink className="h-3.5 w-3.5 text-cyan-400" /> Visor Oficial Google Studio
+            <FileSpreadsheet className="h-3.5 w-3.5" /> 📋 Base de Movimientos ({filteredMovements.length})
           </button>
           {wishlistSlot && (
             <button
@@ -463,7 +537,7 @@ export function LookerStudioFinanceDashboard({
                   : "bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              <ShoppingBag className="h-3.5 w-3.5 text-amber-400" /> Wishlist & Recompensas
+              <ShoppingBag className="h-3.5 w-3.5 text-amber-400" /> Wishlist & Hábitos
             </button>
           )}
           {debtBossesSlot && (
@@ -482,13 +556,13 @@ export function LookerStudioFinanceDashboard({
       </div>
 
       {/* =====================================================================
-          BARRA DE CONTROLES & FILTROS LOOKER STUDIO (Visible en Analytics y Tabla)
+          BARRA DE CONTROLES & FILTROS GLOBALES
          ===================================================================== */}
-      {(activeSubTab === "analytics" || activeSubTab === "movements") && (
+      {(activeSubTab === "analytics" || activeSubTab === "trends" || activeSubTab === "movements") && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-              <Filter className="h-3.5 w-3.5" /> Controles Globales de Filtro (Data Studio)
+              <Filter className="h-3.5 w-3.5" /> Controles Globales de Filtro
             </span>
             {(selectedMonth !== "all" ||
               selectedType !== "all" ||
@@ -605,7 +679,7 @@ export function LookerStudioFinanceDashboard({
                 <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Ej: Uber, Frisby, Addi..."
+                  placeholder="Ej: Uber, Frisby, Sueldo..."
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
@@ -620,11 +694,11 @@ export function LookerStudioFinanceDashboard({
       )}
 
       {/* =====================================================================
-          SUB-TAB 1: ANALYTICS & DASHBOARD LOOKER STUDIO
+          SUB-TAB 1: PANEL EJECUTIVO & GRÁFICOS PRINCIPALES
          ===================================================================== */}
       {activeSubTab === "analytics" && (
         <div className="space-y-6">
-          {/* 5 SCORECARDS / TARJETAS KPI DE LOOKER STUDIO */}
+          {/* 5 SCORECARDS / TARJETAS KPI */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {/* KPI 1: TOTAL INGRESOS */}
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 space-y-1">
@@ -683,7 +757,7 @@ export function LookerStudioFinanceDashboard({
             {/* KPI 4: TASA DE SUPERÁVIT / AHORRO */}
             <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 space-y-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1">
-                <Sparkles className="h-3.5 w-3.5" /> Tasa de Ahorro
+                <Sparkles className="h-3.5 w-3.5" /> Tasa de Retención
               </span>
               <p className="text-xl font-black text-cyan-300 font-mono">
                 {metrics.savingsRate}%
@@ -707,15 +781,109 @@ export function LookerStudioFinanceDashboard({
             </div>
           </div>
 
-          {/* VISUALIZACIONES PRINCIPALES DE DATA STUDIO */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* GRÁFICO 1: EVOLUCIÓN MENSUAL INGRESOS VS GASTOS */}
-            <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
+          {/* VISUALIZACIONES PRINCIPALES: GRÁFICO DONUT SVG + EVOLUCIÓN MENSUAL */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* GRÁFICO DONUT SVG INTERACTIVO (DISTRIBUCIÓN POR CATEGORÍA) */}
+            <div className="lg:col-span-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <PieChart className="h-4 w-4 text-amber-400" />
+                  <h3 className="text-sm font-bold text-white">
+                    Distribución de Gastos (Donut Chart)
+                  </h3>
+                </div>
+                <span className="text-xs text-slate-400">
+                  {metrics.sortedCategories.length} categorías
+                </span>
+              </div>
+
+              {/* RENDERIZADO DEL DONUT SVG */}
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-6 py-2">
+                <div className="relative flex items-center justify-center shrink-0">
+                  <svg width="170" height="170" viewBox="0 0 170 170" className="rotate-[-90deg]">
+                    <circle
+                      cx="85"
+                      cy="85"
+                      r="50"
+                      fill="transparent"
+                      stroke="#1e293b"
+                      strokeWidth="24"
+                    />
+                    {donutSlices.map((slice) => {
+                      const isHovered = hoveredCategory === slice.categoria;
+                      return (
+                        <circle
+                          key={slice.categoria}
+                          cx="85"
+                          cy="85"
+                          r="50"
+                          fill="transparent"
+                          stroke={slice.color}
+                          strokeWidth={isHovered ? "28" : "24"}
+                          strokeDasharray={`${slice.strokeLength} ${slice.circumference - slice.strokeLength}`}
+                          strokeDashoffset={slice.strokeOffset}
+                          onMouseEnter={() => setHoveredCategory(slice.categoria)}
+                          onMouseLeave={() => setHoveredCategory(null)}
+                          className="transition-all duration-300 cursor-pointer"
+                        />
+                      );
+                    })}
+                  </svg>
+                  {/* Centro del Donut */}
+                  <div className="absolute text-center pointer-events-none">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                      Total Gastos
+                    </span>
+                    <span className="text-xs font-black text-white font-mono">
+                      ${(metrics.totalGastos / 1000000).toFixed(2)}M
+                    </span>
+                  </div>
+                </div>
+
+                {/* Leyenda y detalles del Donut */}
+                <div className="w-full space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                  {donutSlices.slice(0, 7).map((slice) => {
+                    const isHovered = hoveredCategory === slice.categoria;
+                    return (
+                      <div
+                        key={slice.categoria}
+                        onMouseEnter={() => setHoveredCategory(slice.categoria)}
+                        onMouseLeave={() => setHoveredCategory(null)}
+                        className={`flex items-center justify-between text-xs p-1.5 rounded-lg transition cursor-pointer ${
+                          isHovered
+                            ? "bg-slate-800 ring-1 ring-slate-700"
+                            : "hover:bg-slate-850"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: slice.color }}
+                          />
+                          <span className="text-slate-200 truncate font-medium">
+                            {slice.categoria}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
+                          <span className="text-slate-400">{slice.percentage}%</span>
+                          <span className="text-white font-bold">
+                            ${slice.total.toLocaleString("es-CO")}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* EVOLUCIÓN MENSUAL COMPARATIVA */}
+            <div className="lg:col-span-7 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-indigo-400" />
                   <h3 className="text-sm font-bold text-white">
-                    Evolución Temporal: Ingresos vs Gastos
+                    Comparativa Mensual: Entrada vs Salida
                   </h3>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
@@ -729,7 +897,7 @@ export function LookerStudioFinanceDashboard({
               </div>
 
               {/* BARRAS DE COMPARACIÓN */}
-              <div className="space-y-4 pt-2">
+              <div className="space-y-4 pt-1">
                 {Object.entries(metrics.monthlyMap)
                   .sort(([a], [b]) => a.localeCompare(b))
                   .map(([month, data]) => {
@@ -745,7 +913,10 @@ export function LookerStudioFinanceDashboard({
                         : month;
 
                     return (
-                      <div key={month} className="space-y-1.5 rounded-xl bg-slate-950/60 p-3 border border-slate-800/80">
+                      <div
+                        key={month}
+                        className="space-y-1.5 rounded-xl bg-slate-950/60 p-3 border border-slate-800/80"
+                      >
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-bold text-slate-200">{label}</span>
                           <span
@@ -768,7 +939,12 @@ export function LookerStudioFinanceDashboard({
                           <div className="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                              style={{ width: `${Math.min(100, Math.round((data.ingresos / maxVal) * 100))}%` }}
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.round((data.ingresos / maxVal) * 100)
+                                )}%`,
+                              }}
                             />
                           </div>
                         </div>
@@ -784,7 +960,12 @@ export function LookerStudioFinanceDashboard({
                           <div className="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-rose-500 rounded-full transition-all duration-500"
-                              style={{ width: `${Math.min(100, Math.round((data.gastos / maxVal) * 100))}%` }}
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.round((data.gastos / maxVal) * 100)
+                                )}%`,
+                              }}
                             />
                           </div>
                         </div>
@@ -793,9 +974,65 @@ export function LookerStudioFinanceDashboard({
                   })}
               </div>
             </div>
+          </div>
 
-            {/* GRÁFICO 2: PARTICIPACIÓN POR MÉTODO DE PAGO */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
+          {/* RANKING TOP DE GASTOS & MÉTODOS DE PAGO */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* TOP RANKING DE GASTOS */}
+            <div className="lg:col-span-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-rose-400" />
+                  <h3 className="text-sm font-bold text-white">
+                    Ranking de Categorías por Volumen de Gasto
+                  </h3>
+                </div>
+                <span className="text-xs text-slate-400">Mayor a menor consumo</span>
+              </div>
+
+              <div className="space-y-2.5">
+                {metrics.sortedCategories.slice(0, 8).map((item, idx) => {
+                  const maxTotal = metrics.sortedCategories[0]?.total || 1;
+                  const barPct = Math.round((item.total / maxTotal) * 100);
+
+                  return (
+                    <div
+                      key={item.categoria}
+                      className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 space-y-1.5 hover:border-slate-700 transition"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-white flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
+                          <span
+                            className="h-2 w-2 rounded-full inline-block"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          {item.categoria}
+                        </span>
+                        <div className="flex items-center gap-2 font-mono">
+                          <span className="text-slate-400 text-[11px]">{item.percentage}% del total</span>
+                          <span className="font-bold text-rose-300">
+                            ${item.total.toLocaleString("es-CO")}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${barPct}%`,
+                            backgroundColor: item.color,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* MÉTODOS DE PAGO */}
+            <div className="lg:col-span-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
                 <CreditCard className="h-4 w-4 text-cyan-400" />
                 <h3 className="text-sm font-bold text-white">Métodos de Pago</h3>
@@ -805,7 +1042,9 @@ export function LookerStudioFinanceDashboard({
                 {Object.entries(metrics.methodMap).map(([method, val]) => {
                   const pct =
                     metrics.totalIngresos + metrics.totalGastos > 0
-                      ? Math.round((val.total / (metrics.totalIngresos + metrics.totalGastos)) * 100)
+                      ? Math.round(
+                          (val.total / (metrics.totalIngresos + metrics.totalGastos)) * 100
+                        )
                       : 0;
 
                   return (
@@ -838,7 +1077,7 @@ export function LookerStudioFinanceDashboard({
                         />
                       </div>
                       <span className="text-[10px] text-slate-400 block text-right">
-                        {val.count} movimientos registrados
+                        {val.count} movimientos
                       </span>
                     </div>
                   );
@@ -846,64 +1085,112 @@ export function LookerStudioFinanceDashboard({
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* TOP CATEGORÍAS DE GASTOS */}
+      {/* =====================================================================
+          SUB-TAB 2: TENDENCIAS & FLUJO DIARIO (GRÁFICO TEMPORAL NATIVO)
+         ===================================================================== */}
+      {activeSubTab === "trends" && (
+        <div className="space-y-6">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <PieChart className="h-4 w-4 text-amber-400" />
-                <h3 className="text-sm font-bold text-white">
-                  Distribución de Gastos por Categoría (Looker Studio Ranking)
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-emerald-400" /> Flujo Diario de Operaciones (Timeline)
                 </h3>
+                <p className="text-xs text-slate-400">
+                  Visualización cronológica día a día de salidas y entradas de dinero en el periodo seleccionado.
+                </p>
               </div>
-              <span className="text-xs text-slate-400">
-                {metrics.sortedCategories.length} categorías activas
-              </span>
+
+              <div className="flex items-center gap-3 text-xs">
+                <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Ingreso
+                </span>
+                <span className="flex items-center gap-1 text-rose-400 font-semibold">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-500 inline-block" /> Gasto
+                </span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {metrics.sortedCategories.map((item, idx) => {
-                const badgeColor =
-                  idx === 0
-                    ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
-                    : idx === 1
-                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                    : idx === 2
-                    ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
-                    : "bg-slate-800 text-slate-300 border-slate-700";
+            {/* GRÁFICA DE BARRAS / SPARKLINE DIARIA */}
+            <div className="space-y-2 pt-2">
+              {metrics.sortedDaily.length === 0 ? (
+                <div className="py-8 text-center text-slate-500 italic text-xs">
+                  No hay movimientos registrados para este rango.
+                </div>
+              ) : (
+                metrics.sortedDaily.map((item) => {
+                  const maxDailyVal = Math.max(
+                    ...metrics.sortedDaily.map((d) => Math.max(d.ingresos, d.gastos)),
+                    1
+                  );
+                  const ingPct = Math.round((item.ingresos / maxDailyVal) * 100);
+                  const gastPct = Math.round((item.gastos / maxDailyVal) * 100);
 
-                return (
-                  <div
-                    key={item.categoria}
-                    className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3.5 space-y-2 hover:border-slate-700 transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeColor}`}>
-                        #{idx + 1} {item.categoria}
-                      </span>
-                      <span className="text-xs font-mono font-bold text-slate-300">
-                        {item.percentage}%
-                      </span>
+                  return (
+                    <div
+                      key={item.date}
+                      className="p-2.5 rounded-xl border border-slate-800/80 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-slate-700 transition"
+                    >
+                      <div className="w-28 shrink-0">
+                        <span className="text-xs font-mono font-bold text-slate-300">
+                          {item.date}
+                        </span>
+                      </div>
+
+                      {/* Barras combinadas */}
+                      <div className="flex-1 space-y-1">
+                        {item.ingresos > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-emerald-400 w-14 shrink-0 font-mono">
+                              +${item.ingresos.toLocaleString("es-CO")}
+                            </span>
+                            <div className="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="bg-emerald-500 h-full rounded-full"
+                                style={{ width: `${Math.min(100, Math.max(4, ingPct))}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {item.gastos > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-rose-400 w-14 shrink-0 font-mono">
+                              -${item.gastos.toLocaleString("es-CO")}
+                            </span>
+                            <div className="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="bg-rose-500 h-full rounded-full"
+                                style={{ width: `${Math.min(100, Math.max(4, gastPct))}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Saldo neto del día */}
+                      <div className="w-28 text-right shrink-0">
+                        <span
+                          className={`text-xs font-mono font-bold ${
+                            item.net >= 0 ? "text-emerald-400" : "text-rose-400"
+                          }`}
+                        >
+                          {item.net >= 0 ? "+" : ""}${item.net.toLocaleString("es-CO")}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-base font-bold text-white font-mono">
-                      ${item.total.toLocaleString("es-CO")}
-                    </p>
-                    <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-indigo-500 to-rose-500 rounded-full"
-                        style={{ width: `${Math.min(100, item.percentage)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
       )}
 
       {/* =====================================================================
-          SUB-TAB 2: TABLA DETALLADA DE MOVIMIENTOS ESTILO DATA STUDIO
+          SUB-TAB 3: TABLA DETALLADA DE MOVIMIENTOS
          ===================================================================== */}
       {activeSubTab === "movements" && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
@@ -1050,65 +1337,6 @@ export function LookerStudioFinanceDashboard({
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* =====================================================================
-          SUB-TAB 3: VISOR OFICIAL GOOGLE LOOKER STUDIO & INSTRUCCIONES
-         ===================================================================== */}
-      {activeSubTab === "looker_embed" && (
-        <div className="rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <ExternalLink className="h-5 w-5 text-cyan-400" /> Visor Directo Google Looker Studio
-              </h3>
-              <p className="text-xs text-slate-400">
-                Incrustación en vivo del reporte oficial con identificador <code className="text-cyan-300">4c9fa182-fab9-4bb4-9cb8-85112592d85d</code>.
-              </p>
-            </div>
-
-            <a
-              href="https://datastudio.google.com/u/0/reporting/4c9fa182-fab9-4bb4-9cb8-85112592d85d/page/Dye8F"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-4 py-2 text-xs font-bold text-white shadow-lg transition"
-            >
-              Abrir en Google Looker Studio ↗
-            </a>
-          </div>
-
-          {/* GUÍA DE CONFIGURACIÓN DE INSERCIÓN */}
-          <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-4 text-xs text-slate-300 space-y-2">
-            <h4 className="font-bold text-cyan-300 flex items-center gap-1.5">
-              💡 ¿Cómo permitir la visualización incrustada dentro del sistema?
-            </h4>
-            <p>
-              Google Looker Studio requiere dos permisos para permitir la incrustación dentro de plataformas web:
-            </p>
-            <ol className="list-decimal pl-5 space-y-1 text-slate-300">
-              <li>
-                <strong>Habilitar inserción:</strong> En tu reporte de Looker Studio, haz clic en <em>Archivo ➔ Insertar informe ➔ Marcar casilla "Habilitar inserción"</em>.
-              </li>
-              <li>
-                <strong>Permiso de acceso:</strong> En el botón <em>Compartir</em> (esquina superior derecha), cambia el acceso a <em>"Cualquiera que tenga el vínculo puede ver"</em>.
-              </li>
-            </ol>
-          </div>
-
-          {/* IFRAME EMBED */}
-          <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-950 shadow-2xl">
-            <iframe
-              src="https://lookerstudio.google.com/embed/reporting/4c9fa182-fab9-4bb4-9cb8-85112592d85d/page/Dye8F"
-              width="100%"
-              height="800"
-              style={{ border: 0 }}
-              allowFullScreen
-              sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-              title="Google Looker Studio Financial Report"
-              className="w-full min-h-[700px]"
-            />
-          </div>
         </div>
       )}
 
