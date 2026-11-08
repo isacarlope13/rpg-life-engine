@@ -1205,6 +1205,134 @@ test("18. Módulo de Finanzas Looker Studio: 116 movimientos iniciales, filtros,
   assert.equal(store.financialMovements[0].descripcion, "Rendimientos CDT");
 });
 
+test("19. Auditoría Integral de Forma y Fondo: Curva Canónica de Nivel, Resiliencia de Bosses, Persistencia y Calendario", async () => {
+  const store = new RPGEngineMemoryStore();
+
+  // 1. Curva canónica de nivel en SM-2 y Árbol de Talentos (Evitar democión de nivel de fondo)
+  store.current_xp = 1600; // 1600 XP -> sqrt(16) + 1 = Lvl 5
+  store.player_level = 5;
+
+  // Repaso SM-2
+  const cardReview = store.reviewSpacedCard({
+    card_id: "test-card-1",
+    rating: 4, // +100 XP -> 1700 XP -> floor(sqrt(17)) + 1 = 4 + 1 = Lvl 5 (NO demota a Lvl 2!)
+  });
+  assert.equal(cardReview.xp_gained, 100);
+  assert.equal(store.player_level, 5, "SM-2 debe respetar la curva de nivel raíz cuadrada sin demotar al jugador");
+
+  // Desbloqueo de talento
+  store.player_level = 5;
+  const talentRes = store.unlockTalentPerk("mente_absorbente");
+  assert.equal(talentRes.success, true);
+  assert.equal(store.player_level, 5, "Desbloqueo de talento debe conservar la curva raíz cuadrada");
+
+  // 2. Deuda al 0% de interés E.A. no debe sangrar DoT pasivo
+  store.bosses.push({
+    id: "boss-zero-interest",
+    name: "Préstamo Familiar 0%",
+    max_hp: 200000,
+    current_hp: 200000,
+    interest_rate_ea: 0.0,
+    min_monthly_payment_cop: 20000,
+    paid_this_month_cop: 0,
+    priority_order: 9,
+    status: "active",
+  });
+  store.updateBossesDoTAndEnrageStatus(new Date("2026-11-05T12:00:00Z"));
+  const zeroBoss = store.bosses.find((b) => b.id === "boss-zero-interest")!;
+  assert.equal(zeroBoss.daily_interest_dot_gp, 0, "Una deuda al 0% E.A. NO debe generar daño DoT diario");
+
+  // 3. Resiliencia de TTK Projections con nombres de Boss arbitrarios o espacios
+  store.bosses.push({
+    id: "boss-custom-name",
+    name: "Crédito Libre Inversión 2026",
+    max_hp: 300000,
+    current_hp: 300000,
+    interest_rate_ea: 19.5,
+    min_monthly_payment_cop: 30000,
+    paid_this_month_cop: 0,
+    priority_order: 10,
+    status: "active",
+  });
+  const ttkList = store.getBossTTKProjections();
+  assert.ok(Array.isArray(ttkList));
+  const customTtk = ttkList.find((t) => t.name === "Crédito Libre Inversión 2026");
+  assert.ok(customTtk, "TTK Projections debe resolver proyecciones sin lanzar TypeError");
+  assert.ok(customTtk!.months_to_kill > 0);
+
+  // 4. Ciclo completo de Tareas de Proyectos Ágiles (Crear -> Mover -> Completar con recompensa)
+  const proj = store.addWorkProject({
+    name: "Motor de Automatización Next.js",
+    description: "Pipeline CI/CD y atajos iOS",
+    methodology: "scrum",
+  });
+  assert.ok(proj.id);
+  const task = store.addWorkProjectTask({
+    project_id: proj.id,
+    title: "Implementar suite de pruebas unitarias",
+    priority: "high",
+    estimated_minutes: 60,
+  });
+  assert.equal(task.stage, "Backlog");
+  assert.ok((task.reward_gp || 0) > 0);
+
+  const movedTask = store.moveWorkProjectTask({
+    project_id: proj.id,
+    task_id: task.id,
+    target_stage: "En Sprint",
+  });
+  assert.equal(movedTask.stage, "En Sprint");
+
+  const completed = store.completeWorkProjectTask({
+    project_id: proj.id,
+    task_id: task.id,
+  });
+  assert.equal(completed.task.is_completed, true);
+  assert.equal(completed.task.stage, "Hecho");
+  assert.ok(completed.reward.transferred_gp >= 0);
+
+  // 5. Bio-calendario: Manejo de trasnoche y wrap-around de medianoche
+  const { parseTimeToMinutes, formatMinutesToHHMM, computeBioCalendarPlan, DEFAULT_DAILY_SCHEDULE_CONFIG } = await import("../src/lib/calendar-planner.ts");
+  assert.equal(parseTimeToMinutes("06:30"), 390);
+  assert.equal(parseTimeToMinutes("00:45"), 45);
+  assert.equal(formatMinutesToHHMM(390), "06:30");
+  assert.equal(formatMinutesToHHMM(1440 + 45), "00:45"); // wrap-around normalizado
+
+  const bioPlan = computeBioCalendarPlan({
+    config: {
+      ...DEFAULT_DAILY_SCHEDULE_CONFIG,
+      wake_up_time: "06:00",
+      sleep_time: "23:00",
+      work_start_hour: "08:00",
+      work_end_hour: "17:00",
+      commute_and_meals_minutes: 45,
+      weekend_wake_up_time: "08:00",
+      weekend_sleep_time: "23:30",
+    },
+    skills: [
+      { domain: "rubik", label: "Cubo WCA", weekly_target_minutes: 120, preferred_session_time: "manana" },
+      { domain: "reading", label: "Lectura Profunda", weekly_target_minutes: 180, preferred_session_time: "noche" },
+    ],
+    vaultCap: 350000,
+  });
+  assert.equal(bioPlan.sleepHoursWeekday, 7.0);
+  assert.ok(bioPlan.days.length > 0);
+
+  // 6. Serialización y Deserialización Completa (Persistencia de Proyectos, Tarjetas y Talentos)
+  const { serializeStoreCollections, applyPersistedCollectionsToStore } = await import("../src/lib/persistence-sync.ts");
+  const serialized = serializeStoreCollections(store);
+  assert.ok(serialized.workProjects && serialized.workProjects.length > 0);
+  assert.ok(serialized.unlockedPerks && serialized.unlockedPerks.includes("mente_absorbente"));
+  assert.ok(serialized.spacedCards && serialized.spacedCards.length > 0);
+
+  const freshStore = new RPGEngineMemoryStore();
+  applyPersistedCollectionsToStore(freshStore, serialized);
+  assert.equal(freshStore.workProjects.length, store.workProjects.length);
+  assert.deepEqual(freshStore.unlockedPerks, store.unlockedPerks);
+  assert.equal(freshStore.spacedCards.length, store.spacedCards.length);
+});
+
+
 
 
 

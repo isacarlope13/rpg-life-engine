@@ -1038,8 +1038,9 @@ export class RPGEngineMemoryStore {
     if (params.reset_month_cycle) {
       // Corte de Mes: reinicia gastos mensuales y recarga el Tope de Bóveda conservando Nivel, XP, Racha, Deudas y Colecciones
       const now = new Date();
-      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      this.billing_period = nextMonth.toISOString().slice(0, 7);
+      const nextY = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+      const nextM = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+      this.billing_period = `${nextY}-${String(nextM).padStart(2, "0")}`;
       this.fixed_costs_spent_cop = 0;
       this.variable_ops_spent_cop = 0;
       this.vault_remaining_gp = this.vault_cap_gp;
@@ -1124,11 +1125,9 @@ export class RPGEngineMemoryStore {
           boss.status = "active";
         }
       } else {
-        // Daño pasivo DoT diario en GP
-        boss.daily_interest_dot_gp = Math.max(
-          1,
-          Math.round(monthlyInterest / 30)
-        );
+        // Daño pasivo DoT diario en GP (solo si la tasa genera intereses mayores a 0)
+        boss.daily_interest_dot_gp =
+          monthlyInterest > 0 ? Math.max(1, Math.round(monthlyInterest / 30)) : 0;
 
         if (daysUntil < 0) {
           // Fecha de corte vencida sin abono: Boss enfurecido
@@ -2029,7 +2028,7 @@ export class RPGEngineMemoryStore {
     }
     this.unlockedPerks.push(perk_id);
     this.current_xp += 150;
-    this.player_level = Math.floor(this.current_xp / 1000) + 1;
+    this.player_level = Math.max(1, Math.floor(Math.sqrt(this.current_xp / 100)) + 1);
     const remaining = available - perk.cost_points;
 
     this.logs.unshift({
@@ -2113,9 +2112,9 @@ export class RPGEngineMemoryStore {
     nextDate.setDate(nextDate.getDate() + card.interval_days);
     card.due_date = nextDate.toISOString().split("T")[0];
 
-    // Otorgar recompensas en el store
+    // Otorgar recompensas en el store con curva de nivel canónica
     this.current_xp += xpReward;
-    this.player_level = Math.floor(this.current_xp / 1000) + 1;
+    this.player_level = Math.max(1, Math.floor(Math.sqrt(this.current_xp / 100)) + 1);
     if (gpReward > 0 && this.vault_remaining_gp > 0) {
       const transfer = Math.min(gpReward, this.vault_remaining_gp);
       this.vault_remaining_gp -= transfer;
@@ -2961,11 +2960,13 @@ export class RPGEngineMemoryStore {
 
   // Simulador matemático de amortización mensual con interés compuesto (Snowball vs Avalanche)
   private simulateAmortization(strategy: DebtStrategy) {
-    const monthlySnowballPower =
+    const monthlySnowballPower = Math.max(
+      0,
       this.monthly_income_cop -
-      this.fixed_costs_budget_cop -
-      this.variable_ops_budget_cop -
-      this.vault_cap_gp; // $512,000 COP base por mes
+        this.fixed_costs_budget_cop -
+        this.variable_ops_budget_cop -
+        this.vault_cap_gp
+    );
 
     const simBosses = this.bosses.map((b) => ({
       name: b.name,
@@ -3070,20 +3071,35 @@ export class RPGEngineMemoryStore {
             status: boss.status,
           };
         }
-        const simBoss = sim.bossResults.find((s) => s.name === boss.name)!;
-        const killDate = new Date(baseDate);
-        killDate.setMonth(killDate.getMonth() + simBoss.months_to_kill);
+        const simBoss =
+          sim.bossResults.find((s) => s.name === boss.name) ||
+          sim.bossResults.find(
+            (s) => s.name.toLowerCase() === boss.name.toLowerCase()
+          );
+        const monthsToKill =
+          simBoss?.months_to_kill ??
+          Math.max(
+            1,
+            Math.ceil(
+              boss.current_hp / (boss.min_monthly_payment_cop || 50000)
+            )
+          );
+        const projectedInterest =
+          simBoss?.interest_accrued ??
+          Math.round(boss.current_hp * (boss.interest_rate_ea / 100));
+        const killDate = new Date();
+        killDate.setMonth(killDate.getMonth() + monthsToKill);
 
         return {
           name: boss.name,
           current_hp: boss.current_hp,
-          months_to_kill: simBoss.months_to_kill,
+          months_to_kill: monthsToKill,
           estimated_kill_date: killDate.toLocaleDateString("es-CO", {
             year: "numeric",
             month: "short",
             day: "numeric",
           }),
-          projected_interest_cop: simBoss.interest_accrued,
+          projected_interest_cop: projectedInterest,
           status: boss.status,
           cutoff_day: boss.cutoff_day,
           daily_interest_dot_gp: boss.daily_interest_dot_gp,

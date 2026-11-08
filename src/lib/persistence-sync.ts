@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { RPGEngineMemoryStore } from "./demo-store";
-import { isSupabaseConfigured, supabaseAdmin } from "./supabase";
+import type { RPGEngineMemoryStore } from "./demo-store.ts";
+import { isSupabaseConfigured, supabaseAdmin } from "./supabase.ts";
 
 const DATA_DIR = path.join(process.cwd(), ".data", "user-stores");
 
@@ -28,6 +28,11 @@ export interface PersistedCollectionsPayload {
   knittingProjects: RPGEngineMemoryStore["knittingProjects"];
   trialCheckpoints: RPGEngineMemoryStore["trialCheckpoints"];
   bosses: RPGEngineMemoryStore["bosses"];
+  workProjects?: RPGEngineMemoryStore["workProjects"];
+  spacedCards?: RPGEngineMemoryStore["spacedCards"];
+  unlockedPerks?: RPGEngineMemoryStore["unlockedPerks"];
+  dailySchedule?: RPGEngineMemoryStore["dailySchedule"];
+  wishlist?: RPGEngineMemoryStore["wishlist"];
 }
 
 function safeFilePath(userId: string): string {
@@ -60,6 +65,11 @@ export function serializeStoreCollections(
     knittingProjects: store.knittingProjects,
     trialCheckpoints: store.trialCheckpoints,
     bosses: store.bosses,
+    workProjects: store.workProjects,
+    spacedCards: store.spacedCards,
+    unlockedPerks: store.unlockedPerks,
+    dailySchedule: store.dailySchedule,
+    wishlist: store.wishlist,
   };
 }
 
@@ -88,6 +98,21 @@ export function applyPersistedCollectionsToStore(
     payload.trialCheckpoints.length > 0
   ) {
     store.trialCheckpoints = payload.trialCheckpoints;
+  }
+  if (Array.isArray(payload.workProjects) && payload.workProjects.length > 0) {
+    store.workProjects = payload.workProjects;
+  }
+  if (Array.isArray(payload.spacedCards) && payload.spacedCards.length > 0) {
+    store.spacedCards = payload.spacedCards;
+  }
+  if (Array.isArray(payload.unlockedPerks) && payload.unlockedPerks.length > 0) {
+    store.unlockedPerks = payload.unlockedPerks;
+  }
+  if (payload.dailySchedule && typeof payload.dailySchedule === "object") {
+    store.dailySchedule = { ...store.dailySchedule, ...payload.dailySchedule };
+  }
+  if (Array.isArray(payload.wishlist) && payload.wishlist.length > 0) {
+    store.wishlist = payload.wishlist;
   }
 }
 

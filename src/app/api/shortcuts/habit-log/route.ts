@@ -111,7 +111,9 @@ export async function POST(req: Request) {
         .from("player_treasury")
         .select("*")
         .eq("id", treasury.id)
-        .single();
+        .maybeSingle();
+
+      const finalTreasury = updatedTreasury || treasury;
 
       return NextResponse.json(
         {
@@ -129,18 +131,18 @@ export async function POST(req: Request) {
             earned_xp: earnedXp,
           },
           player_progress: {
-            player_level: updatedTreasury.player_level,
-            current_xp: updatedTreasury.current_xp,
-            current_streak_days: updatedTreasury.current_streak_days,
-            aegis_shields: updatedTreasury.aegis_shields,
-            leveled_up: updatedTreasury.player_level > treasury.player_level,
+            player_level: finalTreasury.player_level,
+            current_xp: finalTreasury.current_xp,
+            current_streak_days: finalTreasury.current_streak_days,
+            aegis_shields: finalTreasury.aegis_shields,
+            leveled_up: finalTreasury.player_level > treasury.player_level,
           },
           treasury_snapshot: {
-            billing_period: updatedTreasury.billing_period,
-            wallet_gp: updatedTreasury.wallet_gp,
-            vault_remaining_gp: updatedTreasury.vault_remaining_gp,
+            billing_period: finalTreasury.billing_period,
+            wallet_gp: finalTreasury.wallet_gp,
+            vault_remaining_gp: finalTreasury.vault_remaining_gp,
           },
-          shortcut_tts_message: `¡Misión completada con racha de ${updatedTreasury.current_streak_days} días! Multiplicador ${activity.streak_multiplier_applied}x aplicado. Liberaste ${Number(activity.transferred_gp).toLocaleString("es-CO")} GP a tu Billetera.`,
+          shortcut_tts_message: `¡Misión completada con racha de ${finalTreasury.current_streak_days} días! Multiplicador ${activity.streak_multiplier_applied}x aplicado. Liberaste ${Number(activity.transferred_gp).toLocaleString("es-CO")} GP a tu Billetera.`,
         },
         { status: 201 }
       );
