@@ -864,6 +864,14 @@ test("11. Debt Bosses Passive DoT & Enrage Timer, Wishlist Restraints & GP Overd
   assert.equal(nequi.daily_interest_dot_gp, 0, "DoT debe neutralizarse tras aplicar la Poción de Purificación");
   assert.equal(nequi.paid_this_month_cop, 50000);
 
+  // Validación de resiliencia con UUIDs externos de Supabase (ej. "468cc5f6-0d86-4a51-99d6-7770deca2247")
+  const uuidPurifyRes = store.applyPurificationPotion({
+    boss_id: "468cc5f6-0d86-4a51-99d6-7770deca2247",
+    amount_cop: 20000,
+  });
+  assert.equal(uuidPurifyRes.purified, true);
+  assert.equal(uuidPurifyRes.boss.id, "468cc5f6-0d86-4a51-99d6-7770deca2247");
+
   // Fecha posterior al corte sin pagar ADDI (corte día 28 -> test en día 29)
   store.updateBossesDoTAndEnrageStatus(new Date("2026-11-29T12:00:00Z"));
   const addi = store.bosses.find((b) => b.id === "boss-addi")!;

@@ -11,7 +11,7 @@ import {
   SpecComplianceCheckItem,
   WorkProject,
 } from "@/types/rpg";
-import { generateRubikScramble } from "@/lib/demo-store";
+import { generateRubikScramble, DemoBoss } from "@/lib/demo-store";
 import {
   extractBookSpecsWithGemini,
   extractCubeSpecsWithGemini,
@@ -853,9 +853,41 @@ export async function POST(req: Request) {
       });
     }
 
-    if (body.action === "purify_boss" && body.boss_id) {
+    if (body.action === "purify_boss") {
+      const targetBossId =
+        (body.boss_id || "").trim() ||
+        store.bosses.find((b) => b.current_hp > 0)?.id ||
+        store.bosses[0]?.id ||
+        "default-boss";
+
+      if (isSupabaseConfigured && db) {
+        try {
+          const { data: dbBosses } = await db
+            .from("debt_bosses")
+            .select("*")
+            .eq("user_id", userId)
+            .order("priority_order", { ascending: true });
+
+          if (dbBosses && dbBosses.length > 0) {
+            store.bosses = dbBosses.map((b) => ({
+              id: String(b.id),
+              name: String(b.name),
+              max_hp: Number(b.max_hp),
+              current_hp: Number(b.current_hp),
+              interest_rate_ea: Number(b.interest_rate_ea),
+              min_monthly_payment_cop: Number(b.min_monthly_payment_cop),
+              paid_this_month_cop: Number(b.paid_this_month_cop),
+              priority_order: Number(b.priority_order),
+              status: b.status as DemoBoss["status"],
+            }));
+          }
+        } catch (fetchErr) {
+          console.warn("No se pudieron cargar bosses de Supabase:", fetchErr);
+        }
+      }
+
       const purifyRes = store.applyPurificationPotion({
-        boss_id: body.boss_id,
+        boss_id: targetBossId,
         amount_cop: body.amount_cop,
         use_wallet_gp: body.use_wallet_gp,
       });
@@ -872,7 +904,9 @@ export async function POST(req: Request) {
               })
               .eq("id", treasury.id);
           }
-          await db
+
+          const dbBossId = purifyRes.boss.id || targetBossId;
+          const { error: bossUpdateErr } = await db
             .from("debt_bosses")
             .update({
               current_hp: purifyRes.boss.current_hp,
@@ -880,7 +914,19 @@ export async function POST(req: Request) {
               status: purifyRes.boss.status,
               updated_at: new Date().toISOString(),
             })
-            .eq("id", body.boss_id);
+            .eq("id", dbBossId);
+
+          if (bossUpdateErr && targetBossId !== dbBossId) {
+            await db
+              .from("debt_bosses")
+              .update({
+                current_hp: purifyRes.boss.current_hp,
+                paid_this_month_cop: purifyRes.boss.paid_this_month_cop,
+                status: purifyRes.boss.status,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", targetBossId);
+          }
 
           await db.from("financial_transactions").insert({
             user_id: userId,
@@ -888,7 +934,7 @@ export async function POST(req: Request) {
             amount_cop: purifyRes.damage_dealt_cop,
             category: "debt_attack",
             merchant_or_concept: `🧪 Poción de Purificación: ${purifyRes.boss.name}`,
-            boss_id: purifyRes.boss.id,
+            boss_id: dbBossId,
             aegis_shield_used: false,
             idempotency_key: scopeIdempotencyKey(userId, body.idempotency_key),
           });

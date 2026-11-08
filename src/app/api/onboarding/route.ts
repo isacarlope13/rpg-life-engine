@@ -209,25 +209,42 @@ export async function POST(req: Request) {
         (b) => b.name && Number(b.total_balance) > 0
       );
       if (validBosses.length > 0) {
-        await db.from("debt_bosses").insert(
-          validBosses.map((b, idx) => {
-            const bal = Math.round(Number(b.total_balance));
-            return {
-              user_id: userId,
-              name: b.name.trim(),
-              max_hp: bal,
-              current_hp: bal,
-              interest_rate_ea: Math.max(0, Number(b.interest_rate_ea) || 0),
-              min_monthly_payment_cop: Math.max(
-                0,
-                Math.round(Number(b.min_monthly_payment) || 0)
-              ),
-              paid_this_month_cop: 0,
-              priority_order: idx + 1,
-              status: "active",
-            };
-          })
-        );
+        const { data: insertedBosses } = await db
+          .from("debt_bosses")
+          .insert(
+            validBosses.map((b, idx) => {
+              const bal = Math.round(Number(b.total_balance));
+              return {
+                user_id: userId,
+                name: b.name.trim(),
+                max_hp: bal,
+                current_hp: bal,
+                interest_rate_ea: Math.max(0, Number(b.interest_rate_ea) || 0),
+                min_monthly_payment_cop: Math.max(
+                  0,
+                  Math.round(Number(b.min_monthly_payment) || 0)
+                ),
+                paid_this_month_cop: 0,
+                priority_order: idx + 1,
+                status: "active",
+              };
+            })
+          )
+          .select("*");
+
+        if (insertedBosses && insertedBosses.length > 0) {
+          userStore.bosses = insertedBosses.map((b) => ({
+            id: String(b.id),
+            name: String(b.name),
+            max_hp: Number(b.max_hp),
+            current_hp: Number(b.current_hp),
+            interest_rate_ea: Number(b.interest_rate_ea),
+            min_monthly_payment_cop: Number(b.min_monthly_payment_cop),
+            paid_this_month_cop: Number(b.paid_this_month_cop),
+            priority_order: Number(b.priority_order),
+            status: b.status,
+          }));
+        }
       }
 
       // Habilidades elegidas por el usuario

@@ -631,6 +631,25 @@ export async function buildSupabaseEngineState(params: {
 
     engineMirror.updateBossesDoTAndEnrageStatus();
 
+    // Sincronizar espejo userStore en memoria para que todos los endpoints (/api/shortcuts/*) operen sobre el estado real de Supabase
+    userStore.bosses = [...engineMirror.bosses];
+    userStore.wallet_gp = engineMirror.wallet_gp;
+    userStore.vault_remaining_gp = engineMirror.vault_remaining_gp;
+    userStore.vault_cap_gp = engineMirror.vault_cap_gp;
+    userStore.current_xp = engineMirror.current_xp;
+    userStore.player_level = engineMirror.player_level;
+    userStore.current_streak_days = engineMirror.current_streak_days;
+    userStore.streak_multiplier = engineMirror.streak_multiplier;
+    userStore.aegis_shields = engineMirror.aegis_shields;
+    userStore.debt_strategy = engineMirror.debt_strategy;
+    userStore.quests = [...engineMirror.quests];
+    userStore.readingBooks = [...engineMirror.readingBooks];
+    userStore.knittingProjects = [...engineMirror.knittingProjects];
+    userStore.rubikCubes = [...engineMirror.rubikCubes];
+    userStore.wishlist = [...engineMirror.wishlist];
+    userStore.fixedCosts = [...engineMirror.fixedCosts];
+    userStore.userSkills = [...engineMirror.userSkills];
+
     return {
       mode: "supabase" as const,
       onboarding_completed: engineMirror.onboarding_completed,

@@ -1009,41 +1009,63 @@ export async function ensureSupabaseUserProvisioned(params: {
     .limit(1);
 
   if (!existingBosses || existingBosses.length === 0) {
-    await db.from("debt_bosses").insert([
-      {
-        user_id: userId,
-        name: "Nequi",
-        max_hp: 150000,
-        current_hp: 150000,
-        interest_rate_ea: 25.0,
-        min_monthly_payment_cop: 40000,
-        paid_this_month_cop: 0,
-        priority_order: 1,
-        status: "active",
-      },
-      {
-        user_id: userId,
-        name: "ADDI",
-        max_hp: 500000,
-        current_hp: 500000,
-        interest_rate_ea: 28.5,
-        min_monthly_payment_cop: 85000,
-        paid_this_month_cop: 0,
-        priority_order: 2,
-        status: "active",
-      },
-      {
-        user_id: userId,
-        name: "Bancolombia",
-        max_hp: 1200000,
-        current_hp: 1200000,
-        interest_rate_ea: 24.0,
-        min_monthly_payment_cop: 120000,
-        paid_this_month_cop: 0,
-        priority_order: 3,
-        status: "active",
-      },
-    ]);
+    const { data: insertedBosses } = await db
+      .from("debt_bosses")
+      .insert([
+        {
+          user_id: userId,
+          name: "Nequi",
+          max_hp: 150000,
+          current_hp: 150000,
+          interest_rate_ea: 25.0,
+          min_monthly_payment_cop: 40000,
+          paid_this_month_cop: 0,
+          priority_order: 1,
+          status: "active",
+        },
+        {
+          user_id: userId,
+          name: "ADDI",
+          max_hp: 500000,
+          current_hp: 500000,
+          interest_rate_ea: 28.5,
+          min_monthly_payment_cop: 85000,
+          paid_this_month_cop: 0,
+          priority_order: 2,
+          status: "active",
+        },
+        {
+          user_id: userId,
+          name: "Bancolombia",
+          max_hp: 1200000,
+          current_hp: 1200000,
+          interest_rate_ea: 24.0,
+          min_monthly_payment_cop: 120000,
+          paid_this_month_cop: 0,
+          priority_order: 3,
+          status: "active",
+        },
+      ])
+      .select("*");
+
+    if (insertedBosses && insertedBosses.length > 0) {
+      try {
+        const store = getUserStore(userId);
+        store.bosses = insertedBosses.map((b) => ({
+          id: String(b.id),
+          name: String(b.name),
+          max_hp: Number(b.max_hp),
+          current_hp: Number(b.current_hp),
+          interest_rate_ea: Number(b.interest_rate_ea),
+          min_monthly_payment_cop: Number(b.min_monthly_payment_cop),
+          paid_this_month_cop: Number(b.paid_this_month_cop),
+          priority_order: Number(b.priority_order),
+          status: b.status,
+        }));
+      } catch {
+        // Ignorar si store no está inicializado
+      }
+    }
   }
 
   // 4. Catálogo de misiones iniciales (solo si no tiene misiones)
