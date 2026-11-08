@@ -95,6 +95,9 @@ export function buildLocalFallbackState(
     wishlist: userStore.getDecoratedWishlist(),
     logs: userStore.logs,
     trial_checkpoints: userStore.trialCheckpoints,
+    spaced_cards: userStore.spacedCards,
+    unlocked_perks: userStore.unlockedPerks,
+    talent_perks: userStore.getTalentPerks(),
   };
 }
 
@@ -671,5 +674,8 @@ export async function buildSupabaseEngineState(params: {
       wishlist: engineMirror.getDecoratedWishlist(),
       logs: engineMirror.logs,
       trial_checkpoints: userStore.trialCheckpoints,
+      spaced_cards: userStore.spacedCards,
+      unlocked_perks: userStore.unlockedPerks,
+      talent_perks: userStore.getTalentPerks(),
     };
 }

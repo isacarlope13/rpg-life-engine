@@ -533,4 +533,32 @@ export interface TrialCheckpointSnapshot {
   notes?: string;
 }
 
+export interface SpacedRepetitionCard {
+  id: string;
+  source_type: "quote" | "study" | "custom";
+  source_id?: string;
+  source_title: string;
+  front_prompt: string;
+  back_reflection: string;
+  repetition: number;
+  ease_factor: number; // default 2.5
+  interval_days: number; // default 1
+  due_date: string; // YYYY-MM-DD
+  last_reviewed_at?: string;
+  review_count: number;
+}
+
+export interface TalentPerk {
+  id: string;
+  name: string;
+  domain: SkillDomain | "general" | "finance";
+  tier: 1 | 2 | 3;
+  icon: string;
+  description: string;
+  cost_points: number;
+  effect_label: string;
+  is_unlocked?: boolean;
+}
+
+
 

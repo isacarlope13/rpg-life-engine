@@ -68,8 +68,19 @@ import {
   WorkProject,
   WorkProjectTask,
   DailyScheduleConfig,
+  SpacedRepetitionCard,
+  TalentPerk,
 } from "@/types/rpg";
 import { computeBioCalendarPlan } from "@/lib/calendar-planner";
+import {
+  AnnualProductivityHeatmap,
+  WcaPerformanceCurve,
+  AmortizationFreedomChart,
+  SpacedRepetitionDuelingWidget,
+  RpgTalentTreeSection,
+  ExportAndNotionHub,
+} from "@/components/rpg-advanced-widgets";
+import { registerServiceWorker, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
 
 interface Boss {
   id: string;
@@ -145,6 +156,7 @@ interface EngineState {
     email?: string;
     display_name?: string;
     character_class?: string;
+    shortcut_api_key?: string;
   };
   billing_period: string;
   monthly_income_cop: number;
@@ -179,6 +191,9 @@ interface EngineState {
   logs: LogEntry[];
   trial_checkpoints?: TrialCheckpointSnapshot[];
   daily_schedule?: DailyScheduleConfig;
+  spaced_cards?: SpacedRepetitionCard[];
+  unlocked_perks?: string[];
+  talent_perks?: TalentPerk[];
 }
 
 // Campos numéricos del estado: si el backend no los envía, se usa 0 para evitar
@@ -686,8 +701,19 @@ export function RPGLifeEngineDashboard({
   };
 
   useEffect(() => {
+    registerServiceWorker();
+    const handleOnline = () => {
+      processOfflineQueue((synced) => {
+        setOfflineSyncMsg(`🔄 ${synced} acción(es) offline sincronizada(s) con éxito.`);
+        setTimeout(() => setOfflineSyncMsg(null), 4000);
+        fetchState();
+      });
+    };
+    window.addEventListener("online", handleOnline);
+    processOfflineQueue();
     fetchState();
     return () => {
+      window.removeEventListener("online", handleOnline);
       if (timerRef.current) clearInterval(timerRef.current);
       if (liveTimerRef.current) clearInterval(liveTimerRef.current);
     };
@@ -1246,6 +1272,124 @@ export function RPGLifeEngineDashboard({
     }
   };
 
+  const [offlineSyncMsg, setOfflineSyncMsg] = useState<string | null>(null);
+  const [perkSuccessMsg, setPerkSuccessMsg] = useState<string | null>(null);
+  const [backupRestoreMsg, setBackupRestoreMsg] = useState<string | null>(null);
+
+  const handleUnlockTalentPerk = async (perkId: string) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "unlock_talent_perk",
+          perk_id: perkId,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerHaptic("success");
+        setPerkSuccessMsg(data.message);
+        setTimeout(() => setPerkSuccessMsg(null), 4000);
+        await fetchState();
+      } else {
+        triggerHaptic("warning");
+        alert(data.message || "No se pudo desbloquear el talento.");
+      }
+    } catch {
+      triggerHaptic("error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReviewSpacedCard = async (
+    cardId: string,
+    rating: 1 | 2 | 3 | 4
+  ) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "review_spaced_card",
+          card_id: cardId,
+          spaced_rating: rating,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerHaptic(rating >= 3 ? "success" : "medium");
+        await fetchState();
+      }
+    } catch {
+      triggerHaptic("error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleAddSpacedCard = async (
+    prompt: string,
+    reflection: string,
+    sourceTitle: string
+  ) => {
+    if (!prompt.trim() || !reflection.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add_spaced_card",
+          front_prompt: prompt.trim(),
+          back_reflection: reflection.trim(),
+          source_title: sourceTitle.trim() || "Tarjeta Personal",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerHaptic("success");
+        await fetchState();
+      }
+    } catch {
+      triggerHaptic("error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleImportBackup = async (file: File) => {
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      setSubmitting(true);
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "import_backup",
+          backup_payload: json,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerHaptic("success");
+        setBackupRestoreMsg("¡Respaldo maestro importado y sincronizado con éxito!");
+        setTimeout(() => setBackupRestoreMsg(null), 4000);
+        await fetchState();
+      } else {
+        alert(data.message || "Error al importar el respaldo.");
+      }
+    } catch {
+      alert("Error procesando el archivo JSON de respaldo.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const extractCubeSpecsFromInput = async (queryOverride?: string) => {
     const query = (queryOverride ?? cubeSpecQuery).trim();
     if (!query) return;
@@ -1787,6 +1931,25 @@ export function RPGLifeEngineDashboard({
         </div>
       </header>
 
+      {offlineSyncMsg && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-cyan-500/50 bg-cyan-950/80 p-3 text-xs font-bold text-cyan-200 shadow-lg animate-pulse">
+          <span>{offlineSyncMsg}</span>
+          <button onClick={() => setOfflineSyncMsg(null)} className="text-cyan-400 hover:text-white cursor-pointer">✕</button>
+        </div>
+      )}
+      {perkSuccessMsg && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-amber-500/50 bg-amber-950/80 p-3 text-xs font-bold text-amber-200 shadow-lg">
+          <span>{perkSuccessMsg}</span>
+          <button onClick={() => setPerkSuccessMsg(null)} className="text-amber-400 hover:text-white cursor-pointer">✕</button>
+        </div>
+      )}
+      {backupRestoreMsg && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-500/50 bg-emerald-950/80 p-3 text-xs font-bold text-emerald-200 shadow-lg">
+          <span>{backupRestoreMsg}</span>
+          <button onClick={() => setBackupRestoreMsg(null)} className="text-emerald-400 hover:text-white cursor-pointer">✕</button>
+        </div>
+      )}
+
       {/* CORE ECONOMY CARDS: VAULT VS WALLET VS GAME MASTER */}
       <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
         {/* BÓVEDA MENSUAL */}
@@ -2242,6 +2405,20 @@ export function RPGLifeEngineDashboard({
               ))}
             </div>
           </div>
+
+          {/* 4. MAPA DE CALOR DE PRODUCTIVIDAD ANUAL DE 365 DÍAS */}
+          <AnnualProductivityHeatmap
+            logs={state.logs || []}
+            currentStreak={state.current_streak_days}
+          />
+
+          {/* 5. ÁRBOL DE TALENTOS PASIVOS (PERKS RPG POR NIVEL) */}
+          <RpgTalentTreeSection
+            playerLevel={state.player_level}
+            talentPerks={state.talent_perks || []}
+            unlockedPerks={state.unlocked_perks || []}
+            onUnlockPerk={handleUnlockTalentPerk}
+          />
         </div>
       )}
 
@@ -3086,6 +3263,14 @@ export function RPGLifeEngineDashboard({
                     </div>
                   </div>
                 </div>
+                {/* CURVA DE RENDIMIENTO WCA RUBIK */}
+                <div className="mt-4">
+                  <WcaPerformanceCurve
+                    solves={state.rubik_stats?.recent_solves || []}
+                    pbSeconds={state.rubik_stats?.pb_seconds ?? null}
+                    ao5Seconds={state.rubik_stats?.ao5_seconds ?? null}
+                  />
+                </div>
               </div>
               )}
 
@@ -3925,6 +4110,13 @@ export function RPGLifeEngineDashboard({
 
           return (
             <div className="space-y-6">
+              {/* DUELO DE MEMORIA & REPETICIÓN ESPACIADA SM-2 */}
+              <SpacedRepetitionDuelingWidget
+                cards={state.spaced_cards || []}
+                onReviewCard={handleReviewSpacedCard}
+                onAddCard={handleAddSpacedCard}
+              />
+
               {/* =================================================================
                   GALERÍA VISUAL DE LIBROS (ESTANTERÍA INTERACTIVA EN LA APP)
                  ================================================================= */}
@@ -6693,6 +6885,12 @@ export function RPGLifeEngineDashboard({
          ===================================================================== */}
       {!dedicatedSkillDomain && homeActiveTab === "debts" && (
         <div className="space-y-8 mb-8">
+          {/* GRÁFICA DE AMORTIZACIÓN & DÍA DE LIBERTAD FINANCIERA */}
+          <AmortizationFreedomChart
+            bosses={state.bosses || []}
+            monthlyFreeCashflow={freeCashflowCop}
+          />
+
           {/* DEBT BOSSES ARENA + SNOWBALL VS AVALANCHE + COMBO OVERFLOW + COUNTER-ATTACK */}
           <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
         <div className="mb-5 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
@@ -7121,6 +7319,16 @@ export function RPGLifeEngineDashboard({
      ===================================================================== */}
   {!dedicatedSkillDomain && homeActiveTab === "lab" && (
     <div className="space-y-8 mb-8">
+      {/* CENTRO DE EXPORTACIÓN & CONEXIÓN NOTION / CSV / IOS */}
+      <ExportAndNotionHub
+        books={state.reading_books || []}
+        bosses={state.bosses || []}
+        fixedCosts={state.fixed_costs || []}
+        solves={state.rubik_stats?.recent_solves || []}
+        fullState={state}
+        apiKey={state.user?.shortcut_api_key || "mi-token-secreto-rpg-2026"}
+        onImportBackup={handleImportBackup}
+      />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* COLUMNA IZQUIERDA: HÁBITOS RÁPIDOS (5 COLS) */}
         <div className="space-y-6 lg:col-span-5">

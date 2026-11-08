@@ -1050,6 +1050,53 @@ test("14. Cronograma Biológico Circadiano: persistencia de horas de vigilia, su
   assert.equal(store.dailySchedule.free_slot_preference, "before_work");
 });
 
+test("15. Spaced Repetition SM-2: cálculo de intervalos, factores de facilidad y forja de XP", () => {
+  const store = new RPGEngineMemoryStore();
+  assert.ok(store.spacedCards.length >= 3, "Debe iniciar con tarjetas precargadas");
+
+  const card = store.spacedCards[0];
+  const initialXp = store.current_xp;
+
+  // Repaso 1: calificación "Fácil" (4)
+  const res1 = store.reviewSpacedCard({ card_id: card.id, rating: 4 });
+  assert.equal(res1.card.repetition, 1);
+  assert.ok(res1.card.interval_days >= 2);
+  assert.ok(store.current_xp > initialXp, "Debe otorgar XP");
+  assert.ok(res1.card.ease_factor > 2.5, "Ease factor debe aumentar con calificación 4");
+
+  // Repaso 2: calificación "Bien" (3)
+  const res2 = store.reviewSpacedCard({ card_id: card.id, rating: 3 });
+  assert.equal(res2.card.repetition, 2);
+  assert.ok(res2.card.interval_days >= 4);
+
+  // Repaso 3: calificación "Olvidado" (1) -> resetea repetición e intervalo a 1
+  const res3 = store.reviewSpacedCard({ card_id: card.id, rating: 1 });
+  assert.equal(res3.card.repetition, 0);
+  assert.equal(res3.card.interval_days, 1);
+});
+
+test("16. Árbol de Talentos Pasivos: desbloqueo de perks por nivel y mitigación de DoT/Impuestos", () => {
+  const store = new RPGEngineMemoryStore();
+  // Al nivel 1, puntos disponibles = max(0, 1 - 1) = 0
+  const failUnlock = store.unlockTalentPerk("mente_absorbente");
+  assert.equal(failUnlock.success, false, "Nivel 1 no tiene puntos para desbloquear");
+
+  // Subir nivel a 5 otorgando XP
+  store.current_xp = 4200;
+  store.player_level = 5;
+
+  // Desbloquear 'escudo_austeridad' (-10% DoT de deudas)
+  const unlockRes = store.unlockTalentPerk("escudo_austeridad");
+  assert.equal(unlockRes.success, true);
+  assert.ok(store.unlockedPerks.includes("escudo_austeridad"));
+
+  // Verificar que el talento está activo en el listado
+  const perks = store.getTalentPerks();
+  const austerity = perks.find((p) => p.id === "escudo_austeridad");
+  assert.equal(austerity?.is_unlocked, true);
+});
+
+
 
 
 

@@ -26,6 +26,8 @@ import type {
   AgileMethodology,
   WorkProject,
   WorkProjectTask,
+  SpacedRepetitionCard,
+  TalentPerk,
 } from "../types/rpg";
 import {
   buildBookReadingChecklist,
@@ -138,6 +140,108 @@ export function calculateWcaTrimmedAverage(
   return Number((sum / trimmed.length).toFixed(2));
 }
 
+export const DEFAULT_TALENT_PERKS: TalentPerk[] = [
+  {
+    id: "mente_absorbente",
+    name: "Mente Absorbente",
+    domain: "reading",
+    tier: 1,
+    icon: "📖",
+    description: "Multiplica el valor del conocimiento: +15% de GP y +50 XP adicionales en lecturas intensas de más de 20 páginas.",
+    cost_points: 1,
+    effect_label: "+15% GP en Lectura",
+  },
+  {
+    id: "dedos_agiles",
+    name: "Dedos de Relámpago",
+    domain: "rubik",
+    tier: 1,
+    icon: "⚡",
+    description: "Sincronía muscular WCA: otorga +500 GP y +75 XP extra al conseguir un solve que mejore tu promedio Ao5 de sesión.",
+    cost_points: 1,
+    effect_label: "+500 GP en Ao5 Rápido",
+  },
+  {
+    id: "escudo_austeridad",
+    name: "Escudo de Austeridad",
+    domain: "finance",
+    tier: 2,
+    icon: "🛡️",
+    description: "Defensa pasiva contra intereses: reduce en un 10% el Daño Pasivo (DoT) diario infligido por los Debt Bosses.",
+    cost_points: 1,
+    effect_label: "-10% DoT de Deudas",
+  },
+  {
+    id: "hiperenfoque",
+    name: "Hiperenfoque Táctico",
+    domain: "work",
+    tier: 2,
+    icon: "🎯",
+    description: "Estado de flujo profundo: sesiones de trabajo o estudio de más de 45 minutos suman +25% de racha de enfoque.",
+    cost_points: 1,
+    effect_label: "+25% Buff en Deep Work",
+  },
+  {
+    id: "ojo_clinico",
+    name: "Ojo Clínico del Ahorrador",
+    domain: "general",
+    tier: 3,
+    icon: "🔍",
+    description: "Inmunidad a compras compulsivas: rebaja a la mitad el recargo del Impuesto al Impulso en la Tienda Wishlist.",
+    cost_points: 2,
+    effect_label: "-50% Impuesto al Impulso",
+  },
+  {
+    id: "furia_antideuda",
+    name: "Furia Devoradora de Deudas",
+    domain: "finance",
+    tier: 3,
+    icon: "⚔️",
+    description: "Ataque fulminante a capital: los abonos con pociones de purificación otorgan +25% de daño extra a los Debt Bosses.",
+    cost_points: 2,
+    effect_label: "+25% Daño en Pociones",
+  },
+];
+
+export const INITIAL_SPACED_CARDS: SpacedRepetitionCard[] = [
+  {
+    id: "card-1",
+    source_type: "quote",
+    source_title: "Hábitos Atómicos",
+    front_prompt: "¿Cuál es la regla fundamental de los cambios de hábitos según James Clear?",
+    back_reflection: "No te elevas al nivel de tus metas, caes al nivel de tus sistemas. El cambio real no es un 100% de golpe, sino un 1% mejor cada día.",
+    repetition: 0,
+    ease_factor: 2.5,
+    interval_days: 1,
+    due_date: new Date().toISOString().split("T")[0],
+    review_count: 0,
+  },
+  {
+    id: "card-2",
+    source_type: "quote",
+    source_title: "La Psicología del Dinero",
+    front_prompt: "¿Qué diferencia al éxito financiero del éxito en otras disciplinas como la física o la medicina?",
+    back_reflection: "El éxito financiero no es una ciencia dura: es una habilidad blanda donde cómo te comportas es mucho más importante que lo que sabes.",
+    repetition: 0,
+    ease_factor: 2.5,
+    interval_days: 1,
+    due_date: new Date().toISOString().split("T")[0],
+    review_count: 0,
+  },
+  {
+    id: "card-3",
+    source_type: "study",
+    source_title: "Metodologías Ágiles",
+    front_prompt: "¿En qué se diferencia el enfoque Pull de Kanban vs el Sprint Timebox de Scrum?",
+    back_reflection: "Kanban limita el trabajo en curso (WIP) permitiendo flujo continuo sin iteraciones fijas, mientras que Scrum empaca valor en bloques cerrados de tiempo (Sprints de 1 a 4 semanas).",
+    repetition: 0,
+    ease_factor: 2.5,
+    interval_days: 1,
+    due_date: new Date().toISOString().split("T")[0],
+    review_count: 0,
+  },
+];
+
 export class RPGEngineMemoryStore {
   billing_period = "2026-11";
   currency: CurrencyCode = "COP";
@@ -198,6 +302,9 @@ export class RPGEngineMemoryStore {
   current_streak_days = 2; // Inicia en 2 para que al completar 1 misión suba a 3 días (Buff 1.1x)
   streak_multiplier = 1.0;
   aegis_shields = 1; // 1 Escudo inicial disponible
+
+  unlockedPerks: string[] = [];
+  spacedCards: SpacedRepetitionCard[] = [...INITIAL_SPACED_CARDS];
 
   processedIdempotencyKeys = new Map<string, unknown>();
 
@@ -1839,6 +1946,188 @@ export class RPGEngineMemoryStore {
       ...schedule,
     };
     return this.dailySchedule;
+  }
+
+  getTalentPerks(): TalentPerk[] {
+    return DEFAULT_TALENT_PERKS.map((perk) => ({
+      ...perk,
+      is_unlocked: this.unlockedPerks.includes(perk.id),
+    }));
+  }
+
+  unlockTalentPerk(perk_id: string): {
+    success: boolean;
+    perk?: TalentPerk;
+    message: string;
+    available_points: number;
+  } {
+    const perk = DEFAULT_TALENT_PERKS.find((p) => p.id === perk_id);
+    if (!perk) {
+      return { success: false, message: "Talento no encontrado", available_points: 0 };
+    }
+    if (this.unlockedPerks.includes(perk_id)) {
+      return { success: false, message: "Este talento ya ha sido desbloqueado previamente", available_points: 0 };
+    }
+    const spentPoints = this.unlockedPerks.reduce((acc, id) => {
+      const p = DEFAULT_TALENT_PERKS.find((x) => x.id === id);
+      return acc + (p?.cost_points || 1);
+    }, 0);
+    const totalPoints = Math.max(0, this.player_level - 1);
+    const available = Math.max(0, totalPoints - spentPoints);
+    if (available < perk.cost_points) {
+      return {
+        success: false,
+        message: `Puntos insuficientes: requiere ${perk.cost_points} punto(s) de talento. Tienes ${available}. Sube de nivel para ganar más.`,
+        available_points: available,
+      };
+    }
+    this.unlockedPerks.push(perk_id);
+    this.current_xp += 150;
+    this.player_level = Math.floor(this.current_xp / 1000) + 1;
+    const remaining = available - perk.cost_points;
+
+    this.logs.unshift({
+      id: crypto.randomUUID(),
+      type: "skill_session",
+      domain: perk.domain === "finance" ? undefined : (perk.domain as SkillDomain),
+      title: `⚡ Talento Desbloqueado: ${perk.name}`,
+      subtitle: `${perk.effect_label} • ${perk.description} (+150 XP)`,
+      gp_delta: 0,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      perk: { ...perk, is_unlocked: true },
+      message: `¡Talento desbloqueado con éxito: ${perk.name}! (+150 XP)`,
+      available_points: remaining,
+    };
+  }
+
+  reviewSpacedCard(params: {
+    card_id: string;
+    rating: 1 | 2 | 3 | 4;
+  }): { card: SpacedRepetitionCard; xp_gained: number; gp_unlocked: number } {
+    let card = this.spacedCards.find((c) => c.id === params.card_id);
+    if (!card) {
+      card = {
+        id: params.card_id,
+        source_type: "custom",
+        source_title: "Tarjeta Rápida",
+        front_prompt: "Concepto Clave",
+        back_reflection: "Conocimiento asimilado",
+        repetition: 0,
+        ease_factor: 2.5,
+        interval_days: 1,
+        due_date: new Date().toISOString().split("T")[0],
+        review_count: 0,
+      };
+      this.spacedCards.push(card);
+    }
+
+    const { rating } = params;
+    let xpReward = 15;
+    let gpReward = 0;
+
+    if (rating === 1) {
+      // Olvidado
+      card.repetition = 0;
+      card.interval_days = 1;
+      card.ease_factor = Math.max(1.3, card.ease_factor - 0.2);
+      xpReward = 15;
+    } else if (rating === 2) {
+      // Difícil
+      card.repetition = 0;
+      card.interval_days = 1;
+      card.ease_factor = Math.max(1.3, card.ease_factor - 0.15);
+      xpReward = 35;
+      gpReward = 200;
+    } else if (rating === 3) {
+      // Bien
+      if (card.repetition === 0) card.interval_days = 1;
+      else if (card.repetition === 1) card.interval_days = 4;
+      else card.interval_days = Math.max(2, Math.round(card.interval_days * card.ease_factor));
+      card.repetition++;
+      xpReward = 65;
+      gpReward = 500;
+    } else {
+      // Fácil (4)
+      if (card.repetition === 0) card.interval_days = 2;
+      else if (card.repetition === 1) card.interval_days = 7;
+      else card.interval_days = Math.max(3, Math.round(card.interval_days * card.ease_factor * 1.3));
+      card.repetition++;
+      card.ease_factor = Math.min(3.5, card.ease_factor + 0.15);
+      xpReward = 100;
+      gpReward = 1000;
+    }
+
+    card.review_count = (card.review_count || 0) + 1;
+    card.last_reviewed_at = new Date().toISOString();
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + card.interval_days);
+    card.due_date = nextDate.toISOString().split("T")[0];
+
+    // Otorgar recompensas en el store
+    this.current_xp += xpReward;
+    this.player_level = Math.floor(this.current_xp / 1000) + 1;
+    if (gpReward > 0 && this.vault_remaining_gp > 0) {
+      const transfer = Math.min(gpReward, this.vault_remaining_gp);
+      this.vault_remaining_gp -= transfer;
+      this.wallet_gp += transfer;
+    }
+
+    this.logs.unshift({
+      id: crypto.randomUUID(),
+      type: "skill_session",
+      domain: card.source_type === "quote" ? "reading" : "study",
+      title: `Duelo de Memoria SM-2: ${card.source_title}`,
+      subtitle: `Calificación ${rating}/4 • Repetición #${card.repetition} (Próximo repaso en ${card.interval_days}d) • +${xpReward} XP`,
+      gp_delta: gpReward,
+      timestamp: new Date().toISOString(),
+    });
+
+    return { card, xp_gained: xpReward, gp_unlocked: gpReward };
+  }
+
+  addSpacedCard(params: {
+    source_type: "quote" | "study" | "custom";
+    source_title: string;
+    front_prompt: string;
+    back_reflection: string;
+  }): SpacedRepetitionCard {
+    const card: SpacedRepetitionCard = {
+      id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      source_type: params.source_type,
+      source_title: params.source_title,
+      front_prompt: params.front_prompt,
+      back_reflection: params.back_reflection,
+      repetition: 0,
+      ease_factor: 2.5,
+      interval_days: 1,
+      due_date: new Date().toISOString().split("T")[0],
+      review_count: 0,
+    };
+    this.spacedCards.unshift(card);
+    return card;
+  }
+
+  importBackupState(statePayload: Record<string, unknown>): { success: boolean; message: string } {
+    if (!statePayload || typeof statePayload !== "object") {
+      return { success: false, message: "Archivo de respaldo inválido" };
+    }
+    const s = (statePayload.engine_state || statePayload) as Record<string, unknown>;
+    if (Array.isArray(s.reading_books)) this.readingBooks = s.reading_books as ReadingBook[];
+    if (Array.isArray(s.rubik_cubes)) this.rubikCubes = s.rubik_cubes as RubikCubeCatalogItem[];
+    if (Array.isArray(s.knitting_projects)) this.knittingProjects = s.knitting_projects as KnittingProject[];
+    if (Array.isArray(s.work_projects)) this.workProjects = s.work_projects as WorkProject[];
+    if (Array.isArray(s.unlocked_perks)) this.unlockedPerks = s.unlocked_perks as string[];
+    if (Array.isArray(s.spaced_cards)) this.spacedCards = s.spaced_cards as SpacedRepetitionCard[];
+    if (typeof s.wallet_gp === "number") this.wallet_gp = s.wallet_gp;
+    if (typeof s.vault_remaining_gp === "number") this.vault_remaining_gp = s.vault_remaining_gp;
+    if (typeof s.current_xp === "number") this.current_xp = s.current_xp;
+    if (typeof s.player_level === "number") this.player_level = s.player_level;
+    if (typeof s.current_streak_days === "number") this.current_streak_days = s.current_streak_days;
+    return { success: true, message: "¡Respaldo maestro importado con éxito!" };
   }
 
   // 1. Trigger de Hábitos + Multiplicador de Racha (1.1x / 1.25x) + Escudo Aegis cada 7 rachas

@@ -43,6 +43,10 @@ export interface SkillSessionEndpointRequest {
     | "move_work_project_task"
     | "complete_work_project_task"
     | "update_daily_schedule"
+    | "unlock_talent_perk"
+    | "review_spaced_card"
+    | "add_spaced_card"
+    | "import_backup"
     | "create_trial_checkpoint"
     | "new_scramble";
   checkpoint_label?: string;
@@ -155,6 +159,13 @@ export interface SkillSessionEndpointRequest {
   use_wallet_gp?: boolean;
   wishlist_item_id?: string;
   daily_schedule?: Partial<DailyScheduleConfig>;
+  perk_id?: string;
+  card_id?: string;
+  spaced_rating?: 1 | 2 | 3 | 4;
+  front_prompt?: string;
+  back_reflection?: string;
+  source_title?: string;
+  backup_payload?: Record<string, unknown>;
 }
 
 export async function POST(req: Request) {
@@ -673,6 +684,76 @@ export async function POST(req: Request) {
         action: "update_daily_schedule",
         daily_schedule: updated,
         shortcut_tts_message: `Horario circadiano actualizado y guardado: despertar a las ${updated.wake_up_time} y dormir a las ${updated.sleep_time}.`,
+      });
+    }
+
+    if (body.action === "unlock_talent_perk" && body.perk_id) {
+      const perkRes = store.unlockTalentPerk(body.perk_id);
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: perkRes.success,
+        action: "unlock_talent_perk",
+        perk: perkRes.perk,
+        talent_perks: store.getTalentPerks(),
+        unlocked_perks: store.unlockedPerks,
+        available_points: perkRes.available_points,
+        player_level: store.player_level,
+        current_xp: store.current_xp,
+        message: perkRes.message,
+        shortcut_tts_message: perkRes.message,
+      });
+    }
+
+    if (body.action === "review_spaced_card" && body.card_id && body.spaced_rating) {
+      const reviewRes = store.reviewSpacedCard({
+        card_id: body.card_id,
+        rating: body.spaced_rating,
+      });
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "review_spaced_card",
+        card: reviewRes.card,
+        spaced_cards: store.spacedCards,
+        xp_gained: reviewRes.xp_gained,
+        gp_unlocked: reviewRes.gp_unlocked,
+        player_level: store.player_level,
+        current_xp: store.current_xp,
+        wallet_gp: store.wallet_gp,
+        vault_remaining_gp: store.vault_remaining_gp,
+        shortcut_tts_message: `¡Repaso completado! Próximo duelo en ${reviewRes.card.interval_days} días (+${reviewRes.xp_gained} XP).`,
+      });
+    }
+
+    if (body.action === "add_spaced_card" && body.front_prompt && body.back_reflection) {
+      const newCard = store.addSpacedCard({
+        source_type: "custom",
+        source_title: body.source_title || "Tarjeta Personalizada",
+        front_prompt: body.front_prompt,
+        back_reflection: body.back_reflection,
+      });
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "add_spaced_card",
+        card: newCard,
+        spaced_cards: store.spacedCards,
+        shortcut_tts_message: `Tarjeta "${newCard.front_prompt}" añadida al ciclo de repetición espaciada.`,
+      });
+    }
+
+    if (body.action === "import_backup" && body.backup_payload) {
+      const impRes = store.importBackupState(body.backup_payload);
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: impRes.success,
+        action: "import_backup",
+        message: impRes.message,
+        shortcut_tts_message: impRes.message,
       });
     }
 
