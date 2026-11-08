@@ -875,9 +875,24 @@ test("11. Debt Bosses Passive DoT & Enrage Timer, Wishlist Restraints & GP Overd
   const wishPriority2 = wishlistDecorated.find((w) => w.priority === 2)!;
   assert.equal(wishPriority2.min_streak_required, 3);
 
+  // Con racha = 0 días, intentar redimir cualquier ítem debe fallar por racha inactiva
+  store.current_streak_days = 0;
+  store.wallet_gp = 200000;
+  assert.throws(
+    () => {
+      store.recordTransaction({
+        amount_cop: 0,
+        category: "discretionary_wishlist",
+        merchant_or_concept: "Canje",
+        wishlist_item_id: "wish-2",
+      });
+    },
+    /Tu racha de hábitos está en 0 días/,
+    "Debe bloquear redención si el rendimiento general / racha está en 0"
+  );
+
   // Con racha = 2 días, intentar redimir ítem de prioridad 2 debe fallar por racha insuficiente
   store.current_streak_days = 2;
-  store.wallet_gp = 200000;
   assert.throws(
     () => {
       store.recordTransaction({

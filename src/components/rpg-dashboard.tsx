@@ -737,6 +737,32 @@ export function RPGLifeEngineDashboard({
     };
   }, []);
 
+  // Recuperar Cronómetro Universal de localStorage al iniciar (PWA offline / reload)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedTimerStr = localStorage.getItem("rpg_live_timer_state");
+      if (savedTimerStr) {
+        const saved = JSON.parse(savedTimerStr);
+        if (saved && saved.domain) {
+          setLiveTimerDomain(saved.domain);
+          if (saved.paused) {
+            setLiveTimerPaused(true);
+            setLiveTimerSeconds(saved.seconds || 0);
+          } else {
+            const elapsedSinceStart = Math.floor(
+              (Date.now() - (saved.lastTimestamp || Date.now())) / 1000
+            );
+            setLiveTimerSeconds((saved.seconds || 0) + Math.max(0, elapsedSinceStart));
+            setLiveTimerPaused(false);
+          }
+        }
+      }
+    } catch {
+      // Ignorar error de parsing en localStorage
+    }
+  }, []);
+
   // Intervalo del Cronómetro Universal en Vivo
   useEffect(() => {
     if (liveTimerDomain && !liveTimerPaused) {
@@ -750,6 +776,32 @@ export function RPGLifeEngineDashboard({
       if (liveTimerRef.current) clearInterval(liveTimerRef.current);
     };
   }, [liveTimerDomain, liveTimerPaused]);
+
+  // Sincronizar Cronómetro Universal con localStorage para tolerancia a fallos PWA
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (liveTimerDomain) {
+      try {
+        localStorage.setItem(
+          "rpg_live_timer_state",
+          JSON.stringify({
+            domain: liveTimerDomain,
+            seconds: liveTimerSeconds,
+            paused: liveTimerPaused,
+            lastTimestamp: Date.now(),
+          })
+        );
+      } catch {
+        // Ignorar storage full
+      }
+    } else {
+      try {
+        localStorage.removeItem("rpg_live_timer_state");
+      } catch {
+        // Ignorar
+      }
+    }
+  }, [liveTimerDomain, liveTimerSeconds, liveTimerPaused]);
 
   // Cargar notas del cubo seleccionado al cambiar de cubo o cargar estado
   useEffect(() => {
@@ -818,6 +870,13 @@ export function RPGLifeEngineDashboard({
     setLiveTimerDomain(null);
     setLiveTimerSeconds(0);
     setLiveTimerPaused(false);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("rpg_live_timer_state");
+      } catch {
+        // Ignorar
+      }
+    }
   };
 
   const handleSaveCubeNotebook = async () => {
@@ -2986,6 +3045,17 @@ export function RPGLifeEngineDashboard({
               </p>
             </div>
           ))}
+        </div>
+
+        {/* MAPA DE CALOR DE CONSTANCIA & HÁBITOS (SANTUARIO) */}
+        <div className="mb-6">
+          <AnnualProductivityHeatmap
+            logs={state.logs || []}
+            currentStreak={state.current_streak_days}
+            showDomainFilter={true}
+            filterDomain={activeSkillTab}
+            title="Mapa de Calor de Constancia en Habilidades & Hábitos (365 Días)"
+          />
         </div>
 
         {/* BANNER FLOTANTE DE SESIÓN EN VIVO ACTIVA (SI CORRE EN SEGUNDO PLANO O EN OTRA PESTAÑA) */}

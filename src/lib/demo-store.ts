@@ -1252,8 +1252,11 @@ export class RPGEngineMemoryStore {
       let lockedReason: string | null = null;
       if (item.is_redeemed) {
         lockedReason = "Ya redimido";
+      } else if (this.current_streak_days <= 0) {
+        lockedReason =
+          "Racha inactiva (0 días). Completa al menos una misión diaria o sesión en el Santuario para activar la tienda.";
       } else if (this.current_streak_days < minStreak) {
-        lockedReason = `Requiere racha mínima de ${minStreak} días (Actual: ${this.current_streak_days}d)`;
+        lockedReason = `Requiere racha mínima de ${minStreak} días de hábitos (Actual: ${this.current_streak_days}d)`;
       } else if (this.wallet_gp < 0) {
         lockedReason =
           "Billetera en Maldición de Sobregiro (OVERDRAWN_CURSE). Sanea tu saldo registrando hábitos.";
@@ -2667,6 +2670,12 @@ export class RPGEngineMemoryStore {
       const minStreak =
         item?.min_streak_required ??
         (item?.priority === 1 ? 1 : item?.priority === 2 ? 3 : 7);
+
+      if (this.current_streak_days <= 0) {
+        throw new Error(
+          "Bloqueo de Economía de Restricción: Tu racha de hábitos está en 0 días. Completa al menos una misión diaria o sesión de habilidad en el Santuario para activar tu racha antes de canjear recompensas de la Wishlist."
+        );
+      }
 
       if (this.current_streak_days < minStreak) {
         throw new Error(

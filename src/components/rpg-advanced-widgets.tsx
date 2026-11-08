@@ -55,15 +55,30 @@ import { triggerHaptic } from "@/lib/offline-sync";
 export function AnnualProductivityHeatmap({
   logs = [],
   currentStreak = 0,
+  filterDomain = "all",
+  title,
+  showDomainFilter = false,
 }: {
-  logs: Array<{ timestamp: string; gp_delta?: number }>;
+  logs: Array<{ timestamp: string; gp_delta?: number; domain?: string }>;
   currentStreak: number;
+  filterDomain?: string;
+  title?: string;
+  showDomainFilter?: boolean;
 }) {
+  const [internalDomain, setInternalDomain] = useState<string>(filterDomain);
+
+  const activeDomain = showDomainFilter ? internalDomain : filterDomain;
+
   const { weeks, totalActiveDays, maxSessionsInDay } = useMemo(() => {
     const today = new Date();
     const dayMap = new Map<string, number>();
 
-    logs.forEach((log) => {
+    const targetLogs =
+      activeDomain && activeDomain !== "all"
+        ? logs.filter((l) => l.domain === activeDomain)
+        : logs;
+
+    targetLogs.forEach((log) => {
       if (log.timestamp) {
         const d = log.timestamp.split("T")[0];
         dayMap.set(d, (dayMap.get(d) || 0) + 1);
@@ -109,7 +124,7 @@ export function AnnualProductivityHeatmap({
       totalActiveDays: activeCount,
       maxSessionsInDay: maxInDay,
     };
-  }, [logs]);
+  }, [logs, activeDomain]);
 
   const levelColor = (lvl: number) => {
     switch (lvl) {
@@ -127,13 +142,23 @@ export function AnnualProductivityHeatmap({
     }
   };
 
+  const domainPills = [
+    { id: "all", label: "🌟 Todas las Disciplinas" },
+    { id: "rubik", label: "🧩 Cubos WCA" },
+    { id: "reading", label: "📖 Lectura" },
+    { id: "knitting", label: "🧶 Tejido / Crochet" },
+    { id: "study", label: "📚 Estudio" },
+    { id: "work", label: "💼 Trabajo & Proyectos" },
+    { id: "sports", label: "🏅 Deporte & Gym" },
+  ];
+
   return (
     <div className="rounded-2xl border border-emerald-500/30 bg-slate-950/70 p-5 shadow-xl">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2">
           <Calendar className="h-5 w-5 text-emerald-400" />
           <h3 className="text-sm font-bold text-white">
-            Mapa de Calor de Productividad Anual (365 Días)
+            {title || "Mapa de Calor de Constancia & Hábitos (365 Días)"}
           </h3>
         </div>
         <div className="flex items-center gap-3 text-xs">
@@ -142,11 +167,30 @@ export function AnnualProductivityHeatmap({
             <strong className="text-emerald-400">{currentStreak} días</strong>
           </span>
           <span className="text-slate-400">
-            📅 Días Activos:{" "}
+            📅 Días con Sesiones:{" "}
             <strong className="text-cyan-300">{totalActiveDays}</strong>
           </span>
         </div>
       </div>
+
+      {showDomainFilter && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {domainPills.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setInternalDomain(p.id)}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                activeDomain === p.id
+                  ? "bg-emerald-600 text-white shadow"
+                  : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <p className="text-xs text-slate-400 mb-3">
         Cada casilla representa un día del año. La intensidad verde refleja la cantidad de sesiones de hábitos, lectura y trabajo forjadas.
