@@ -41,6 +41,13 @@ export interface DemoBoss {
   paid_this_month_cop: number;
   priority_order: number;
   status: "active" | "defeated" | "enraged";
+  cutoff_day?: number;
+  daily_interest_dot_gp?: number;
+  monthly_interest_cop?: number;
+  days_until_cutoff?: number;
+  enrage_timer_active?: boolean;
+  is_purified?: boolean;
+  last_purification_date?: string;
 }
 
 export interface DemoQuest {
@@ -58,6 +65,10 @@ export interface DemoWishlistItem {
   cost_gp: number;
   priority: number;
   is_redeemed: boolean;
+  min_streak_required?: number;
+  impulse_tax_pct?: number;
+  effective_cost_gp?: number;
+  locked_reason?: string | null;
 }
 
 export interface DemoLogEntry {
@@ -197,6 +208,7 @@ export class RPGEngineMemoryStore {
       min_monthly_payment_cop: 45000,
       paid_this_month_cop: 0,
       priority_order: 1,
+      cutoff_day: 15,
       status: "active",
     },
     {
@@ -208,6 +220,7 @@ export class RPGEngineMemoryStore {
       min_monthly_payment_cop: 120000,
       paid_this_month_cop: 0,
       priority_order: 2,
+      cutoff_day: 28,
       status: "active",
     },
     {
@@ -219,6 +232,7 @@ export class RPGEngineMemoryStore {
       min_monthly_payment_cop: 180000,
       paid_this_month_cop: 0,
       priority_order: 3,
+      cutoff_day: 30,
       status: "active",
     },
   ];
@@ -648,6 +662,7 @@ export class RPGEngineMemoryStore {
       name: "Cubo Magnético Flagship (GAN / MoYu AoSu)",
       cost_gp: 85000,
       priority: 1,
+      min_streak_required: 1,
       is_redeemed: false,
     },
     {
@@ -655,6 +670,7 @@ export class RPGEngineMemoryStore {
       name: "Kit Hilazas Merino + Agujas Ergonómicas Tejido",
       cost_gp: 60000,
       priority: 2,
+      min_streak_required: 3,
       is_redeemed: false,
     },
     {
@@ -662,6 +678,7 @@ export class RPGEngineMemoryStore {
       name: "Cena Especial Fin de Semana / Libro Edición Dura",
       cost_gp: 65000,
       priority: 3,
+      min_streak_required: 7,
       is_redeemed: false,
     },
   ];
@@ -787,6 +804,194 @@ export class RPGEngineMemoryStore {
     } else {
       this.streak_multiplier = 1.0;
     }
+  }
+
+  // 1A. Cálculo de Daño Pasivo por Segundo/Día (DoT) y Enrage Timer de Debt Bosses
+  updateBossesDoTAndEnrageStatus(refDate: Date = new Date()): DemoBoss[] {
+    const currentDay = refDate.getDate();
+
+    for (const boss of this.bosses) {
+      if (boss.current_hp <= 0) {
+        boss.status = "defeated";
+        boss.daily_interest_dot_gp = 0;
+        boss.monthly_interest_cop = 0;
+        boss.days_until_cutoff = 0;
+        boss.enrage_timer_active = false;
+        boss.is_purified = true;
+        continue;
+      }
+
+      const cutoff = boss.cutoff_day || 20;
+      const daysUntil = cutoff - currentDay;
+      boss.days_until_cutoff = daysUntil;
+
+      const monthlyRate =
+        Math.pow(1 + boss.interest_rate_ea / 100, 1 / 12) - 1;
+      const monthlyInterest = Math.round(boss.current_hp * monthlyRate);
+      boss.monthly_interest_cop = monthlyInterest;
+
+      const isPurified =
+        (boss.paid_this_month_cop || 0) >=
+          (boss.min_monthly_payment_cop || 10000) ||
+        boss.is_purified === true;
+
+      boss.is_purified = isPurified;
+
+      if (isPurified) {
+        // Boss apaciguado: el sangrado DoT se neutraliza para este ciclo
+        boss.daily_interest_dot_gp = 0;
+        boss.enrage_timer_active = false;
+        if (boss.status === "enraged") {
+          boss.status = "active";
+        }
+      } else {
+        // Daño pasivo DoT diario en GP
+        boss.daily_interest_dot_gp = Math.max(
+          1,
+          Math.round(monthlyInterest / 30)
+        );
+
+        if (daysUntil < 0) {
+          // Fecha de corte vencida sin abono: Boss enfurecido
+          boss.status = "enraged";
+          boss.enrage_timer_active = true;
+        } else if (daysUntil <= 3) {
+          // A 3 días o menos del corte sin abono: Enrage Timer activado
+          boss.enrage_timer_active = true;
+        } else {
+          boss.enrage_timer_active = false;
+          if (boss.status !== "enraged") {
+            boss.status = "active";
+          }
+        }
+      }
+    }
+    return this.bosses;
+  }
+
+  // 1B. Poción de Purificación (Abono directo a capital para detener el sangrado DoT)
+  applyPurificationPotion(params: {
+    boss_id: string;
+    amount_cop?: number;
+    use_wallet_gp?: boolean;
+  }) {
+    const boss = this.bosses.find((b) => b.id === params.boss_id);
+    if (!boss) {
+      throw new Error(`Boss con ID "${params.boss_id}" no encontrado.`);
+    }
+    if (boss.current_hp <= 0) {
+      throw new Error(`El Boss ${boss.name} ya ha sido liquidado.`);
+    }
+
+    let paymentAmount = Math.max(0, Math.round(params.amount_cop || 0));
+
+    if (paymentAmount === 0 && params.use_wallet_gp) {
+      paymentAmount = Math.min(
+        Math.max(0, this.wallet_gp),
+        boss.min_monthly_payment_cop - (boss.paid_this_month_cop || 0)
+      );
+      if (paymentAmount <= 0) {
+        paymentAmount = Math.min(Math.max(0, this.wallet_gp), boss.current_hp);
+      }
+    }
+
+    if (paymentAmount === 0) {
+      paymentAmount = Math.min(boss.min_monthly_payment_cop, boss.current_hp);
+    }
+
+    if (params.use_wallet_gp) {
+      if (this.wallet_gp < paymentAmount) {
+        throw new Error(
+          `Saldo insuficiente en Billetera GP. Requieres ${paymentAmount.toLocaleString(
+            "es-CO"
+          )} GP y dispones de ${this.wallet_gp.toLocaleString("es-CO")} GP.`
+        );
+      }
+      this.wallet_gp -= paymentAmount;
+    }
+
+    const damageDealt = Math.min(paymentAmount, boss.current_hp);
+    boss.current_hp -= damageDealt;
+    boss.paid_this_month_cop = (boss.paid_this_month_cop || 0) + damageDealt;
+    boss.is_purified = true;
+    boss.last_purification_date = new Date().toISOString();
+    boss.daily_interest_dot_gp = 0;
+    boss.enrage_timer_active = false;
+
+    if (boss.current_hp <= 0) {
+      boss.current_hp = 0;
+      boss.status = "defeated";
+    } else if (boss.status === "enraged") {
+      boss.status = "active";
+    }
+
+    const previousDot = Math.max(
+      1,
+      Math.round((boss.monthly_interest_cop || 0) / 30)
+    );
+
+    this.logs.unshift({
+      id: crypto.randomUUID(),
+      type: "counterattack",
+      title: `🧪 Poción de Purificación: ${boss.name}`,
+      subtitle: `Abono de $${damageDealt.toLocaleString(
+        "es-CO"
+      )} COP • Sangrado DoT detenido (-${previousDot} GP/día mitigado)${
+        boss.current_hp === 0
+          ? " • 🏆 ¡BOSS ANIQUILADO!"
+          : " • 🕊️ Purificado para este ciclo"
+      }`,
+      gp_delta: params.use_wallet_gp ? -paymentAmount : 0,
+      timestamp: new Date().toISOString(),
+    });
+
+    this.updateBossesDoTAndEnrageStatus();
+
+    return {
+      boss,
+      damage_dealt_cop: damageDealt,
+      purified: true,
+      dot_soothed_gp: previousDot,
+      message: `¡Poción de Purificación aplicada con éxito! Daño DoT neutralizado para ${boss.name}.`,
+    };
+  }
+
+  // 1C. Decorador dinámico de Wishlist con Racha Mínima e Impuesto al Impulso
+  getDecoratedWishlist(): DemoWishlistItem[] {
+    const hasImpulseTax =
+      this.wallet_gp < 0 ||
+      this.variable_ops_spent_cop > this.variable_ops_budget_cop ||
+      this.total_penalty_gp > 0;
+    const impulseTaxPct = hasImpulseTax ? 0.2 : 0;
+
+    return this.wishlist.map((item) => {
+      const minStreak =
+        item.min_streak_required ??
+        (item.priority === 1 ? 1 : item.priority === 2 ? 3 : 7);
+      const effectiveCost = Math.round(item.cost_gp * (1 + impulseTaxPct));
+
+      let lockedReason: string | null = null;
+      if (item.is_redeemed) {
+        lockedReason = "Ya redimido";
+      } else if (this.current_streak_days < minStreak) {
+        lockedReason = `Requiere racha mínima de ${minStreak} días (Actual: ${this.current_streak_days}d)`;
+      } else if (this.wallet_gp < 0) {
+        lockedReason =
+          "Billetera en Maldición de Sobregiro (OVERDRAWN_CURSE). Sanea tu saldo registrando hábitos.";
+      } else if (this.wallet_gp < effectiveCost) {
+        lockedReason = `Faltan ${(
+          effectiveCost - this.wallet_gp
+        ).toLocaleString("es-CO")} GP para desbloquear`;
+      }
+
+      return {
+        ...item,
+        min_streak_required: minStreak,
+        impulse_tax_pct: impulseTaxPct,
+        effective_cost_gp: effectiveCost,
+        locked_reason: lockedReason,
+      };
+    });
   }
 
   // Resumen de Estadísticas por Dominio de Habilidad
@@ -1288,6 +1493,10 @@ export class RPGEngineMemoryStore {
     const boostedGp = Math.round(params.requested_gp * this.streak_multiplier);
     const actualTransfer = Math.min(boostedGp, this.vault_remaining_gp);
 
+    const prevWallet = this.wallet_gp;
+    const amortizedToOverdrawn =
+      prevWallet < 0 ? Math.min(actualTransfer, Math.abs(prevWallet)) : 0;
+
     this.vault_remaining_gp -= actualTransfer;
     this.wallet_gp += actualTransfer;
     this.current_xp += params.earned_xp;
@@ -1296,14 +1505,22 @@ export class RPGEngineMemoryStore {
       Math.floor(Math.sqrt(this.current_xp / 100)) + 1
     );
 
+    const curseLifted = prevWallet < 0 && this.wallet_gp >= 0;
+
+    let logSubtitle = `Racha ${this.current_streak_days}d (Buff ${this.streak_multiplier}x) • +${params.earned_xp} XP`;
+    if (shieldEarned) logSubtitle += " • 🛡️ +1 Escudo Aegis!";
+    if (amortizedToOverdrawn > 0)
+      logSubtitle += ` • ✨ Amortizados ${amortizedToOverdrawn.toLocaleString(
+        "es-CO"
+      )} GP del sobregiro`;
+    if (curseLifted) logSubtitle += " • 🕊️ ¡Maldición de Sobregiro Levantada!";
+
     const entry: DemoLogEntry = {
       id: crypto.randomUUID(),
       type: "activity",
       domain: params.domain || "general",
       title: params.title,
-      subtitle: `Racha ${this.current_streak_days}d (Buff ${this.streak_multiplier}x) • +${params.earned_xp} XP${
-        shieldEarned ? " • 🛡️ +1 Escudo Aegis!" : ""
-      }`,
+      subtitle: logSubtitle,
       gp_delta: actualTransfer,
       timestamp: new Date().toISOString(),
     };
@@ -1316,6 +1533,8 @@ export class RPGEngineMemoryStore {
       shield_earned: shieldEarned,
       vault_capped: actualTransfer < boostedGp,
       leveled_up: this.player_level > prevLevel,
+      amortized_overdrawn_gp: amortizedToOverdrawn,
+      curse_lifted: curseLifted,
       idempotent_replay: false,
     };
 
@@ -1715,13 +1934,48 @@ export class RPGEngineMemoryStore {
         this.recalculateStreakMultiplier();
       }
     } else if (params.category === "discretionary_wishlist") {
-      walletDeducted = baseGp;
+      const item = params.wishlist_item_id
+        ? this.wishlist.find((w) => w.id === params.wishlist_item_id)
+        : undefined;
+
+      const minStreak =
+        item?.min_streak_required ??
+        (item?.priority === 1 ? 1 : item?.priority === 2 ? 3 : 7);
+
+      if (this.current_streak_days < minStreak) {
+        throw new Error(
+          `Bloqueo de Tienda: Requiere una racha mínima de ${minStreak} días de hábitos (tu racha actual es de ${this.current_streak_days}d).`
+        );
+      }
+
+      if (this.wallet_gp < 0) {
+        throw new Error(
+          "Bloqueo por Maldición OVERDRAWN_CURSE: No puedes redimir deseos mientras tu Billetera esté en saldo negativo. Completa hábitos para sanearla."
+        );
+      }
+
+      const hasImpulseTax =
+        this.wallet_gp < 0 ||
+        this.variable_ops_spent_cop > this.variable_ops_budget_cop ||
+        this.total_penalty_gp > 0;
+      const impulseTaxPct = hasImpulseTax ? 0.2 : 0;
+      const baseCost = item ? item.cost_gp : baseGp;
+      const effectiveGp = Math.round(baseCost * (1 + impulseTaxPct));
+
+      if (this.wallet_gp < effectiveGp) {
+        throw new Error(
+          `Saldo insuficiente en Billetera GP. Costo con Impuesto al Impulso (${
+            impulseTaxPct * 100
+          }%): ${effectiveGp.toLocaleString(
+            "es-CO"
+          )} GP. Saldo disponible: ${this.wallet_gp.toLocaleString("es-CO")} GP.`
+        );
+      }
+
+      walletDeducted = effectiveGp;
       this.wallet_gp -= walletDeducted;
 
-      if (params.wishlist_item_id) {
-        const item = this.wishlist.find((w) => w.id === params.wishlist_item_id);
-        if (item) item.is_redeemed = true;
-      }
+      if (item) item.is_redeemed = true;
     } else if (params.category === "fixed_mandatory") {
       this.fixed_costs_spent_cop += baseGp;
       if (this.fixed_costs_spent_cop > this.fixed_costs_budget_cop) {
@@ -2059,6 +2313,11 @@ export class RPGEngineMemoryStore {
           }),
           projected_interest_cop: simBoss.interest_accrued,
           status: boss.status,
+          cutoff_day: boss.cutoff_day,
+          daily_interest_dot_gp: boss.daily_interest_dot_gp,
+          days_until_cutoff: boss.days_until_cutoff,
+          enrage_timer_active: boss.enrage_timer_active,
+          is_purified: boss.is_purified,
         };
       });
   }

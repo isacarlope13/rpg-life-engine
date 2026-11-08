@@ -307,6 +307,23 @@ export interface BossTTKProjection {
   estimated_kill_date: string;
   projected_interest_cop: number;
   status: "active" | "defeated" | "enraged";
+  cutoff_day?: number;
+  daily_interest_dot_gp?: number;
+  days_until_cutoff?: number;
+  enrage_timer_active?: boolean;
+  is_purified?: boolean;
+}
+
+export interface BossDoTSummary {
+  boss_id: string;
+  name: string;
+  daily_dot_gp: number;
+  monthly_interest_cop: number;
+  cutoff_day: number;
+  days_until_cutoff: number;
+  enrage_timer_active: boolean;
+  is_enraged: boolean;
+  is_purified: boolean;
 }
 
 export interface DebtStrategyComparison {

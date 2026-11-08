@@ -48,6 +48,7 @@ export function buildLocalFallbackState(
   userStore: RPGEngineMemoryStore,
   fallbackReason?: string
 ) {
+  userStore.updateBossesDoTAndEnrageStatus();
   return {
     mode: "local_engine" as const,
     ...(fallbackReason ? { fallback_reason: fallbackReason } : {}),
@@ -90,7 +91,7 @@ export function buildLocalFallbackState(
     reading_books: userStore.readingBooks,
     knitting_projects: userStore.knittingProjects,
     skill_sessions: userStore.skillSessions,
-    wishlist: userStore.wishlist,
+    wishlist: userStore.getDecoratedWishlist(),
     logs: userStore.logs,
     trial_checkpoints: userStore.trialCheckpoints,
   };
@@ -622,6 +623,8 @@ export async function buildSupabaseEngineState(params: {
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
 
+    engineMirror.updateBossesDoTAndEnrageStatus();
+
     return {
       mode: "supabase" as const,
       onboarding_completed: engineMirror.onboarding_completed,
@@ -663,7 +666,7 @@ export async function buildSupabaseEngineState(params: {
       reading_books: engineMirror.readingBooks,
       knitting_projects: engineMirror.knittingProjects,
       skill_sessions: engineMirror.skillSessions,
-      wishlist: engineMirror.wishlist,
+      wishlist: engineMirror.getDecoratedWishlist(),
       logs: engineMirror.logs,
       trial_checkpoints: userStore.trialCheckpoints,
     };

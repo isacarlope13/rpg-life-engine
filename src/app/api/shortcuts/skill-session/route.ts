@@ -23,6 +23,8 @@ export interface SkillSessionEndpointRequest {
     | "log_session"
     | "set_debt_strategy"
     | "limit_break"
+    | "purify_boss"
+    | "redeem_wishlist"
     | "extract_cube_specs"
     | "add_cube"
     | "update_cube_notes"
@@ -116,9 +118,13 @@ export interface SkillSessionEndpointRequest {
   // Work
   deliverable?: string;
   impact_level?: "standard" | "high_impact" | "milestone";
-  // Debt Strategy / Limit Break
+  // Debt Strategy / Limit Break / Boss Purify / Wishlist
   debt_strategy?: DebtStrategy;
   limit_break_gp?: number;
+  boss_id?: string;
+  amount_cop?: number;
+  use_wallet_gp?: boolean;
+  wishlist_item_id?: string;
 }
 
 export async function POST(req: Request) {
@@ -592,6 +598,103 @@ export async function POST(req: Request) {
           current_xp: store.current_xp,
         },
         shortcut_tts_message: `¡Limit Break ejecutado! Sacrificaste ${lbResult.sacrificed_gp.toLocaleString("es-CO")} GP para impactar directamente a tus Debt Bosses y ganaste ${lbResult.bonus_xp} XP extra.`,
+      });
+    }
+
+    if (body.action === "purify_boss" && body.boss_id) {
+      const purifyRes = store.applyPurificationPotion({
+        boss_id: body.boss_id,
+        amount_cop: body.amount_cop,
+        use_wallet_gp: body.use_wallet_gp,
+      });
+
+      if (isSupabaseConfigured && db) {
+        const treasury = await resolvePlayerTreasury(userId, db);
+        if (treasury) {
+          if (body.use_wallet_gp) {
+            await db
+              .from("player_treasury")
+              .update({
+                wallet_gp: store.wallet_gp,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", treasury.id);
+          }
+          await db
+            .from("debt_bosses")
+            .update({
+              current_hp: purifyRes.boss.current_hp,
+              paid_this_month_cop: purifyRes.boss.paid_this_month_cop,
+              status: purifyRes.boss.status,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", body.boss_id);
+
+          await db.from("financial_transactions").insert({
+            user_id: userId,
+            treasury_id: treasury.id,
+            amount_cop: purifyRes.damage_dealt_cop,
+            category: "debt_attack",
+            merchant_or_concept: `🧪 Poción de Purificación: ${purifyRes.boss.name}`,
+            boss_id: purifyRes.boss.id,
+            aegis_shield_used: false,
+            idempotency_key: scopeIdempotencyKey(userId, body.idempotency_key),
+          });
+        }
+      }
+
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "purify_boss",
+        purify_result: purifyRes,
+        bosses: store.bosses,
+        ttk_projections: store.getBossTTKProjections(),
+        wallet_gp: store.wallet_gp,
+        shortcut_tts_message: purifyRes.message,
+      });
+    }
+
+    if (body.action === "redeem_wishlist" && body.wishlist_item_id) {
+      const txRes = store.recordTransaction({
+        amount_cop: 0,
+        category: "discretionary_wishlist",
+        merchant_or_concept: "Canje de Deseo Wishlist",
+        wishlist_item_id: body.wishlist_item_id,
+        idempotency_key: body.idempotency_key,
+      });
+
+      if (isSupabaseConfigured && db) {
+        const treasury = await resolvePlayerTreasury(userId, db);
+        if (treasury) {
+          await db
+            .from("player_treasury")
+            .update({
+              wallet_gp: store.wallet_gp,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", treasury.id);
+
+          await db
+            .from("wishlist_items")
+            .update({
+              is_redeemed: true,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", body.wishlist_item_id);
+        }
+      }
+
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "redeem_wishlist",
+        transaction: txRes,
+        wishlist: store.getDecoratedWishlist(),
+        wallet_gp: store.wallet_gp,
+        shortcut_tts_message: `¡Deseo canjeado con éxito! Se descontaron ${txRes.wallet_gp_deducted.toLocaleString("es-CO")} GP de tu Billetera.`,
       });
     }
 

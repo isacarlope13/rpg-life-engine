@@ -39,6 +39,7 @@ import {
   BookMarked,
   FileText,
   Settings2,
+  LayoutDashboard,
 } from "lucide-react";
 import {
   BookComplexity,
@@ -75,6 +76,13 @@ interface Boss {
   paid_this_month_cop: number;
   priority_order: number;
   status: "active" | "defeated" | "enraged";
+  cutoff_day?: number;
+  daily_interest_dot_gp?: number;
+  monthly_interest_cop?: number;
+  days_until_cutoff?: number;
+  enrage_timer_active?: boolean;
+  is_purified?: boolean;
+  last_purification_date?: string;
 }
 
 interface Quest {
@@ -92,6 +100,10 @@ interface WishlistItem {
   cost_gp: number;
   priority: number;
   is_redeemed: boolean;
+  min_streak_required?: number;
+  impulse_tax_pct?: number;
+  effective_cost_gp?: number;
+  locked_reason?: string | null;
 }
 
 interface LogEntry {
@@ -306,6 +318,11 @@ export function RPGLifeEngineDashboard({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Pestaña activa del Dashboard Principal (para evitar saturación visual)
+  const [homeActiveTab, setHomeActiveTab] = useState<
+    "hub" | "skills" | "debts" | "calendar" | "lab"
+  >("hub");
+
   // Tabs del Santuario de Habilidades
   const [activeSkillTab, setActiveSkillTab] = useState<SkillDomain>(
     dedicatedSkillDomain || "rubik"
@@ -353,6 +370,12 @@ export function RPGLifeEngineDashboard({
   const [sportsMetricNote, setSportsMetricNote] = useState(
     "Press Banca 80kg / 5km en 24min"
   );
+
+  const totalActiveDot = useMemo(() => {
+    return (state?.bosses || [])
+      .filter((b) => b.current_hp > 0 && !b.is_purified)
+      .reduce((acc, b) => acc + (b.daily_interest_dot_gp || 0), 0);
+  }, [state?.bosses]);
 
   const bioCalendarPlan = useMemo(() => {
     return computeBioCalendarPlan({
@@ -1214,26 +1237,65 @@ export function RPGLifeEngineDashboard({
     setLastShortcutResponse(JSON.stringify(json, null, 2));
   };
 
-  const redeemWishlist = async (item: WishlistItem) => {
+  const [purifyingBossId, setPurifyingBossId] = useState<string | null>(null);
+  const [purifyAmountCop, setPurifyAmountCop] = useState<number>(50000);
+  const [purifyUseWalletGp, setPurifyUseWalletGp] = useState<boolean>(false);
+
+  const executePurifyBoss = async (
+    bossId: string,
+    amountCop?: number,
+    useGp: boolean = false
+  ) => {
     setSubmitting(true);
     try {
-      const res = await fetch("/api/shortcuts/quick-expense", {
+      const res = await fetch("/api/shortcuts/skill-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "purify_boss",
+          boss_id: bossId,
+          amount_cop: amountCop,
+          use_wallet_gp: useGp,
+          idempotency_key: `purify-${bossId}-${Date.now()}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.error || "No se pudo aplicar la Poción de Purificación.");
+      } else {
+        setPurifyingBossId(null);
+        await fetchState();
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Error al purificar boss.";
+      alert(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const redeemWishlist = async (item: WishlistItem) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "redeem_wishlist",
+          wishlist_item_id: item.id,
           idempotency_key: `ios-wish-${Date.now()}`,
-          input_mode: "manual",
-          manual_override: {
-            amount_cop: item.cost_gp,
-            category: "discretionary_wishlist",
-            merchant_or_concept: `Wishlist: ${item.name}`,
-            wishlist_item_id: item.id,
-          },
         }),
       });
       const json = await res.json();
-      setLastShortcutResponse(JSON.stringify(json, null, 2));
-      await fetchState();
+      if (!res.ok || json.error) {
+        alert(json.error || "No se pudo redimir este deseo.");
+      } else {
+        setLastShortcutResponse(JSON.stringify(json, null, 2));
+        await fetchState();
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Error al redimir deseo.";
+      alert(msg);
     } finally {
       setSubmitting(false);
     }
@@ -1539,6 +1601,17 @@ export function RPGLifeEngineDashboard({
               ? "⚠️ ESTADO: OVERDRAWN_CURSE (Completa sesiones para recuperar)"
               : `Tienes ${state.aegis_shields} Escudo(s) Aegis para bloquear multas 0.2x`}
           </p>
+          {totalActiveDot > 0 && (
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-300 ring-1 ring-rose-500/30">
+              <span className="flex items-center gap-1.5">
+                <Flame className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+                Sangrado DoT Pasivo:
+              </span>
+              <span className="font-mono text-rose-200">
+                -{totalActiveDot.toLocaleString("es-CO")} GP/día
+              </span>
+            </div>
+          )}
           <div className="mt-4 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">
             <span className="text-slate-400">Castigos 1.2x acumulados:</span>
             <span className="font-semibold text-rose-400">
@@ -1575,281 +1648,527 @@ export function RPGLifeEngineDashboard({
       )}
 
       {/* =====================================================================
-          SANTUARIO DE HABILIDADES & SESIONES DE PRODUCTIVIDAD (5 APARTADOS)
-          1. Cubos de Rubik • 2. Lectura • 3. Tejido • 4. Estudio • 5. Trabajo
+          NAVEGACIÓN EXECUTIVE TABS (DESATURACIÓN DE LA PÁGINA PRINCIPAL)
          ===================================================================== */}
-      <section className="mb-8 rounded-2xl border border-emerald-500/30 bg-gradient-to-b from-slate-900/90 to-slate-950/90 p-6 shadow-xl">
-        {!dedicatedSkillDomain && (
-          <>
-            {/* 1. PORTALES A PÁGINAS DEDICADAS */}
-            <div className="mb-6">
-              <div className="mb-3 flex items-center justify-between">
+      {!dedicatedSkillDomain && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/90 p-2 backdrop-blur shadow-2xl sticky top-2 z-30">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setHomeActiveTab("hub")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                homeActiveTab === "hub"
+                  ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg ring-1 ring-emerald-400/50"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              }`}
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              Hub Principal
+            </button>
+            <button
+              type="button"
+              onClick={() => setHomeActiveTab("skills")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                homeActiveTab === "skills"
+                  ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg ring-1 ring-emerald-400/50"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              }`}
+            >
+              <Trophy className="h-4 w-4" />
+              Santuario de Habilidades
+            </button>
+            <button
+              type="button"
+              onClick={() => setHomeActiveTab("debts")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                homeActiveTab === "debts"
+                  ? "bg-gradient-to-r from-rose-600 to-amber-600 text-white shadow-lg ring-1 ring-rose-400/50"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              }`}
+            >
+              <Swords className="h-4 w-4" />
+              Debt Bosses & Tienda
+              {totalActiveDot > 0 && (
+                <span className="ml-1 rounded-full bg-rose-500/20 px-1.5 py-0.5 text-[10px] text-rose-300 animate-pulse">
+                  DoT Activo
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setHomeActiveTab("calendar")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                homeActiveTab === "calendar"
+                  ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg ring-1 ring-cyan-400/50"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              }`}
+            >
+              <CalendarClock className="h-4 w-4" />
+              Calendario Circadiano
+            </button>
+            <button
+              type="button"
+              onClick={() => setHomeActiveTab("lab")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                homeActiveTab === "lab"
+                  ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg ring-1 ring-purple-400/50"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              }`}
+            >
+              <Smartphone className="h-4 w-4" />
+              Laboratorio & Bitácora
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-400 px-2">
+            <span>
+              Racha: <strong className="text-amber-300">{state.current_streak_days}d</strong> ({state.streak_multiplier}x)
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          TAB 1: HUB PRINCIPAL (DESATURADO, VISTA EJECUTIVA & PORTALES)
+         ===================================================================== */}
+      {!dedicatedSkillDomain && homeActiveTab === "hub" && (
+        <div className="space-y-8 mb-8">
+          {/* 1. PORTALES A PÁGINAS DEDICADAS */}
+          <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-b from-slate-900/90 to-slate-950/90 p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
                   🚀 Portales de Habilidades (Cada habilidad abre en su propia página completa)
                 </span>
-                <span className="text-xs text-slate-400">
-                  Espacio exclusivo sin distracciones
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {ALL_SKILL_DOMAINS_PORTAL.map((dom) => {
-                  const summary = state.skill_summaries.find(
-                    (s) => s.domain === dom.domain
-                  );
-                  const lvl = summary?.level ?? 1;
-                  const gp = summary?.total_gp_earned ?? 0;
-                  const sessions = summary?.sessions_count ?? 0;
-                  const minutes = summary?.total_minutes ?? 0;
-
-                  return (
-                    <div
-                      key={dom.domain}
-                      className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 transition hover:border-emerald-500/50 hover:bg-slate-900/60 shadow-lg"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-300">
-                            {dom.badge}
-                          </span>
-                          <span className="font-mono text-xs font-bold text-slate-300">
-                            LVL {lvl}
-                          </span>
-                        </div>
-                        <h3 className="mt-2 text-sm font-bold text-white">
-                          {dom.label}
-                        </h3>
-                        <p className="mt-1 text-xs text-slate-400 line-clamp-2">
-                          {dom.desc}
-                        </p>
-                        <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 pt-2">
-                          <span>
-                            {sessions} sesiones ({minutes}m)
-                          </span>
-                          <strong className="text-amber-300">
-                            +{gp.toLocaleString("es-CO")} GP
-                          </strong>
-                        </div>
-                      </div>
-
-                      <Link
-                        href={`/skills/${dom.domain}`}
-                        className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition shadow"
-                      >
-                        Abrir Página Dedicada ➔
-                      </Link>
-                    </div>
-                  );
-                })}
+                <p className="text-xs text-slate-400">
+                  Selecciona una disciplina para entrar a su cabina inmersiva sin distracciones.
+                </p>
               </div>
             </div>
 
-            {/* 2. CALENDARIO BIOLÓGICO */}
-            <div className="mb-6 rounded-2xl border border-amber-500/30 bg-slate-950/90 p-5 shadow-xl">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <CalendarClock className="h-5 w-5 text-amber-400" />
-                    <h3 className="text-base font-bold text-white">
-                      Calendario Biológico Diario & Semanal (De Levantarse a Acostarse)
-                    </h3>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {ALL_SKILL_DOMAINS_PORTAL.map((dom) => {
+                const summary = state.skill_summaries.find(
+                  (s) => s.domain === dom.domain
+                );
+                const lvl = summary?.level ?? 1;
+                const gp = summary?.total_gp_earned ?? 0;
+                const sessions = summary?.sessions_count ?? 0;
+                const minutes = summary?.total_minutes ?? 0;
+
+                return (
+                  <div
+                    key={dom.domain}
+                    className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 transition hover:border-emerald-500/50 hover:bg-slate-900/60 shadow-lg"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-300">
+                          {dom.badge}
+                        </span>
+                        <span className="font-mono text-xs font-bold text-slate-300">
+                          LVL {lvl}
+                        </span>
+                      </div>
+                      <h3 className="mt-2 text-sm font-bold text-white">
+                        {dom.label}
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-400 line-clamp-2">
+                        {dom.desc}
+                      </p>
+                      <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 pt-2">
+                        <span>
+                          {sessions} sesiones ({minutes}m)
+                        </span>
+                        <strong className="text-amber-300">
+                          +{gp.toLocaleString("es-CO")} GP
+                        </strong>
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`/skills/${dom.domain}`}
+                      className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition shadow"
+                    >
+                      Abrir Página Dedicada ➔
+                    </Link>
                   </div>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Estructura tu día hora por hora según a qué hora te levantas, cuándo duermes y tu bloque laboral.
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 2. TRES WIDGETS TÁCTICOS EJECUTIVOS */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            {/* WIDGET BOSSES */}
+            <div className="flex flex-col justify-between rounded-2xl border border-rose-500/30 bg-gradient-to-br from-rose-950/20 via-slate-900 to-slate-950 p-5 shadow-lg">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Swords className="h-4 w-4 text-rose-400" />
+                    <h3 className="font-bold text-white text-sm">Arena de Debt Bosses</h3>
+                  </div>
+                  {totalActiveDot > 0 && (
+                    <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300 animate-pulse">
+                      DoT Activo
+                    </span>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <span className="text-xs text-slate-400">Deuda Restante:</span>
+                  <p className="text-xl font-extrabold text-rose-300 font-mono">
+                    ${state.bosses.reduce((acc, b) => acc + Math.max(0, b.current_hp), 0).toLocaleString("es-CO")} COP
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-bold ${
-                      bioCalendarPlan.sleepHealthStatus.level === "optimal"
-                        ? "bg-emerald-500/20 text-emerald-300"
-                        : bioCalendarPlan.sleepHealthStatus.level === "critical"
-                        ? "bg-rose-500/20 text-rose-300"
-                        : "bg-amber-500/20 text-amber-200"
-                    }`}
-                  >
+                {totalActiveDot > 0 ? (
+                  <p className="mt-1 text-xs text-rose-400">
+                    🔥 Sangrado Pasivo: -{totalActiveDot.toLocaleString("es-CO")} GP/día drenando billetera.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-emerald-400">
+                    🕊️ Todos los Bosses purificados para este ciclo.
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setHomeActiveTab("debts")}
+                className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20 cursor-pointer text-center"
+              >
+                Abrir Arena & Pociones de Purificación ➔
+              </button>
+            </div>
+
+            {/* WIDGET MISIONES RÁPIDAS */}
+            <div className="flex flex-col justify-between rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/20 via-slate-900 to-slate-950 p-5 shadow-lg">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Flame className="h-4 w-4 text-emerald-400" />
+                    <h3 className="font-bold text-white text-sm">Misiones Diarias Activas</h3>
+                  </div>
+                  <span className="text-xs text-emerald-400 font-bold">
+                    {state.streak_multiplier}x GP Buff
+                  </span>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {state.quests.slice(0, 2).map((q) => (
+                    <div
+                      key={q.code}
+                      className="flex items-center justify-between rounded-lg bg-slate-950/60 p-2 text-xs border border-slate-800"
+                    >
+                      <span className="text-slate-200 truncate pr-2 font-medium">{q.title}</span>
+                      <button
+                        type="button"
+                        onClick={() => triggerHabitShortcut(q.code)}
+                        className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-emerald-500 cursor-pointer shrink-0"
+                      >
+                        +{Math.round(q.reward_gp * state.streak_multiplier).toLocaleString("es-CO")} GP
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHomeActiveTab("skills")}
+                className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 cursor-pointer text-center"
+              >
+                Ir a Santuario de Habilidades ➔
+              </button>
+            </div>
+
+            {/* WIDGET CALENDARIO HOY */}
+            <div className="flex flex-col justify-between rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/20 via-slate-900 to-slate-950 p-5 shadow-lg">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CalendarClock className="h-4 w-4 text-cyan-400" />
+                    <h3 className="font-bold text-white text-sm">Ritmo Circadiano Hoy</h3>
+                  </div>
+                  <span className="rounded bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
                     {bioCalendarPlan.sleepHealthStatus.label}
                   </span>
                 </div>
-              </div>
-
-              {/* CONTROLES DE HORAS */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 mb-4">
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    ☀️ Te levantas (Lun–Vie)
-                  </label>
-                  <input
-                    type="time"
-                    value={bioWakeUpTime}
-                    onChange={(e) => setBioWakeUpTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    🌙 Te acuestas (Lun–Vie)
-                  </label>
-                  <input
-                    type="time"
-                    value={bioSleepTime}
-                    onChange={(e) => setBioSleepTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    ☀️ FinSem / 🌙 FinSem
-                  </label>
-                  <div className="mt-1 flex items-center gap-1">
-                    <input
-                      type="time"
-                      value={bioWeekendWakeUpTime}
-                      onChange={(e) => setBioWeekendWakeUpTime(e.target.value)}
-                      className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
-                      title="Levantarse Fin de Semana"
-                    />
-                    <input
-                      type="time"
-                      value={bioWeekendSleepTime}
-                      onChange={(e) => setBioWeekendSleepTime(e.target.value)}
-                      className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
-                      title="Acostarse Fin de Semana"
-                    />
+                <div className="mt-3 text-xs text-slate-300 space-y-1">
+                  <div>
+                    <span className="text-slate-400">Horario Biológico:</span>{" "}
+                    <strong className="text-white">{bioWakeUpTime} – {bioSleepTime}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Ventana Libre:</span>{" "}
+                    <strong className="text-emerald-300">
+                      {bioCalendarPlan.morningWindowMinsWeekday + bioCalendarPlan.eveningWindowMinsWeekday} min/día
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Sueño estimado:</span>{" "}
+                    <strong className="text-cyan-300">{bioCalendarPlan.sleepHoursWeekday} horas</strong>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    🔒 Trabajo / Estudio
-                  </label>
-                  <div className="mt-1 flex items-center gap-1">
-                    <input
-                      type="time"
-                      value={bioWorkStart}
-                      onChange={(e) => setBioWorkStart(e.target.value)}
-                      className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
-                      title="Inicio trabajo"
-                    />
-                    <input
-                      type="time"
-                      value={bioWorkEnd}
-                      onChange={(e) => setBioWorkEnd(e.target.value)}
-                      className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
-                      title="Fin trabajo"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    Ventana Habilidades:
-                  </label>
-                  <select
-                    value={bioSlotPref}
-                    onChange={(e) =>
-                      setBioSlotPref(
-                        e.target.value as "after_work" | "before_work" | "mixed"
-                      )
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white"
-                  >
-                    <option value="mixed">Mixto (Mañana + Noche)</option>
-                    <option value="after_work">Tarde / Noche (Post-Trabajo)</option>
-                    <option value="before_work">Mañana (Antes de Trabajar)</option>
-                  </select>
-                </div>
               </div>
-
-              {/* DIAGNÓSTICO BIOLÓGICO */}
-              <div className="grid grid-cols-1 gap-2 rounded-xl border border-slate-800 bg-slate-900/40 p-3 text-xs sm:grid-cols-3 mb-4">
-                <div>
-                  <span className="text-slate-400">Vigilia Activa:</span>{" "}
-                  <strong className="text-white">
-                    {bioCalendarPlan.awakeHoursWeekday}h despierto
-                  </strong>{" "}
-                  <span className="text-slate-500">
-                    ({bioCalendarPlan.sleepHoursWeekday}h de sueño)
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Ventana Mañana Real:</span>{" "}
-                  <strong className="text-cyan-300">
-                    {bioCalendarPlan.morningWindowMinsWeekday} min libres
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-slate-400">Ventana Noche Real:</span>{" "}
-                  <strong className="text-emerald-300">
-                    {bioCalendarPlan.eveningWindowMinsWeekday} min libres
-                  </strong>
-                </div>
-              </div>
-
-              {/* CRONOGRAMA 7 DÍAS */}
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-7">
-                {bioCalendarPlan.days.map((d) => (
-                  <div
-                    key={d.key}
-                    className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/70 p-2.5 text-xs"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-1">
-                        <span className="font-bold text-white">{d.label}</span>
-                        <span className="rounded bg-emerald-500/15 px-1 py-0.5 text-[9px] font-semibold text-emerald-300">
-                          {d.totalDayMins}m skills
-                        </span>
-                      </div>
-
-                      <div className="mt-1 flex items-center justify-between rounded bg-slate-950 px-1.5 py-0.5 text-[9px] text-amber-200">
-                        <span>☀️ {d.wakeUpTime}</span>
-                        <span>🌙 {d.sleepTime}</span>
-                      </div>
-
-                      <div className="mt-2 space-y-1">
-                        {d.scheduled.map((item, i) => (
-                          <div
-                            key={i}
-                            className="rounded border border-emerald-500/30 bg-emerald-950/20 px-1.5 py-1 text-[10px] text-white"
-                          >
-                            <div className="text-[9px] font-semibold text-cyan-300">
-                              {item.timeRange}
-                            </div>
-                            <p className="font-semibold truncate">{item.label}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="mt-2 space-y-0.5 border-t border-slate-800/80 pt-1 text-[9px] text-slate-400">
-                        {d.timeline
-                          .filter((slot) => slot.kind !== "skill")
-                          .map((slot, sIdx) => (
-                            <div
-                              key={sIdx}
-                              className="flex items-center justify-between truncate"
-                            >
-                              <span className="truncate pr-1">{slot.title}</span>
-                              <span className="font-mono text-slate-500 shrink-0">
-                                {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-2 border-t border-slate-800 pt-1 text-right text-[10px] font-bold text-amber-300">
-                      +{d.gpUnlocked.toLocaleString("es-CO")} GP
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => setHomeActiveTab("calendar")}
+                className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 cursor-pointer text-center"
+              >
+                Planificar Horas y Cronograma ➔
+              </button>
             </div>
+          </div>
 
-            <div className="mb-4 flex items-center justify-between border-t border-slate-800 pt-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                ⚡ Práctica Rápida Integrada (o usa los botones de arriba para pantalla completa)
+          {/* 3. BITÁCORA RECIENTE (FEED COMPACTO) */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <FileText className="h-4 w-4 text-slate-400" />
+                Bitácora de Sesiones & Transacciones Recientes
+              </h3>
+              <span className="text-xs text-slate-500">Últimos registros</span>
+            </div>
+            <div className="space-y-2">
+              {state.logs.slice(0, 5).map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-xs"
+                >
+                  <div className="truncate pr-3">
+                    <p className="font-semibold text-white truncate">{log.title}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{log.subtitle}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span
+                      className={`font-mono font-bold ${
+                        log.gp_delta > 0
+                          ? "text-emerald-400"
+                          : log.gp_delta < 0
+                          ? "text-rose-400"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {log.gp_delta > 0 ? `+${log.gp_delta.toLocaleString("es-CO")} GP` : log.gp_delta < 0 ? `${log.gp_delta.toLocaleString("es-CO")} GP` : "0 GP"}
+                    </span>
+                    <p className="text-[10px] text-slate-500">
+                      {new Date(log.timestamp).toLocaleTimeString("es-CO", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          TAB 3: CALENDARIO BIOLÓGICO CIRCADIANO DIARIO & SEMANAL
+         ===================================================================== */}
+      {!dedicatedSkillDomain && homeActiveTab === "calendar" && (
+        <section className="mb-8 rounded-2xl border border-amber-500/30 bg-slate-950/90 p-6 shadow-xl">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">
+                  Calendario Biológico Diario & Semanal (De Levantarse a Acostarse)
+                </h3>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Estructura tu día hora por hora según a qué hora te levantas, cuándo duermes y tu bloque laboral.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-bold ${
+                  bioCalendarPlan.sleepHealthStatus.level === "optimal"
+                    ? "bg-emerald-500/20 text-emerald-300"
+                    : bioCalendarPlan.sleepHealthStatus.level === "critical"
+                    ? "bg-rose-500/20 text-rose-300"
+                    : "bg-amber-500/20 text-amber-200"
+                }`}
+              >
+                {bioCalendarPlan.sleepHealthStatus.label}
               </span>
             </div>
-          </>
-        )}
+          </div>
+
+          {/* CONTROLES DE HORAS */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 mb-4">
+            <div>
+              <label className="block text-[11px] text-slate-300">
+                ☀️ Te levantas (Lun–Vie)
+              </label>
+              <input
+                type="time"
+                value={bioWakeUpTime}
+                onChange={(e) => setBioWakeUpTime(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-300">
+                🌙 Te acuestas (Lun–Vie)
+              </label>
+              <input
+                type="time"
+                value={bioSleepTime}
+                onChange={(e) => setBioSleepTime(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-300">
+                ☀️ FinSem / 🌙 FinSem
+              </label>
+              <div className="mt-1 flex items-center gap-1">
+                <input
+                  type="time"
+                  value={bioWeekendWakeUpTime}
+                  onChange={(e) => setBioWeekendWakeUpTime(e.target.value)}
+                  className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
+                  title="Levantarse Fin de Semana"
+                />
+                <input
+                  type="time"
+                  value={bioWeekendSleepTime}
+                  onChange={(e) => setBioWeekendSleepTime(e.target.value)}
+                  className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
+                  title="Acostarse Fin de Semana"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-300">
+                🔒 Trabajo / Estudio
+              </label>
+              <div className="mt-1 flex items-center gap-1">
+                <input
+                  type="time"
+                  value={bioWorkStart}
+                  onChange={(e) => setBioWorkStart(e.target.value)}
+                  className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
+                  title="Inicio trabajo"
+                />
+                <input
+                  type="time"
+                  value={bioWorkEnd}
+                  onChange={(e) => setBioWorkEnd(e.target.value)}
+                  className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
+                  title="Fin trabajo"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-300">
+                Ventana Habilidades:
+              </label>
+              <select
+                value={bioSlotPref}
+                onChange={(e) =>
+                  setBioSlotPref(
+                    e.target.value as "after_work" | "before_work" | "mixed"
+                  )
+                }
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white"
+              >
+                <option value="mixed">Mixto (Mañana + Noche)</option>
+                <option value="after_work">Tarde / Noche (Post-Trabajo)</option>
+                <option value="before_work">Mañana (Antes de Trabajar)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* DIAGNÓSTICO BIOLÓGICO */}
+          <div className="grid grid-cols-1 gap-2 rounded-xl border border-slate-800 bg-slate-900/40 p-3 text-xs sm:grid-cols-3 mb-4">
+            <div>
+              <span className="text-slate-400">Vigilia Activa:</span>{" "}
+              <strong className="text-white">
+                {bioCalendarPlan.awakeHoursWeekday}h despierto
+              </strong>{" "}
+              <span className="text-slate-500">
+                ({bioCalendarPlan.sleepHoursWeekday}h de sueño)
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400">Ventana Mañana Real:</span>{" "}
+              <strong className="text-cyan-300">
+                {bioCalendarPlan.morningWindowMinsWeekday} min libres
+              </strong>
+            </div>
+            <div>
+              <span className="text-slate-400">Ventana Noche Real:</span>{" "}
+              <strong className="text-emerald-300">
+                {bioCalendarPlan.eveningWindowMinsWeekday} min libres
+              </strong>
+            </div>
+          </div>
+
+          {/* CRONOGRAMA 7 DÍAS */}
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-7">
+            {bioCalendarPlan.days.map((d) => (
+              <div
+                key={d.key}
+                className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/70 p-2.5 text-xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-1">
+                    <span className="font-bold text-white">{d.label}</span>
+                    <span className="rounded bg-emerald-500/15 px-1 py-0.5 text-[9px] font-semibold text-emerald-300">
+                      {d.totalDayMins}m skills
+                    </span>
+                  </div>
+
+                  <div className="mt-1 flex items-center justify-between rounded bg-slate-950 px-1.5 py-0.5 text-[9px] text-amber-200">
+                    <span>☀️ {d.wakeUpTime}</span>
+                    <span>🌙 {d.sleepTime}</span>
+                  </div>
+
+                  <div className="mt-2 space-y-1">
+                    {d.scheduled.map((item, i) => (
+                      <div
+                        key={i}
+                        className="rounded border border-emerald-500/30 bg-emerald-950/20 px-1.5 py-1 text-[10px] text-white"
+                      >
+                        <div className="text-[9px] font-semibold text-cyan-300">
+                          {item.timeRange}
+                        </div>
+                        <p className="font-semibold truncate">{item.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-2 space-y-0.5 border-t border-slate-800/80 pt-1 text-[9px] text-slate-400">
+                    {d.timeline
+                      .filter((slot) => slot.kind !== "skill")
+                      .map((slot, sIdx) => (
+                        <div
+                          key={sIdx}
+                          className="flex items-center justify-between truncate"
+                        >
+                          <span className="truncate pr-1">{slot.title}</span>
+                          <span className="font-mono text-slate-500 shrink-0">
+                            {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div className="mt-2 border-t border-slate-800 pt-1 text-right text-[10px] font-bold text-amber-300">
+                  +{d.gpUnlocked.toLocaleString("es-CO")} GP
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* =====================================================================
+          TAB 2: SANTUARIO DE HABILIDADES & SESIONES DE PRODUCTIVIDAD
+         ===================================================================== */}
+      {(dedicatedSkillDomain || homeActiveTab === "skills") && (
+      <section className="mb-8 rounded-2xl border border-emerald-500/30 bg-gradient-to-b from-slate-900/90 to-slate-950/90 p-6 shadow-xl">
         <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div>
             <div className="flex items-center gap-2">
@@ -5359,11 +5678,15 @@ export function RPGLifeEngineDashboard({
           </div>
         )}
       </section>
+      )}
 
-      {!dedicatedSkillDomain && (
-        <>
+      {/* =====================================================================
+          TAB 4: DEBT BOSSES ARENA & TIENDA WISHLIST
+         ===================================================================== */}
+      {!dedicatedSkillDomain && homeActiveTab === "debts" && (
+        <div className="space-y-8 mb-8">
           {/* DEBT BOSSES ARENA + SNOWBALL VS AVALANCHE + COMBO OVERFLOW + COUNTER-ATTACK */}
-          <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
         <div className="mb-5 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
           <div>
             <div className="flex items-center gap-2">
@@ -5523,32 +5846,242 @@ export function RPGLifeEngineDashboard({
                   </span>
                 </div>
 
-                <div className="mt-4 flex gap-2">
+                {/* DoT Pasivo & Enrage Countdown */}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-1.5 rounded-lg bg-slate-900/80 px-2.5 py-1.5 text-[11px]">
+                  {boss.is_purified ? (
+                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-400">
+                      🕊️ Purificado (DoT 0 GP/día)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 font-semibold text-rose-400 animate-pulse">
+                      <Flame className="h-3 w-3 text-rose-400" />
+                      DoT Pasivo: -{(boss.daily_interest_dot_gp || 0).toLocaleString("es-CO")} GP/d
+                    </span>
+                  )}
+                  {boss.days_until_cutoff != null && !isDefeated && (
+                    <span
+                      className={`font-semibold ${
+                        boss.enrage_timer_active
+                          ? "text-amber-300"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {boss.days_until_cutoff < 0
+                        ? "⚠️ Corte Vencido"
+                        : `Corte: día ${boss.cutoff_day || 20} (${boss.days_until_cutoff}d)`}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-3 flex gap-2">
                   <button
                     disabled={submitting || isDefeated}
                     onClick={() => attackBoss(boss.name, 50000)}
-                    className="flex-1 rounded-lg bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/25 disabled:opacity-40 cursor-pointer"
+                    className="flex-1 rounded-lg bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/25 disabled:opacity-40 cursor-pointer"
                   >
                     Atacar -$50k HP
                   </button>
                   <button
                     disabled={submitting || isDefeated}
-                    onClick={() => attackBoss(boss.name, boss.current_hp)}
-                    className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
+                    onClick={() => {
+                      setPurifyingBossId(boss.id);
+                      setPurifyAmountCop(
+                        Math.min(
+                          Math.max(
+                            10000,
+                            boss.min_monthly_payment_cop -
+                              (boss.paid_this_month_cop || 0)
+                          ),
+                          boss.current_hp
+                        )
+                      );
+                    }}
+                    className="flex-1 rounded-lg border border-teal-500/40 bg-teal-500/15 px-2.5 py-1.5 text-xs font-semibold text-teal-300 hover:bg-teal-500/25 disabled:opacity-40 cursor-pointer"
                   >
-                    Finiquitar
+                    🧪 Poción Purificar
                   </button>
                 </div>
+
+                {purifyingBossId === boss.id && (
+                  <div className="mt-3 rounded-xl border border-teal-500/40 bg-slate-900 p-3 text-xs space-y-2">
+                    <div className="flex items-center justify-between text-teal-300 font-bold">
+                      <span>🧪 Poción de Purificación</span>
+                      <button
+                        onClick={() => setPurifyingBossId(null)}
+                        className="text-slate-400 hover:text-white"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      Abona a capital para apaciguar al boss y detener el
+                      sangrado DoT pasivo diario.
+                    </p>
+                    <div>
+                      <label className="block text-[10px] text-slate-400">
+                        Monto Abono (COP)
+                      </label>
+                      <input
+                        type="number"
+                        value={purifyAmountCop}
+                        onChange={(e) =>
+                          setPurifyAmountCop(Number(e.target.value))
+                        }
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-white"
+                      />
+                    </div>
+                    <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={purifyUseWalletGp}
+                        onChange={(e) =>
+                          setPurifyUseWalletGp(e.target.checked)
+                        }
+                        className="rounded border-slate-700 text-teal-500"
+                      />
+                      Usar saldo Billetera GP (
+                      {state.wallet_gp.toLocaleString("es-CO")} GP)
+                    </label>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        disabled={submitting}
+                        onClick={() =>
+                          executePurifyBoss(
+                            boss.id,
+                            purifyAmountCop,
+                            purifyUseWalletGp
+                          )
+                        }
+                        className="flex-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-teal-500 disabled:opacity-40 cursor-pointer"
+                      >
+                        Confirmar Poción
+                      </button>
+                      <button
+                        onClick={() => setPurifyingBossId(null)}
+                        className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       </section>
 
-      {/* QUESTS + WISHLIST + MULTI-TAB IOS AUTOMATION LAB */}
+      {/* CATÁLOGO WISHLIST (ECONOMÍA DE RESTRICCIÓN) */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ShoppingBag className="h-5 w-5 text-amber-400" />
+            <h2 className="text-lg font-bold text-white">
+              Tienda Wishlist (Economía de Restricción)
+            </h2>
+          </div>
+          {((state.variable_ops_spent_cop > state.variable_ops_budget_cop) ||
+            state.wallet_gp < 0 ||
+            state.total_penalty_gp > 0) && (
+            <span className="rounded-full bg-amber-500/20 px-2.5 py-1 text-xs font-bold text-amber-300 ring-1 ring-amber-500/40 animate-pulse">
+              ⚡ Impuesto al Impulso (+20%) Activo
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {state.wishlist.map((item) => {
+            const effectiveCost =
+              item.effective_cost_gp ?? item.cost_gp;
+            const minStreak =
+              item.min_streak_required ??
+              (item.priority === 1 ? 1 : item.priority === 2 ? 3 : 7);
+            const streakPassed =
+              state.current_streak_days >= minStreak;
+            const canAfford = state.wallet_gp >= effectiveCost;
+            const isOverdrawn = state.wallet_gp < 0;
+            const isLocked =
+              item.is_redeemed ||
+              !streakPassed ||
+              isOverdrawn ||
+              !canAfford;
+
+            return (
+              <div
+                key={item.id}
+                className={`flex flex-col justify-between rounded-xl border p-4 transition ${
+                  item.is_redeemed
+                    ? "border-slate-800 bg-slate-950/40 opacity-50"
+                    : isLocked
+                    ? "border-slate-800 bg-slate-950/70"
+                    : "border-amber-500/30 bg-slate-950/90 ring-1 ring-amber-500/20"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-amber-400">
+                      Prioridad #{item.priority}
+                    </span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                        streakPassed
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : "bg-rose-500/20 text-rose-300"
+                      }`}
+                    >
+                      Racha: {minStreak}d mín
+                    </span>
+                  </div>
+                  <h3 className="mt-1 text-sm font-semibold text-white">
+                    {item.name}
+                  </h3>
+                  <div className="mt-1.5 flex items-baseline gap-2">
+                    <p className="text-base font-bold text-amber-300">
+                      {effectiveCost.toLocaleString("es-CO")} GP
+                    </p>
+                    {(item.impulse_tax_pct || 0) > 0 && (
+                      <span className="text-[10px] text-amber-400/80 font-mono">
+                        (+20% multa)
+                      </span>
+                    )}
+                  </div>
+                  {item.locked_reason && !item.is_redeemed && (
+                    <p className="mt-2 text-[11px] leading-tight text-rose-400 bg-rose-950/30 p-1.5 rounded border border-rose-500/20">
+                      🔒 {item.locked_reason}
+                    </p>
+                  )}
+                </div>
+                <button
+                  disabled={submitting || isLocked}
+                  onClick={() => redeemWishlist(item)}
+                  className="mt-3 w-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-40 cursor-pointer"
+                >
+                  {item.is_redeemed
+                    ? "Redimido ✓"
+                    : !streakPassed
+                    ? `Requiere Racha ${minStreak}d`
+                    : isOverdrawn
+                    ? "Sobregiro Activo ⚠️"
+                    : canAfford
+                    ? "Canjear con GP"
+                    : "Faltan GP"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* =====================================================================
+      TAB 5: LABORATORIO IOS SHORTCUTS, HÁBITOS & BITÁCORA DE PRUEBAS
+     ===================================================================== */}
+  {!dedicatedSkillDomain && homeActiveTab === "lab" && (
+    <div className="space-y-8 mb-8">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* COLUMNA IZQUIERDA: HÁBITOS RÁPIDOS Y WISHLIST (7 COLS) */}
-        <div className="space-y-6 lg:col-span-7">
+        {/* COLUMNA IZQUIERDA: HÁBITOS RÁPIDOS (5 COLS) */}
+        <div className="space-y-6 lg:col-span-5">
           {/* TABLERO DE HÁBITOS CON RACHA */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
             <div className="mb-4 flex items-center justify-between">
@@ -5600,57 +6133,10 @@ export function RPGLifeEngineDashboard({
               })}
             </div>
           </div>
-
-          {/* CATÁLOGO WISHLIST */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShoppingBag className="h-5 w-5 text-amber-400" />
-                <h2 className="text-lg font-bold text-white">
-                  Tienda Wishlist (Redención 1.0x sin multa)
-                </h2>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {state.wishlist.map((item) => {
-                const canAfford = state.wallet_gp >= item.cost_gp;
-                return (
-                  <div
-                    key={item.id}
-                    className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/70 p-4"
-                  >
-                    <div>
-                      <span className="text-xs text-amber-400">
-                        Prioridad #{item.priority}
-                      </span>
-                      <h3 className="mt-1 text-sm font-semibold text-white">
-                        {item.name}
-                      </h3>
-                      <p className="mt-1 text-base font-bold text-amber-300">
-                        {item.cost_gp.toLocaleString("es-CO")} GP
-                      </p>
-                    </div>
-                    <button
-                      disabled={submitting || item.is_redeemed || !canAfford}
-                      onClick={() => redeemWishlist(item)}
-                      className="mt-3 w-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-40 cursor-pointer"
-                    >
-                      {item.is_redeemed
-                        ? "Redimido ✓"
-                        : canAfford
-                        ? "Canjear con GP"
-                        : "Faltan GP"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
-        {/* COLUMNA DERECHA: LABORATORIO MULTIMODAL DE IOS SHORTCUTS (5 COLS) */}
-        <div className="space-y-6 lg:col-span-5">
+        {/* COLUMNA DERECHA: LABORATORIO MULTIMODAL DE IOS SHORTCUTS (7 COLS) */}
+        <div className="space-y-6 lg:col-span-7">
           <div className="rounded-2xl border border-indigo-500/30 bg-slate-900/70 p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-indigo-400">
@@ -6122,8 +6608,8 @@ export function RPGLifeEngineDashboard({
           </div>
         </div>
       </section>
-        </>
-      )}
+    </div>
+  )}
     </div>
   );
 }

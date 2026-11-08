@@ -844,3 +844,72 @@ test("10. Rubik's Cube & Book Specification Extractors (WCA/Hardware & Reading S
   assert.ok(seedSql.includes("ALTER TABLE public.rubik_solves ADD COLUMN IF NOT EXISTS cube_model"));
 });
 
+test("11. Debt Bosses Passive DoT & Enrage Timer, Wishlist Restraints & GP Overdrawn Auto-amortization", () => {
+  const store = new RPGEngineMemoryStore();
+
+  // 1. Verificar cálculo de DoT e Enrage Timer en Bosses
+  store.updateBossesDoTAndEnrageStatus(new Date("2026-11-05T12:00:00Z"));
+  const nequi = store.bosses.find((b) => b.id === "boss-nequi")!;
+  assert.ok(nequi.daily_interest_dot_gp! > 0, "Nequi no purificado debe tener sangrado DoT pasivo diario");
+  assert.equal(nequi.is_purified, false);
+
+  // Aplicar Poción de Purificación (Abono a Capital)
+  const purifyRes = store.applyPurificationPotion({
+    boss_id: "boss-nequi",
+    amount_cop: 50000,
+  });
+  assert.equal(purifyRes.purified, true);
+  assert.equal(nequi.is_purified, true);
+  assert.equal(nequi.daily_interest_dot_gp, 0, "DoT debe neutralizarse tras aplicar la Poción de Purificación");
+  assert.equal(nequi.paid_this_month_cop, 50000);
+
+  // Fecha posterior al corte sin pagar ADDI (corte día 28 -> test en día 29)
+  store.updateBossesDoTAndEnrageStatus(new Date("2026-11-29T12:00:00Z"));
+  const addi = store.bosses.find((b) => b.id === "boss-addi")!;
+  assert.equal(addi.status, "enraged", "Boss no pagado después de fecha de corte debe entrar en estado ENRAGED");
+  assert.equal(addi.enrage_timer_active, true);
+
+  // 2. Tienda Wishlist: Restricción de Racha e Impuesto al Impulso (+20%)
+  const wishlistDecorated = store.getDecoratedWishlist();
+  const wishPriority2 = wishlistDecorated.find((w) => w.priority === 2)!;
+  assert.equal(wishPriority2.min_streak_required, 3);
+
+  // Con racha = 2 días, intentar redimir ítem de prioridad 2 debe fallar por racha insuficiente
+  store.current_streak_days = 2;
+  store.wallet_gp = 200000;
+  assert.throws(
+    () => {
+      store.recordTransaction({
+        amount_cop: 0,
+        category: "discretionary_wishlist",
+        merchant_or_concept: "Canje",
+        wishlist_item_id: "wish-2",
+      });
+    },
+    /Requiere una racha mínima de 3 días/,
+    "Debe bloquear redención si no se cumple la racha mínima"
+  );
+
+  // Sube racha a 3 días y genera un sobregiro o desborde operativo para activar Impuesto al Impulso (+20%)
+  store.current_streak_days = 3;
+  store.variable_ops_spent_cop = store.variable_ops_budget_cop + 10000; // Desborde
+  const taxedWishlist = store.getDecoratedWishlist();
+  const wish1 = taxedWishlist.find((w) => w.id === "wish-1")!;
+  assert.equal(wish1.impulse_tax_pct, 0.2, "Desborde presupuestario debe activar 20% de Impuesto al Impulso");
+  assert.equal(wish1.effective_cost_gp, Math.round(85000 * 1.2));
+
+  // 3. Refactorización Motor GP: Auto-amortización de Sobregiro y Levantamiento de Maldición
+  store.wallet_gp = -3000; // Maldición de sobregiro
+  store.vault_remaining_gp = 100000;
+  const rescueActivity = store.completeActivity({
+    code: "RESCUE_SESSION",
+    title: "Sesión de Rescate y Enfoque",
+    requested_gp: 5000,
+    earned_xp: 100,
+  });
+  assert.equal(rescueActivity.amortized_overdrawn_gp, 3000, "Debe amortizar exactamente los 3000 GP del sobregiro");
+  assert.equal(rescueActivity.curse_lifted, true, "La maldición de sobregiro debe ser levantada al pasar a saldo positivo");
+  assert.ok(store.wallet_gp > 0, "Billetera debe quedar en saldo positivo");
+});
+
+
