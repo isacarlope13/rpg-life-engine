@@ -73,6 +73,7 @@ import {
   DailyScheduleConfig,
   SpacedRepetitionCard,
   TalentPerk,
+  FinancialMovementRecord,
 } from "@/types/rpg";
 import { computeBioCalendarPlan } from "@/lib/calendar-planner";
 import {
@@ -85,6 +86,8 @@ import {
   AgileMethodologyGuideBox,
   AnalyticsOverviewDashboard,
 } from "@/components/rpg-advanced-widgets";
+import { LookerStudioFinanceDashboard } from "@/components/looker-studio-finance-dashboard";
+import { INITIAL_FINANCIAL_MOVEMENTS } from "@/lib/initial-financial-movements";
 import {
   registerServiceWorker,
   processOfflineQueue,
@@ -204,6 +207,7 @@ interface EngineState {
   spaced_cards?: SpacedRepetitionCard[];
   unlocked_perks?: string[];
   talent_perks?: TalentPerk[];
+  financial_movements?: FinancialMovementRecord[];
 }
 
 // Campos numéricos del estado: si el backend no los envía, se usa 0 para evitar
@@ -7063,8 +7067,25 @@ export function RPGLifeEngineDashboard({
          ===================================================================== */}
       {!dedicatedSkillDomain && homeActiveTab === "debts" && (
         <div className="space-y-8 mb-8">
-          {/* 1. CATÁLOGO WISHLIST (ECONOMÍA DE RESTRICCIÓN) */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 space-y-4">
+          <LookerStudioFinanceDashboard
+            initialMovements={state.financial_movements || INITIAL_FINANCIAL_MOVEMENTS}
+            currency={state.currency || "COP"}
+            monthlyFreeCashflow={freeCashflowCop}
+            onMovementAdded={(mov) => {
+              setState((prev) => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  ...(mov.tipo === "Gasto"
+                    ? { variable_ops_spent_cop: (prev.variable_ops_spent_cop || 0) + mov.monto }
+                    : { monthly_income_cop: (prev.monthly_income_cop || 0) + mov.monto }),
+                  financial_movements: [mov, ...(prev.financial_movements || INITIAL_FINANCIAL_MOVEMENTS)],
+                };
+              });
+            }}
+            wishlistSlot={
+              /* 1. CATÁLOGO WISHLIST (ECONOMÍA DE RESTRICCIÓN) */
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <ShoppingBag className="h-5 w-5 text-amber-400" />
@@ -7198,8 +7219,9 @@ export function RPGLifeEngineDashboard({
               })}
             </div>
           </div>
-
-          {/* 2. CÁMARA DE PASIVOS & DEBT BOSSES (OPCIONAL / COLAPSABLE) */}
+        }
+        debtBossesSlot={
+          /* 2. CÁMARA DE PASIVOS & DEBT BOSSES (OPCIONAL / COLAPSABLE) */
           <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -7536,8 +7558,10 @@ export function RPGLifeEngineDashboard({
               </div>
             )}
           </div>
-        </div>
-      )}
+        }
+      />
+    </div>
+  )}
 
   {/* =====================================================================
       TAB 5: LABORATORIO IOS SHORTCUTS, HÁBITOS & BITÁCORA DE PRUEBAS

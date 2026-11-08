@@ -28,7 +28,9 @@ import type {
   WorkProjectTask,
   SpacedRepetitionCard,
   TalentPerk,
+  FinancialMovementRecord,
 } from "../types/rpg";
+import { INITIAL_FINANCIAL_MOVEMENTS } from "./initial-financial-movements.ts";
 import {
   buildBookReadingChecklist,
   buildCubeComplianceChecklist,
@@ -308,6 +310,7 @@ export class RPGEngineMemoryStore {
 
   unlockedPerks: string[] = [];
   spacedCards: SpacedRepetitionCard[] = [...INITIAL_SPACED_CARDS];
+  financialMovements: FinancialMovementRecord[] = [...INITIAL_FINANCIAL_MOVEMENTS];
 
   processedIdempotencyKeys = new Map<string, unknown>();
 
@@ -3194,6 +3197,42 @@ export class RPGEngineMemoryStore {
     }
 
     this.onboarding_completed = true;
+  }
+
+  addFinancialMovement(mov: Omit<FinancialMovementRecord, "id"> & { id?: string }): FinancialMovementRecord {
+    const newMov: FinancialMovementRecord = {
+      id: mov.id || `mov-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      fecha: mov.fecha || new Date().toISOString().replace("T", " ").substring(0, 16),
+      tipo: mov.tipo === "Ingreso" ? "Ingreso" : "Gasto",
+      categoria: mov.categoria || "Varios",
+      monto: Math.abs(Number(mov.monto)) || 0,
+      descripcion: mov.descripcion || "",
+      metodo_pago: mov.metodo_pago || "Transferencia",
+      detalle: mov.detalle || "",
+    };
+    this.financialMovements.unshift(newMov);
+    if (newMov.tipo === "Gasto") {
+      this.variable_ops_spent_cop += newMov.monto;
+      this.wallet_gp = Math.max(0, this.wallet_gp - Math.round(newMov.monto / 1000));
+    } else {
+      this.monthly_income_cop += newMov.monto;
+      this.wallet_gp += Math.round(newMov.monto / 2000);
+    }
+    return newMov;
+  }
+
+  importFinancialMovements(movements: FinancialMovementRecord[]): number {
+    if (!Array.isArray(movements) || movements.length === 0) return 0;
+    const existingIds = new Set(this.financialMovements.map((m) => m.id));
+    let added = 0;
+    for (const m of movements) {
+      if (!existingIds.has(m.id)) {
+        this.financialMovements.push(m);
+        existingIds.add(m.id);
+        added++;
+      }
+    }
+    return added;
   }
 }
 

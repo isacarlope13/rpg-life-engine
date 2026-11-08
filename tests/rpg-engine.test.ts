@@ -1128,6 +1128,60 @@ test("17. Política de Tratamiento de Datos: Aceptación obligatoria, Habeas Dat
   assert.equal(store.privacy_version, "3.4");
 });
 
+test("18. Módulo de Finanzas Looker Studio: 116 movimientos iniciales, filtros, cálculo de superávit y registro de transacciones", () => {
+  const store = new RPGEngineMemoryStore();
+
+  // 1. Debe incluir los 116 movimientos iniciales reales
+  assert.equal(store.financialMovements.length, 116);
+
+  // 2. Cálculo de totales
+  const totalIngresos = store.financialMovements
+    .filter((m) => m.tipo === "Ingreso")
+    .reduce((sum, m) => sum + m.monto, 0);
+  const totalGastos = store.financialMovements
+    .filter((m) => m.tipo === "Gasto")
+    .reduce((sum, m) => sum + m.monto, 0);
+
+  assert.equal(totalIngresos, 7432208);
+  assert.equal(totalGastos, 6773500);
+  const balanceNeto = totalIngresos - totalGastos;
+  assert.equal(balanceNeto, 658708);
+  const savingsRate = Math.round((balanceNeto / totalIngresos) * 100);
+  assert.equal(savingsRate, 9); // ~8.86% redondeado a 9%
+
+  // 3. Registro de nuevo movimiento
+  const initialWallet = store.wallet_gp;
+  const initialVariableSpent = store.variable_ops_spent_cop;
+
+  const addedExpense = store.addFinancialMovement({
+    fecha: "2026-11-08 10:00",
+    tipo: "Gasto",
+    categoria: "Comida",
+    monto: 35000,
+    descripcion: "Almuerzo de trabajo",
+    metodo_pago: "Transferencia",
+  });
+
+  assert.ok(addedExpense.id);
+  assert.equal(store.financialMovements.length, 117);
+  assert.equal(store.variable_ops_spent_cop, initialVariableSpent + 35000);
+  assert.equal(store.wallet_gp, Math.max(0, initialWallet - Math.round(35000 / 1000)));
+
+  // 4. Registro de nuevo ingreso
+  const addedIncome = store.addFinancialMovement({
+    fecha: "2026-11-08 12:00",
+    tipo: "Ingreso",
+    categoria: "Inversiones",
+    monto: 500000,
+    descripcion: "Rendimientos CDT",
+    metodo_pago: "Transferencia",
+  });
+
+  assert.ok(addedIncome.id);
+  assert.equal(store.financialMovements.length, 118);
+  assert.equal(store.financialMovements[0].descripcion, "Rendimientos CDT");
+});
+
 
 
 

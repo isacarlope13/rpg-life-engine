@@ -566,5 +566,17 @@ export interface TalentPerk {
   is_unlocked?: boolean;
 }
 
+export interface FinancialMovementRecord {
+  id: string;
+  fecha: string;
+  tipo: "Ingreso" | "Gasto";
+  categoria: string;
+  monto: number;
+  descripcion: string;
+  metodo_pago: string;
+  detalle?: string;
+  created_at?: string;
+}
+
 
 
