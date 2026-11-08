@@ -1758,7 +1758,7 @@ export function RPGLifeEngineDashboard({
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <Link
-                href="/"
+                href="/dashboard"
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2 text-xs font-bold text-white hover:bg-slate-700 transition"
               >
                 ← Volver al Tablero Principal
@@ -1844,6 +1844,13 @@ export function RPGLifeEngineDashboard({
                 {state.user.character_class}
               </span>
             )}
+            <a
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:border-amber-500/50 hover:text-amber-300 transition"
+              title="Ir a la portada pública y guía explicativa"
+            >
+              🏠 Portada / Landing
+            </a>
             <a
               href="/onboarding"
               className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300"

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -10,6 +11,15 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("mode") === "signup") {
+        setMode("signup");
+      }
+    }
+  }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +52,7 @@ export default function LoginPage() {
         setMode("login");
         return;
       }
-      window.location.href = mode === "signup" ? "/onboarding" : "/";
+      window.location.href = mode === "signup" ? "/onboarding" : "/dashboard";
     } catch {
       setError("No se pudo conectar con el servidor.");
     } finally {
@@ -147,6 +157,15 @@ export default function LoginPage() {
             ? "¿No tienes cuenta? Regístrate (sin confirmación por correo)"
             : "¿Ya tienes cuenta? Inicia sesión"}
         </button>
+
+        <div className="pt-2 border-t border-slate-800 text-center">
+          <Link
+            href="/"
+            className="text-xs text-slate-400 hover:text-white transition"
+          >
+            ← Volver a la Página Principal
+          </Link>
+        </div>
       </form>
     </div>
   );

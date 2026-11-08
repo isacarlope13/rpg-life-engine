@@ -328,7 +328,7 @@ export default function MobileQuickActionPage() {
             </div>
           </div>
           <a
-            href="/"
+            href="/dashboard"
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Dashboard Completo

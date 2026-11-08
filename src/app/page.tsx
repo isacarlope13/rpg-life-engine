@@ -1,7 +1,7 @@
 "use client";
 
-import { RPGLifeEngineDashboard } from "@/components/rpg-dashboard";
+import { LandingPage } from "@/components/landing-page";
 
 export default function Page() {
-  return <RPGLifeEngineDashboard />;
+  return <LandingPage />;
 }

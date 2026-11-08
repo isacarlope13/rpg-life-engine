@@ -794,7 +794,7 @@ export default function OnboardingWizardPage() {
         setError(json.error || `Error ${res.status}`);
         return;
       }
-      window.location.href = "/";
+      window.location.href = "/dashboard";
     } catch {
       setError("No se pudo guardar tu configuración inicial.");
     } finally {
