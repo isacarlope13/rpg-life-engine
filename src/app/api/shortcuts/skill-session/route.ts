@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  AgileMethodology,
   BookComplexity,
   BookFormat,
   DebtStrategy,
@@ -7,6 +8,7 @@ import {
   RubikPenalty,
   SkillDomain,
   SpecComplianceCheckItem,
+  WorkProject,
 } from "@/types/rpg";
 import { generateRubikScramble } from "@/lib/demo-store";
 import {
@@ -33,6 +35,7 @@ export interface SkillSessionEndpointRequest {
     | "update_book_gallery"
     | "add_book_quote"
     | "add_knitting_project"
+    | "add_work_project"
     | "create_trial_checkpoint"
     | "new_scramble";
   checkpoint_label?: string;
@@ -118,6 +121,10 @@ export interface SkillSessionEndpointRequest {
   // Work
   deliverable?: string;
   impact_level?: "standard" | "high_impact" | "milestone";
+  work_mode?: "activities" | "projects";
+  work_project_name?: string;
+  agile_methodology?: AgileMethodology;
+  agile_stage?: string;
   // Debt Strategy / Limit Break / Boss Purify / Wishlist
   debt_strategy?: DebtStrategy;
   limit_break_gp?: number;
@@ -505,6 +512,31 @@ export async function POST(req: Request) {
       );
     }
 
+    if (body.action === "add_work_project") {
+      const project = store.addWorkProject({
+        name:
+          body.work_project_name ||
+          body.title ||
+          body.raw_query ||
+          "Nuevo Proyecto Estratégico",
+        methodology: body.agile_methodology || "lean",
+        current_stage: body.agile_stage,
+      });
+
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json(
+        {
+          success: true,
+          action: "add_work_project",
+          project,
+          work_projects: store.workProjects,
+          shortcut_tts_message: `Proyecto estratégico "${project.name}" registrado en metodología ${project.methodology.toUpperCase()} (Etapa: ${project.current_stage}).`,
+        },
+        { status: 201 }
+      );
+    }
+
     if (body.action === "set_debt_strategy" && body.debt_strategy) {
       const comparison = store.setDebtStrategy(body.debt_strategy);
 
@@ -725,6 +757,9 @@ export async function POST(req: Request) {
       study_method: body.study_method,
       deliverable: body.deliverable,
       impact_level: body.impact_level,
+      work_mode: body.work_mode,
+      agile_methodology: body.agile_methodology,
+      agile_stage: body.agile_stage,
     });
 
     if (isSupabaseConfigured && db) {
@@ -856,6 +891,7 @@ export async function POST(req: Request) {
         session_logged: result.session,
         reward_impact: result.reward_impact,
         rubik_stats: result.rubik_stats,
+        work_projects: store.workProjects,
         skill_summaries: store.getSkillDomainSummaries(),
         treasury_snapshot: {
           wallet_gp: store.wallet_gp,

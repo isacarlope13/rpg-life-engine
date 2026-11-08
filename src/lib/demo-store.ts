@@ -23,6 +23,8 @@ import type {
   SpecComplianceCheckItem,
   TrialCheckpointSnapshot,
   UserSkillConfig,
+  AgileMethodology,
+  WorkProject,
 } from "../types/rpg";
 import {
   buildBookReadingChecklist,
@@ -604,6 +606,31 @@ export class RPGEngineMemoryStore {
       completed_rows: 45,
       yarn_details: "Acrílico suave multicolor • Aguja 3.5mm",
       status: "in_progress",
+    },
+  ];
+
+  workProjects: WorkProject[] = [
+    {
+      id: "proj-1",
+      name: "Automatización OPGs & Cargas de Precios",
+      methodology: "lean",
+      current_stage: "Optimizar / Automatizar",
+      status: "active",
+      tasks_count: 5,
+      completed_tasks_count: 3,
+      total_minutes_invested: 180,
+      created_at: "2026-11-04T10:00:00Z",
+    },
+    {
+      id: "proj-2",
+      name: "Dashboard Financiero & RPG Life-Engine",
+      methodology: "scrum",
+      current_stage: "Sprint Backlog",
+      status: "active",
+      tasks_count: 8,
+      completed_tasks_count: 6,
+      total_minutes_invested: 240,
+      created_at: "2026-11-01T15:30:00Z",
     },
   ];
 
@@ -1456,6 +1483,40 @@ export class RPGEngineMemoryStore {
     return newProj;
   }
 
+  addWorkProject(params: {
+    name: string;
+    methodology?: AgileMethodology;
+    current_stage?: string;
+  }): WorkProject {
+    const cleanName = (params.name || "").trim();
+    if (!cleanName) {
+      throw new Error("El nombre del proyecto estratégico es obligatorio.");
+    }
+    const meth = params.methodology || "lean";
+    const defaultStage =
+      meth === "scrum"
+        ? "Sprint Backlog"
+        : meth === "kanban"
+        ? "En Proceso (WIP)"
+        : meth === "lean"
+        ? "Optimizar / Automatizar"
+        : "En Progreso";
+
+    const newProj: WorkProject = {
+      id: `proj-${crypto.randomUUID().slice(0, 8)}`,
+      name: cleanName,
+      methodology: meth,
+      current_stage: params.current_stage || defaultStage,
+      status: "active",
+      tasks_count: 1,
+      completed_tasks_count: 0,
+      total_minutes_invested: 0,
+      created_at: new Date().toISOString(),
+    };
+    this.workProjects.unshift(newProj);
+    return newProj;
+  }
+
   // 1. Trigger de Hábitos + Multiplicador de Racha (1.1x / 1.25x) + Escudo Aegis cada 7 rachas
   completeActivity(params: {
     code: string;
@@ -1476,6 +1537,8 @@ export class RPGEngineMemoryStore {
         shield_earned: boolean;
         vault_capped: boolean;
         leveled_up: boolean;
+        amortized_overdrawn_gp: number;
+        curse_lifted: boolean;
         idempotent_replay: boolean;
       };
     }
@@ -1584,6 +1647,9 @@ export class RPGEngineMemoryStore {
     // Work
     deliverable?: string;
     impact_level?: "standard" | "high_impact" | "milestone";
+    work_mode?: "activities" | "projects";
+    agile_methodology?: AgileMethodology;
+    agile_stage?: string;
   }) {
     const skillIdemKey = params.idempotency_key
       ? `skill_session:${params.idempotency_key}`
@@ -1800,15 +1866,48 @@ export class RPGEngineMemoryStore {
       sessionTitle = params.title || `Estudio (${method}): ${subject}`;
       detailsSummary = `${duration} min de estudio enfocado • Tema: ${subject}`;
     } else if (params.domain === "work") {
+      const isProject =
+        params.work_mode === "projects" || Boolean(params.project_id);
+      const matchedProject = params.project_id
+        ? this.workProjects.find((wp) => wp.id === params.project_id)
+        : undefined;
+
+      if (matchedProject) {
+        resolvedProjectName = matchedProject.name;
+        matchedProject.total_minutes_invested =
+          (matchedProject.total_minutes_invested || 0) + duration;
+        if (params.agile_stage) {
+          matchedProject.current_stage = params.agile_stage;
+        }
+      }
+
       const deliverable =
-        params.deliverable || "Entregable Crítico / Sprint Feature";
-      const impact = params.impact_level || "high_impact";
+        params.deliverable ||
+        (matchedProject
+          ? `${matchedProject.name} (${matchedProject.current_stage || "En Progreso"})`
+          : "Entregable Crítico / Tarea Operativa");
+      const impact =
+        params.impact_level || (isProject ? "high_impact" : "standard");
       const impactMultiplier =
         impact === "milestone" ? 1.5 : impact === "high_impact" ? 1.25 : 1.0;
       baseGp = Math.min(12000, Math.round(duration * 95 * impactMultiplier));
       baseXp = Math.round(duration * 2.4 * impactMultiplier);
-      sessionTitle = params.title || `Deep Work: ${deliverable}`;
-      detailsSummary = `${duration} min sin distracciones • Impacto: ${impact.toUpperCase()}`;
+
+      if (isProject) {
+        sessionTitle =
+          params.title ||
+          `Proyecto Estratégico: ${matchedProject ? matchedProject.name : deliverable}`;
+        detailsSummary = `${duration} min en ${
+          matchedProject?.methodology?.toUpperCase() ||
+          params.agile_methodology?.toUpperCase() ||
+          "ÁGIL"
+        } • Etapa: ${
+          params.agile_stage || matchedProject?.current_stage || "En Progreso"
+        } • Impacto: ${impact.toUpperCase()}`;
+      } else {
+        sessionTitle = params.title || `Actividad Operativa: ${deliverable}`;
+        detailsSummary = `${duration} min de ejecución de rutina • ${deliverable}`;
+      }
     }
 
     const rewardResult = this.completeActivity({
@@ -1847,6 +1946,14 @@ export class RPGEngineMemoryStore {
         study_method: params.study_method,
         deliverable: params.deliverable,
         impact_level: params.impact_level,
+        work_mode: params.work_mode,
+        agile_methodology:
+          params.agile_methodology ||
+          (params.project_id
+            ? this.workProjects.find((wp) => wp.id === params.project_id)
+                ?.methodology
+            : undefined),
+        agile_stage: params.agile_stage,
       },
       timestamp: new Date().toISOString(),
     };

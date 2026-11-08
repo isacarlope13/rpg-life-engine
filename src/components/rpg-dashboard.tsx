@@ -42,6 +42,7 @@ import {
   LayoutDashboard,
 } from "lucide-react";
 import {
+  AgileMethodology,
   BookComplexity,
   BookFormat,
   BossTTKProjection,
@@ -62,6 +63,7 @@ import {
   SkillSessionRecord,
   TrialCheckpointSnapshot,
   UserSkillConfig,
+  WorkProject,
   DailyScheduleConfig,
 } from "@/types/rpg";
 import { computeBioCalendarPlan } from "@/lib/calendar-planner";
@@ -168,6 +170,7 @@ interface EngineState {
   next_rubik_scramble: string;
   reading_books: ReadingBook[];
   knitting_projects: KnittingProject[];
+  work_projects?: WorkProject[];
   skill_sessions: SkillSessionRecord[];
   wishlist: WishlistItem[];
   logs: LogEntry[];
@@ -556,6 +559,20 @@ export function RPGLifeEngineDashboard({
   >("high_impact");
   const [workMinutes, setWorkMinutes] = useState(90);
 
+  // Estados del Módulo de Trabajo: Proyectos vs Actividades
+  const [workViewMode, setWorkViewMode] = useState<"activities" | "projects">(
+    "activities"
+  );
+  const [selectedAgileMethodology, setSelectedAgileMethodology] =
+    useState<AgileMethodology>("scrum");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [operationalTaskTitle, setOperationalTaskTitle] = useState(
+    "Procesar OPGs canal mayorista"
+  );
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedAgileStage, setSelectedAgileStage] =
+    useState<string>("Sprint Backlog");
+
   // Estados del Laboratorio iOS Shortcuts
   const [activeLabTab, setActiveLabTab] = useState<
     "sms_siri" | "receipt_vision" | "ios_widget"
@@ -827,10 +844,21 @@ export function RPGLifeEngineDashboard({
       });
     } else if (domain === "work") {
       setWorkMinutes(elapsedMinutes);
+      const isProject = workViewMode === "projects";
+      const matchedProj = state?.work_projects?.find(
+        (p) => p.id === selectedProjectId
+      );
       await submitSkillSession({
         domain: "work",
-        deliverable: workDeliverable,
-        impact_level: workImpact,
+        work_mode: workViewMode,
+        project_id: isProject && selectedProjectId ? selectedProjectId : undefined,
+        deliverable: isProject
+          ? matchedProj?.name || workDeliverable
+          : operationalTaskTitle || workDeliverable,
+        agile_stage: isProject
+          ? selectedAgileStage || matchedProj?.current_stage
+          : undefined,
+        impact_level: isProject ? "high_impact" : workImpact,
         duration_minutes: elapsedMinutes,
       });
     } else if (domain === "gaming") {
@@ -921,6 +949,32 @@ export function RPGLifeEngineDashboard({
         if (addedBook.recommended_daily_pages) {
           setPagesReadInput(addedBook.recommended_daily_pages);
         }
+      }
+      return json;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitCreateWorkProject = async () => {
+    if (!newProjectName.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add_work_project",
+          work_project_name: newProjectName.trim(),
+          agile_methodology: selectedAgileMethodology,
+          agile_stage: selectedAgileStage,
+        }),
+      });
+      const json = await res.json();
+      await fetchState();
+      setNewProjectName("");
+      if (json.project) {
+        setSelectedProjectId(json.project.id);
       }
       return json;
     } finally {
@@ -5328,45 +5382,92 @@ export function RPGLifeEngineDashboard({
           </div>
         )}
 
-        {/* 5. APARTADO: SESIONES DE TRABAJO (DEEP WORK & ENTREGABLES) */}
+        {/* 5. APARTADO: MÓDULO DE TRABAJO: PROYECTOS VS ACTIVIDADES */}
         {activeSkillTab === "work" && (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-            <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/80 p-5 lg:col-span-6">
-              <div className="flex items-center gap-2">
-                <Briefcase className="h-5 w-5 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">
-                  Registrar Sesión de Trabajo (Deep Work)
+          <div className="space-y-6">
+            <div className="work-management-engine rounded-2xl border border-indigo-500/30 bg-slate-900/90 p-6 shadow-xl shadow-indigo-950/20 text-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <h3 className="text-xl font-bold flex items-center gap-2 text-indigo-400">
+                  <span>💼</span> Núcleo de Gestión: Proyectos & Actividades Diarias
                 </h3>
+                <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 text-xs font-semibold text-indigo-300">
+                  {workViewMode === "activities"
+                    ? "⚡ Rutina & Cargas Operativas"
+                    : "🚀 Metodología Ágil & Estrategia"}
+                </span>
               </div>
 
-              {/* CRONÓMETRO EN VIVO DE TRABAJO */}
-              <div className="rounded-xl border border-emerald-500/40 bg-gradient-to-b from-emerald-950/40 to-slate-900/90 p-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-emerald-400" />
-                    <span className="text-xs font-bold text-emerald-300">
-                      {liveTimerDomain === "work" && !liveTimerPaused
-                        ? "● Trabajando en Deep Work en vivo..."
-                        : liveTimerDomain === "work" && liveTimerPaused
-                        ? "⏸ Trabajo en Pausa"
-                        : "Deep Work con Cronómetro en Vivo"}
-                    </span>
+              {/* Selector principal de modo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <button
+                  type="button"
+                  onClick={() => setWorkViewMode("activities")}
+                  id="btn-mode-activities"
+                  className={`py-3 px-4 rounded-xl font-semibold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    workViewMode === "activities"
+                      ? "border-indigo-500 bg-indigo-600/25 text-indigo-200 shadow-lg shadow-indigo-500/20"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-500/50 hover:bg-slate-800/80"
+                  }`}
+                >
+                  <span className="text-base">⚡</span> Actividades Diarias (Rutina / OPGs)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWorkViewMode("projects")}
+                  id="btn-mode-projects"
+                  className={`py-3 px-4 rounded-xl font-semibold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    workViewMode === "projects"
+                      ? "border-indigo-500 bg-indigo-600/25 text-indigo-200 shadow-lg shadow-indigo-500/20"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-500/50 hover:bg-slate-800/80"
+                  }`}
+                >
+                  <span className="text-base">🚀</span> Proyectos de Alto Impacto (Estratégicos)
+                </button>
+              </div>
+
+              {/* CRONÓMETRO UNIVERSAL EN VIVO PARA TRABAJO */}
+              <div className="mb-6 rounded-xl border border-indigo-500/40 bg-gradient-to-b from-indigo-950/40 to-slate-900/90 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="h-5 w-5 text-indigo-400" />
+                    <div>
+                      <span className="text-xs font-bold text-indigo-300 block">
+                        {liveTimerDomain === "work" && !liveTimerPaused
+                          ? `● Deep Work activo: ${
+                              workViewMode === "activities"
+                                ? "Actividad Operativa"
+                                : "Proyecto Estratégico"
+                            }...`
+                          : liveTimerDomain === "work" && liveTimerPaused
+                          ? "⏸ Deep Work en Pausa"
+                          : "Cronómetro de Enfoque en Vivo (Deep Work)"}
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        {workViewMode === "activities"
+                          ? `Tarea: ${operationalTaskTitle || "Rutina Operativa"}`
+                          : `Proyecto: ${
+                              state.work_projects?.find(
+                                (p) => p.id === selectedProjectId
+                              )?.name || "Estratégico"
+                            }`}
+                      </span>
+                    </div>
                   </div>
-                  <span className="font-mono text-xl font-black tracking-tight text-white">
+                  <span className="font-mono text-2xl font-black tracking-tight text-white">
                     {liveTimerDomain === "work"
                       ? formatStopwatch(liveTimerSeconds)
                       : "00:00"}
                   </span>
                 </div>
 
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3.5 flex flex-wrap gap-2">
                   {liveTimerDomain !== "work" ? (
                     <button
                       type="button"
                       onClick={() => startLiveTimer("work")}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-500 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 cursor-pointer"
                     >
-                      <Play className="h-3.5 w-3.5" /> ▶ Iniciar Bloque de Trabajo
+                      <Play className="h-4 w-4" /> ▶ Iniciar Bloque de Trabajo
                     </button>
                   ) : (
                     <>
@@ -5374,7 +5475,7 @@ export function RPGLifeEngineDashboard({
                         <button
                           type="button"
                           onClick={resumeLiveTimer}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-500 cursor-pointer"
                         >
                           <Play className="h-3.5 w-3.5" /> Reanudar
                         </button>
@@ -5382,7 +5483,7 @@ export function RPGLifeEngineDashboard({
                         <button
                           type="button"
                           onClick={pauseLiveTimer}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
                         >
                           <Pause className="h-3.5 w-3.5" /> Pausar
                         </button>
@@ -5391,135 +5492,440 @@ export function RPGLifeEngineDashboard({
                         type="button"
                         disabled={submitting}
                         onClick={() => stopAndLogLiveTimer("work")}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-3.5 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-teal-500 px-4 py-2 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
                       >
-                        <Square className="h-3.5 w-3.5" /> ⏹ Finalizar y Forjar GP ({Math.max(1, Math.round(liveTimerSeconds / 60))} min)
+                        <Square className="h-3.5 w-3.5" /> ⏹ Finalizar y Forjar GP (
+                        {Math.max(1, Math.round(liveTimerSeconds / 60))} min)
                       </button>
                       <button
                         type="button"
                         onClick={resetLiveTimer}
-                        className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1.5 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-2 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
                       >
-                        <RotateCcw className="h-3 w-3" /> Reset
+                        <RotateCcw className="h-3.5 w-3.5" /> Reset
                       </button>
                     </>
                   )}
                 </div>
               </div>
-              <div>
-                <label className="text-xs text-slate-400">
-                  Entregable / Proyecto de Trabajo:
-                </label>
-                <input
-                  type="text"
-                  value={workDeliverable}
-                  onChange={(e) => setWorkDeliverable(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-400">
-                    Nivel de Impacto:
-                  </label>
-                  <select
-                    value={workImpact}
-                    onChange={(e) =>
-                      setWorkImpact(
-                        e.target.value as
-                          | "standard"
-                          | "high_impact"
-                          | "milestone"
-                      )
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
-                  >
-                    <option value="standard">Estándar (1.0x)</option>
-                    <option value="high_impact">Alto Impacto (1.25x)</option>
-                    <option value="milestone">Hito / Milestone (1.5x)</option>
-                  </select>
+
+              {/* VISTA 1: ACTIVIDADES DIARIAS */}
+              {workViewMode === "activities" && (
+                <div id="view-activities" className="work-view space-y-5">
+                  <div className="p-5 bg-slate-800/60 rounded-xl border border-slate-700/60 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-slate-200 flex items-center gap-2">
+                        <span>📌</span> Registro de Tareas Operativas & Rutina
+                      </h4>
+                      <span className="text-xs text-indigo-400 font-mono">1.0x GP</span>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Controla tus cargas recurrentes de alto volumen (ej. procesamiento de OPGs, cargas de precios, validación de plantillas, auditoría).
+                    </p>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                        Descripción de la Tarea Operativa
+                      </label>
+                      <input
+                        type="text"
+                        value={operationalTaskTitle}
+                        onChange={(e) => setOperationalTaskTitle(e.target.value)}
+                        placeholder="Ej: Procesar OPGs canal mayorista..."
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    {/* Atajos de tareas operativas frecuentes */}
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] text-slate-400 block font-medium">
+                        Plantillas rápidas de tareas:
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          "Procesamiento masivo de OPGs mayoristas",
+                          "Carga y actualización de precios en ERP",
+                          "Validación y cuadre de plantillas",
+                          "Auditoría y conciliación de pedidos",
+                        ].map((task) => (
+                          <button
+                            key={task}
+                            type="button"
+                            onClick={() => setOperationalTaskTitle(task)}
+                            className="rounded-lg border border-slate-700 bg-slate-900/60 px-2.5 py-1 text-[11px] text-slate-300 hover:border-indigo-500 hover:text-white transition-all cursor-pointer"
+                          >
+                            + {task}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                          Minutos Invertidos
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="5"
+                            value={workMinutes}
+                            onChange={(e) =>
+                              setWorkMinutes(Math.max(1, Number(e.target.value)))
+                            }
+                            className="w-24 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200"
+                          />
+                          <div className="flex gap-1.5">
+                            {[25, 45, 60].map((mins) => (
+                              <button
+                                key={mins}
+                                type="button"
+                                onClick={() => setWorkMinutes(mins)}
+                                className={`px-2.5 py-1 rounded text-[11px] font-medium cursor-pointer ${
+                                  workMinutes === mins
+                                    ? "bg-indigo-600 text-white"
+                                    : "bg-slate-900 text-slate-400 hover:bg-slate-750"
+                                }`}
+                              >
+                                {mins}m
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          disabled={submitting || !operationalTaskTitle.trim()}
+                          onClick={() =>
+                            submitSkillSession({
+                              domain: "work",
+                              work_mode: "activities",
+                              deliverable: operationalTaskTitle,
+                              impact_level: "standard",
+                              duration_minutes: workMinutes,
+                            })
+                          }
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+                        >
+                          <Zap className="h-4 w-4" /> Registrar Avance Operativo (+GP)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-slate-400">
-                    Duración Bloque (minutos):
-                  </label>
-                  <input
-                    type="number"
-                    min="15"
-                    value={workMinutes}
-                    onChange={(e) => setWorkMinutes(Number(e.target.value))}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
-                  />
+              )}
+
+              {/* VISTA 2: PROYECTOS & METODOLOGÍA ÁGIL */}
+              {workViewMode === "projects" && (
+                <div id="view-projects" className="work-view space-y-6">
+                  {/* Selector / Listado de Proyectos Existentes */}
+                  <div className="p-5 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-semibold text-indigo-300 flex items-center gap-2">
+                        <span>📁</span> Proyectos Estratégicos en Curso
+                      </h4>
+                      <span className="text-xs text-slate-400">
+                        {(state.work_projects || []).length} proyecto(s) activo(s)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(state.work_projects || []).map((proj) => (
+                        <div
+                          key={proj.id}
+                          onClick={() => {
+                            setSelectedProjectId(proj.id);
+                            if (proj.methodology && proj.methodology !== "none") {
+                              setSelectedAgileMethodology(proj.methodology);
+                            }
+                            if (proj.current_stage) {
+                              setSelectedAgileStage(proj.current_stage);
+                            }
+                          }}
+                          className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                            selectedProjectId === proj.id
+                              ? "border-indigo-500 bg-indigo-950/40 shadow-md shadow-indigo-500/10"
+                              : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="font-bold text-xs text-white">
+                              {proj.name}
+                            </span>
+                            <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 uppercase">
+                              {proj.methodology}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-400">
+                            <span>
+                              Etapa:{" "}
+                              <strong className="text-slate-200">
+                                {proj.current_stage || "En Progreso"}
+                              </strong>
+                            </span>
+                            <span>⏱ {proj.total_minutes_invested || 0} min</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Configuración de Proyecto Estratégico */}
+                  <div className="p-5 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-4">
+                    <h4 className="font-semibold text-indigo-300 flex items-center gap-2">
+                      <span>🛠️</span> Configuración del Proyecto Estratégico
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                          Nombre del Proyecto
+                        </label>
+                        <input
+                          type="text"
+                          id="project-name-input"
+                          value={newProjectName}
+                          onChange={(e) => setNewProjectName(e.target.value)}
+                          placeholder="Ej: Automatización OPGs / Dashboard Finanzas"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                          Metodología Ágil Aplicable
+                        </label>
+                        <select
+                          id="project-methodology-select"
+                          value={selectedAgileMethodology}
+                          onChange={(e) => {
+                            const val = e.target.value as AgileMethodology;
+                            setSelectedAgileMethodology(val);
+                            if (val === "scrum") setSelectedAgileStage("Sprint Backlog");
+                            else if (val === "kanban") setSelectedAgileStage("En Proceso (WIP)");
+                            else if (val === "lean") setSelectedAgileStage("Optimizar / Automatizar");
+                          }}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="none">Seleccionar Metodología...</option>
+                          <option value="scrum">Scrum (Sprints, Entregas Incrementales y Backlog)</option>
+                          <option value="kanban">Kanban (Flujo Continuo, Límites WIP y Tablero Visual)</option>
+                          <option value="lean">Lean / Kaizen (Eliminación de Desperdicios y Automatización)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        disabled={submitting || !newProjectName.trim()}
+                        onClick={submitCreateWorkProject}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2 rounded-lg text-xs transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-md shadow-indigo-600/20"
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Crear y Guardar Proyecto Estratégico
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tableros y Estructuras Dinámicas según Metodología */}
+                  <div id="agile-board-container" className="space-y-4">
+                    {selectedAgileMethodology === "scrum" && (
+                      <div className="p-4 bg-slate-950/60 rounded-xl border border-indigo-500/30 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>📋</span> Pipeline Scrum: Ciclo de Sprint
+                          </h5>
+                          <span className="text-[11px] text-slate-400">Selecciona la etapa de avance</span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                          {[
+                            { name: "Backlog", desc: "Requerimientos & Historias" },
+                            { name: "Sprint Backlog", desc: "Compromiso del Sprint" },
+                            { name: "En Progreso", desc: "Construcción activa" },
+                            { name: "Hecho (Done)", desc: "Validado & Desplegado" },
+                          ].map((col) => (
+                            <button
+                              key={col.name}
+                              type="button"
+                              onClick={() => setSelectedAgileStage(col.name)}
+                              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                                selectedAgileStage === col.name
+                                  ? "border-indigo-400 bg-indigo-600/30 text-white shadow-sm"
+                                  : "border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700"
+                              }`}
+                            >
+                              <span className="block font-bold text-xs text-white">{col.name}</span>
+                              <span className="block text-[10px] text-slate-400 mt-0.5">{col.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedAgileMethodology === "kanban" && (
+                      <div className="p-4 bg-slate-950/60 rounded-xl border border-teal-500/30 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-xs font-bold text-teal-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>📊</span> Tablero Kanban: Flujo Continuo
+                          </h5>
+                          <span className="text-[11px] text-teal-400 font-mono">WIP Limit: Máx 2</span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                          {[
+                            { name: "Por Hacer (To-Do)", desc: "Cola priorizada" },
+                            { name: "En Proceso (WIP)", desc: "Máx 2 tareas activas" },
+                            { name: "Bloqueado", desc: "Dependencia o traba" },
+                            { name: "Completado", desc: "Entregado con éxito" },
+                          ].map((col) => (
+                            <button
+                              key={col.name}
+                              type="button"
+                              onClick={() => setSelectedAgileStage(col.name)}
+                              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                                selectedAgileStage === col.name
+                                  ? "border-teal-400 bg-teal-600/30 text-white shadow-sm"
+                                  : "border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700"
+                              }`}
+                            >
+                              <span className="block font-bold text-xs text-white">{col.name}</span>
+                              <span className="block text-[10px] text-slate-400 mt-0.5">{col.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedAgileMethodology === "lean" && (
+                      <div className="p-4 bg-slate-950/60 rounded-xl border border-amber-500/30 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>⚙️</span> Flujo Lean / Kaizen: Eliminación de Desperdicios
+                          </h5>
+                          <span className="text-[11px] text-amber-400">Optimización continua</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                          {[
+                            { name: "Identificar Valor", desc: "Eliminar desperdicios (Muda)" },
+                            { name: "Mapear Cadena de Flujo", desc: "Detectar cuellos de botella" },
+                            { name: "Optimizar / Automatizar", desc: "Estandarización y scripts" },
+                          ].map((col) => (
+                            <button
+                              key={col.name}
+                              type="button"
+                              onClick={() => setSelectedAgileStage(col.name)}
+                              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                                selectedAgileStage === col.name
+                                  ? "border-amber-400 bg-amber-600/30 text-white shadow-sm"
+                                  : "border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700"
+                              }`}
+                            >
+                              <span className="block font-bold text-xs text-white">{col.name}</span>
+                              <span className="block text-[10px] text-slate-400 mt-0.5">{col.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Guía y Reglas de Implementación Ágil */}
+                  <div id="agile-guide-container" className="p-4 bg-indigo-950/30 border border-indigo-500/20 rounded-xl text-xs space-y-2 text-indigo-200">
+                    <h5 className="font-bold flex items-center gap-1.5 text-indigo-300">
+                      <span>💡</span> Principios de Ejecución Ágil:
+                    </h5>
+                    {selectedAgileMethodology === "scrum" ? (
+                      <p className="leading-relaxed">
+                        <strong>Reglas de Sprint:</strong> Divide tus grandes entregables en iteraciones de 1 a 2 semanas. Cada sesión de Deep Work debe apuntar a una historia de usuario comprobable con criterios de aceptación claros (&ldquo;Definition of Done&rdquo;).
+                      </p>
+                    ) : selectedAgileMethodology === "kanban" ? (
+                      <p className="leading-relaxed">
+                        <strong>Límites WIP Estrictos:</strong> No inicies una nueva tarea si ya tienes 2 tareas en estado &ldquo;En Proceso&rdquo;. Termina lo que empezaste para reducir los tiempos de ciclo y destrabar bloqueos inmediatamente.
+                      </p>
+                    ) : (
+                      <p className="leading-relaxed">
+                        <strong>Filosofía Kaizen & Lean:</strong> Identifica pasos manuales repetitivos (ej. copiar y pegar datos de OPGs, conciliación manual de Excel) y construye automatizaciones o macros que eliminen el desperdicio operativo.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Registro de Sesión vinculada al Proyecto */}
+                  <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-700/60 flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-300 block">
+                        Registrar Sesión Deep Work en Proyecto Seleccionado
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        {state.work_projects?.find((p) => p.id === selectedProjectId)?.name || "Selecciona un proyecto arriba"} • Etapa: {selectedAgileStage || "En Progreso"} (1.25x GP)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min="15"
+                        value={workMinutes}
+                        onChange={(e) => setWorkMinutes(Math.max(1, Number(e.target.value)))}
+                        className="w-20 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200"
+                      />
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => {
+                          const activeProj =
+                            state.work_projects?.find((p) => p.id === selectedProjectId) ||
+                            state.work_projects?.[0];
+                          submitSkillSession({
+                            domain: "work",
+                            work_mode: "projects",
+                            project_id: activeProj?.id,
+                            deliverable: activeProj ? activeProj.name : "Proyecto Estratégico",
+                            agile_stage: selectedAgileStage || activeProj?.current_stage,
+                            impact_level: "high_impact",
+                            duration_minutes: workMinutes,
+                          });
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 rounded-lg text-xs transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Zap className="h-4 w-4" /> Registrar Avance en Proyecto (+GP / +XP)
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {[45, 60, 90, 120].map((mins) => (
-                  <button
-                    key={mins}
-                    type="button"
-                    onClick={() => setWorkMinutes(mins)}
-                    className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold cursor-pointer ${
-                      workMinutes === mins
-                        ? "bg-emerald-600 text-white"
-                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                    }`}
-                  >
-                    {mins} min Focus
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() =>
-                  submitSkillSession({
-                    domain: "work",
-                    deliverable: workDeliverable,
-                    impact_level: workImpact,
-                    duration_minutes: workMinutes,
-                  })
-                }
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50 cursor-pointer"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                Registrar Bloque de Trabajo ({workMinutes}m) y Reclamar GP + XP
-              </button>
+              )}
             </div>
 
-            <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/80 p-5 lg:col-span-6">
-              <h4 className="text-sm font-bold text-white">
-                Historial de Entregables & Sesiones Recientes
+            {/* Historial de Entregables & Sesiones Recientes */}
+            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-5 space-y-3">
+              <h4 className="text-sm font-bold text-white flex items-center justify-between">
+                <span>Historial de Sesiones de Trabajo Recientes</span>
+                <span className="text-xs text-slate-400">
+                  {state.skill_sessions.filter((s) => s.domain === "work").length} sesión(es) registradas
+                </span>
               </h4>
-              <div className="max-h-44 space-y-2 overflow-auto pr-1">
-                {state.skill_sessions.map((sess) => (
-                  <div
-                    key={sess.id}
-                    className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs"
-                  >
-                    <div>
-                      <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-300">
-                        {sess.domain}
-                      </span>{" "}
-                      <span className="font-semibold text-white">
-                        {sess.title}
+              <div className="max-h-48 space-y-2 overflow-auto pr-1">
+                {state.skill_sessions
+                  .filter((s) => s.domain === "work")
+                  .map((sess) => (
+                    <div
+                      key={sess.id}
+                      className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs"
+                    >
+                      <div>
+                        <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-indigo-300">
+                          {sess.metadata?.work_mode === "projects" ? "PROYECTO" : "OPERATIVO"}
+                        </span>{" "}
+                        <span className="font-semibold text-white">
+                          {sess.title}
+                        </span>
+                        <p className="mt-0.5 text-[11px] text-slate-400">
+                          {sess.details}
+                        </p>
+                      </div>
+                      <span className="font-mono font-bold text-indigo-400">
+                        +{sess.gp_earned.toLocaleString("es-CO")} GP
                       </span>
-                      <p className="mt-0.5 text-[11px] text-slate-400">
-                        {sess.details}
-                      </p>
                     </div>
-                    <span className="font-mono font-bold text-emerald-400">
-                      +{sess.gp_earned.toLocaleString("es-CO")} GP
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/15 p-3 text-xs text-emerald-300">
-                💡 Tip para iOS Shortcuts: Puedes enviar un POST a{" "}
-                <code className="font-mono text-white">
-                  /api/shortcuts/skill-session
-                </code>{" "}
-                al terminar el modo &ldquo;No Molestar&rdquo; en tu iPhone para
-                acreditar tus minutos de trabajo o estudio automáticamente.
+                  ))}
               </div>
             </div>
           </div>

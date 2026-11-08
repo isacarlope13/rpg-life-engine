@@ -912,4 +912,53 @@ test("11. Debt Bosses Passive DoT & Enrage Timer, Wishlist Restraints & GP Overd
   assert.ok(store.wallet_gp > 0, "Billetera debe quedar en saldo positivo");
 });
 
+test("12. Módulo de Trabajo: Proyectos Estratégicos vs Actividades Operativas (Scrum, Kanban, Lean)", () => {
+  const store = new RPGEngineMemoryStore();
+
+  // 1. Creación de Proyecto Estratégico Ágil
+  const project = store.addWorkProject({
+    name: "Automatización OPGs & Cargas Mayoristas",
+    methodology: "lean",
+    current_stage: "Mapear Cadena de Valor",
+  });
+
+  assert.ok(project.id.startsWith("proj-"));
+  assert.equal(project.name, "Automatización OPGs & Cargas Mayoristas");
+  assert.equal(project.methodology, "lean");
+  assert.equal(project.current_stage, "Mapear Cadena de Valor");
+  assert.equal(project.total_minutes_invested, 0);
+
+  // 2. Registro de Sesión Deep Work vinculada al Proyecto
+  const sessionResult = store.logSkillSession({
+    domain: "work",
+    duration_minutes: 60,
+    work_mode: "projects",
+    project_id: project.id,
+    deliverable: "Automatización de Macros y Carga de Plantillas",
+    agile_stage: "Optimizar / Automatizar",
+    impact_level: "high_impact",
+  });
+
+  assert.equal(project.total_minutes_invested, 60);
+  assert.equal(project.current_stage, "Optimizar / Automatizar");
+  assert.equal(sessionResult.session.metadata?.work_mode, "projects");
+  assert.equal(sessionResult.session.metadata?.agile_methodology, "lean");
+  assert.equal(sessionResult.session.metadata?.agile_stage, "Optimizar / Automatizar");
+  assert.ok(sessionResult.session.gp_earned > 0);
+  assert.ok(sessionResult.session.xp_earned > 0);
+
+  // 3. Registro de Actividad Operativa Diaria (Rutina / OPGs)
+  const opSession = store.logSkillSession({
+    domain: "work",
+    duration_minutes: 35,
+    work_mode: "activities",
+    deliverable: "Procesamiento manual de 40 OPGs mayoristas",
+  });
+
+  assert.equal(opSession.session.metadata?.work_mode, "activities");
+  assert.ok(opSession.session.title.includes("Actividad Operativa"));
+  assert.ok(opSession.session.gp_earned > 0);
+});
+
+
 

@@ -178,6 +178,20 @@ export interface KnittingProject {
   status: "in_progress" | "completed";
 }
 
+export type AgileMethodology = "none" | "scrum" | "kanban" | "lean";
+
+export interface WorkProject {
+  id: string;
+  name: string;
+  methodology: AgileMethodology;
+  current_stage?: string;
+  status: "active" | "completed" | "on_hold";
+  tasks_count?: number;
+  completed_tasks_count?: number;
+  total_minutes_invested?: number;
+  created_at: string;
+}
+
 export interface SkillSessionRecord {
   id: string;
   domain: SkillDomain;
@@ -210,6 +224,9 @@ export interface SkillSessionRecord {
     // Work
     deliverable?: string;
     impact_level?: "standard" | "high_impact" | "milestone";
+    work_mode?: "activities" | "projects";
+    agile_methodology?: AgileMethodology;
+    agile_stage?: string;
   };
   timestamp: string;
 }
@@ -270,6 +287,9 @@ export interface HabitLogShortcutRequest {
     // Work
     deliverable?: string;
     impact_level?: "standard" | "high_impact" | "milestone";
+    work_mode?: "activities" | "projects";
+    agile_methodology?: AgileMethodology;
+    agile_stage?: string;
   } | null;
   notes?: string;
   timestamp?: string;
