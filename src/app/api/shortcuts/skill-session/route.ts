@@ -14,6 +14,7 @@ import { generateRubikScramble } from "@/lib/demo-store";
 import {
   extractBookSpecsWithGemini,
   extractCubeSpecsWithGemini,
+  planAgileProjectWithGemini,
 } from "@/lib/gemini";
 import { isSupabaseConfigured, resolvePlayerTreasury } from "@/lib/supabase";
 import { requireShortcutUser, scopeIdempotencyKey } from "@/lib/request-auth";
@@ -36,6 +37,10 @@ export interface SkillSessionEndpointRequest {
     | "add_book_quote"
     | "add_knitting_project"
     | "add_work_project"
+    | "generate_ai_project"
+    | "add_work_project_task"
+    | "move_work_project_task"
+    | "complete_work_project_task"
     | "create_trial_checkpoint"
     | "new_scramble";
   checkpoint_label?: string;
@@ -118,13 +123,28 @@ export interface SkillSessionEndpointRequest {
     | "Deep Study 50/10"
     | "Active Recall"
     | "Práctica";
-  // Work
+  // Work & Agile Projects
   deliverable?: string;
   impact_level?: "standard" | "high_impact" | "milestone";
   work_mode?: "activities" | "projects";
   work_project_name?: string;
+  work_project_description?: string;
   agile_methodology?: AgileMethodology;
   agile_stage?: string;
+  target_stage?: string;
+  task_id?: string;
+  task_title?: string;
+  task_description?: string;
+  task_stage?: string;
+  task_priority?: "low" | "medium" | "high" | "critical";
+  auto_create?: boolean;
+  project_tasks?: Array<{
+    title: string;
+    description?: string;
+    stage?: string;
+    priority?: "low" | "medium" | "high" | "critical";
+    estimated_minutes?: number;
+  }>;
   // Debt Strategy / Limit Break / Boss Purify / Wishlist
   debt_strategy?: DebtStrategy;
   limit_break_gp?: number;
@@ -512,6 +532,37 @@ export async function POST(req: Request) {
       );
     }
 
+    if (body.action === "generate_ai_project") {
+      const query = (
+        body.raw_query ||
+        body.work_project_name ||
+        body.title ||
+        ""
+      ).trim();
+      const aiPlan = await planAgileProjectWithGemini(query);
+
+      let createdProject: WorkProject | undefined;
+      if (body.auto_create) {
+        createdProject = store.addWorkProject({
+          name: aiPlan.name,
+          description: aiPlan.description,
+          methodology: aiPlan.methodology,
+          current_stage: aiPlan.suggested_stages[0],
+          tasks: aiPlan.tasks,
+        });
+        await persistUserCollectionsState({ userId, store, db });
+      }
+
+      return NextResponse.json({
+        success: true,
+        action: "generate_ai_project",
+        ai_plan: aiPlan,
+        project: createdProject,
+        work_projects: store.workProjects,
+        shortcut_tts_message: `Proyecto "${aiPlan.name}" generado con metodología ${aiPlan.methodology.toUpperCase()} y ${aiPlan.tasks.length} tarjetas en el tablero.`,
+      });
+    }
+
     if (body.action === "add_work_project") {
       const project = store.addWorkProject({
         name:
@@ -519,8 +570,10 @@ export async function POST(req: Request) {
           body.title ||
           body.raw_query ||
           "Nuevo Proyecto Estratégico",
+        description: body.work_project_description,
         methodology: body.agile_methodology || "lean",
         current_stage: body.agile_stage,
+        tasks: body.project_tasks,
       });
 
       await persistUserCollectionsState({ userId, store, db });
@@ -535,6 +588,77 @@ export async function POST(req: Request) {
         },
         { status: 201 }
       );
+    }
+
+    if (body.action === "add_work_project_task" && body.project_id) {
+      const task = store.addWorkProjectTask({
+        project_id: body.project_id,
+        title: body.task_title || body.title || "Nueva Tarjeta",
+        description: body.task_description,
+        stage: body.task_stage,
+        priority: body.task_priority,
+        estimated_minutes: body.duration_minutes,
+      });
+
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "add_work_project_task",
+        task,
+        project: store.workProjects.find((p) => p.id === body.project_id),
+        work_projects: store.workProjects,
+        shortcut_tts_message: `Tarjeta "${task.title}" agregada a la columna ${task.stage}.`,
+      });
+    }
+
+    if (
+      body.action === "move_work_project_task" &&
+      body.project_id &&
+      body.task_id &&
+      body.target_stage
+    ) {
+      const task = store.moveWorkProjectTask({
+        project_id: body.project_id,
+        task_id: body.task_id,
+        target_stage: body.target_stage,
+      });
+
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "move_work_project_task",
+        task,
+        project: store.workProjects.find((p) => p.id === body.project_id),
+        work_projects: store.workProjects,
+        shortcut_tts_message: `Tarjeta "${task.title}" movida a "${task.stage}".`,
+      });
+    }
+
+    if (
+      body.action === "complete_work_project_task" &&
+      body.project_id &&
+      body.task_id
+    ) {
+      const compRes = store.completeWorkProjectTask({
+        project_id: body.project_id,
+        task_id: body.task_id,
+      });
+
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "complete_work_project_task",
+        completed_task: compRes.task,
+        project: compRes.project,
+        work_projects: store.workProjects,
+        reward: compRes.reward,
+        wallet_gp: store.wallet_gp,
+        vault_remaining_gp: store.vault_remaining_gp,
+        shortcut_tts_message: `¡Tarjeta "${compRes.task.title}" completada! Liberaste ${compRes.reward.transferred_gp.toLocaleString("es-CO")} GP a tu Billetera.`,
+      });
     }
 
     if (body.action === "set_debt_strategy" && body.debt_strategy) {

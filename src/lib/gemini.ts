@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import {
   AI_SKILLS_REGISTRY,
+  sanitizeAgileProjectAI,
   sanitizeBookSpecs,
   sanitizeCubeSpecs,
   sanitizeParsedExpense,
@@ -12,6 +13,8 @@ import {
   setCachedCatalogSpecs,
 } from "./ai-cache-and-ratelimit.ts";
 import type {
+  AgileMethodology,
+  AgileProjectGenerationAI,
   BookComplexity,
   ExtractedBookSpecsAI,
   ExtractedCubeSpecsAI,
@@ -1486,6 +1489,126 @@ export async function extractBookSpecsWithGemini(
           });
     await setCachedCatalogSpecs("book", rawQuery, merged);
     return merged;
+  } catch {
+    return fallback;
+  }
+}
+
+export const AgileProjectSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    name: {
+      type: Type.STRING,
+      description: "Nombre claro, conciso y profesional del proyecto.",
+    },
+    description: {
+      type: Type.STRING,
+      description:
+        "Descripción del alcance, objetivo de negocio y valor generado.",
+    },
+    methodology: {
+      type: Type.STRING,
+      enum: ["scrum", "kanban", "lean"],
+      description:
+        "Metodología recomendada: 'scrum' para sprints secuenciales, 'kanban' para soporte/flujo continuo, 'lean' para optimizar/automatizar procesos repetitivos y eliminar desperdicio.",
+    },
+    suggested_stages: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description:
+        "Lista de columnas para el tablero estilo Trello según la metodología.",
+    },
+    tasks: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title: {
+            type: Type.STRING,
+            description: "Título conciso y accionable de la tarjeta.",
+          },
+          description: {
+            type: Type.STRING,
+            description: "Detalle del entregable técnico o paso a ejecutar.",
+          },
+          stage: {
+            type: Type.STRING,
+            description:
+              "Columna inicial en la que se ubica la tarjeta en el tablero.",
+          },
+          priority: {
+            type: Type.STRING,
+            enum: ["low", "medium", "high", "critical"],
+            description: "Nivel de prioridad de la tarea.",
+          },
+          estimated_minutes: {
+            type: Type.NUMBER,
+            description:
+              "Tiempo estimado en minutos de Deep Work enfocado (entre 20 y 90 min).",
+          },
+          acceptance_criteria: {
+            type: Type.STRING,
+            description:
+              "Criterio de aceptación o Definition of Done para marcarla como lista.",
+          },
+        },
+        required: [
+          "title",
+          "description",
+          "stage",
+          "priority",
+          "estimated_minutes",
+        ],
+      },
+      description: "Lista de 4 a 6 tareas concretas para el tablero Trello.",
+    },
+    executive_summary: {
+      type: Type.STRING,
+      description: "Resumen táctico de 2 oraciones.",
+    },
+  },
+  required: [
+    "name",
+    "description",
+    "methodology",
+    "suggested_stages",
+    "tasks",
+    "executive_summary",
+  ],
+};
+
+export async function planAgileProjectWithGemini(
+  rawPrompt: string
+): Promise<AgileProjectGenerationAI> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const fallback = sanitizeAgileProjectAI({}, rawPrompt);
+
+  if (!apiKey || apiKey === "tu-gemini-api-key") {
+    return fallback;
+  }
+
+  if (!checkAiQuotaAllowance("project_planner").allowed) {
+    return fallback;
+  }
+
+  try {
+    const skill = AI_SKILLS_REGISTRY.AGILE_PROJECT_PLANNER;
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `Diseña un proyecto estratégico ágil con su tablero estilo Trello y tareas accionables a partir de esta idea o requerimiento: "${rawPrompt}"`,
+      config: {
+        systemInstruction: skill.systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: AgileProjectSchema,
+        temperature: skill.temperature,
+      },
+    });
+
+    const parsed = JSON.parse(
+      response.text || "{}"
+    ) as Partial<AgileProjectGenerationAI>;
+    return sanitizeAgileProjectAI(parsed, rawPrompt);
   } catch {
     return fallback;
   }

@@ -180,16 +180,48 @@ export interface KnittingProject {
 
 export type AgileMethodology = "none" | "scrum" | "kanban" | "lean";
 
+export interface WorkProjectTask {
+  id: string;
+  project_id: string;
+  title: string;
+  description?: string;
+  stage: string;
+  priority: "low" | "medium" | "high" | "critical";
+  estimated_minutes?: number;
+  reward_gp?: number;
+  reward_xp?: number;
+  is_completed: boolean;
+  created_at: string;
+}
+
 export interface WorkProject {
   id: string;
   name: string;
+  description?: string;
   methodology: AgileMethodology;
   current_stage?: string;
   status: "active" | "completed" | "on_hold";
+  tasks?: WorkProjectTask[];
   tasks_count?: number;
   completed_tasks_count?: number;
   total_minutes_invested?: number;
   created_at: string;
+}
+
+export interface AgileProjectGenerationAI {
+  name: string;
+  description: string;
+  methodology: AgileMethodology;
+  suggested_stages: string[];
+  tasks: Array<{
+    title: string;
+    description: string;
+    stage: string;
+    priority: "low" | "medium" | "high" | "critical";
+    estimated_minutes: number;
+    acceptance_criteria?: string;
+  }>;
+  executive_summary: string;
 }
 
 export interface SkillSessionRecord {

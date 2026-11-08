@@ -13,6 +13,7 @@ import {
   extractCubeSpecsWithGemini,
   extractBookSpecsDeterministic,
   extractBookSpecsWithGemini,
+  planAgileProjectWithGemini,
 } from "../src/lib/gemini.ts";
 
 test("1. WCA Rubik Scramble & Trimmed Average (Ao5 / Ao12) math & edge cases", () => {
@@ -959,6 +960,68 @@ test("12. Módulo de Trabajo: Proyectos Estratégicos vs Actividades Operativas 
   assert.ok(opSession.session.title.includes("Actividad Operativa"));
   assert.ok(opSession.session.gp_earned > 0);
 });
+
+test("13. Tablero Trello para Proyectos y Skill de Gemini IA (planAgileProjectWithGemini)", async () => {
+  const store = new RPGEngineMemoryStore();
+
+  // 1. Skill de Gemini: Planificación de Proyecto Ágil con Backlog / Trello
+  const aiPlan = await planAgileProjectWithGemini(
+    "Automatización de procesamiento y validación de 200 OPGs mayoristas"
+  );
+  assert.ok(aiPlan.name.length > 0);
+  assert.equal(aiPlan.methodology, "lean");
+  assert.ok(aiPlan.tasks.length >= 3);
+  assert.ok(aiPlan.suggested_stages.includes("Optimizar / Automatizar"));
+
+  // 2. Creación de Proyecto a partir del plan generado por la IA
+  const project = store.addWorkProject({
+    name: aiPlan.name,
+    description: aiPlan.description,
+    methodology: aiPlan.methodology,
+    tasks: aiPlan.tasks,
+  });
+
+  assert.equal(project.tasks?.length, aiPlan.tasks.length);
+  assert.equal(project.tasks_count, aiPlan.tasks.length);
+  assert.equal(project.completed_tasks_count, 0);
+
+  // 3. Añadir una nueva tarjeta al Trello del proyecto
+  const newTask = store.addWorkProjectTask({
+    project_id: project.id,
+    title: "Creación de Dashboard de Métricas de Tiempo Ahorrado",
+    description: "Visualizar horas recuperadas al automatizar el proceso.",
+    stage: "Mapear Cadena de Flujo",
+    priority: "high",
+    estimated_minutes: 50,
+  });
+  assert.equal(newTask.project_id, project.id);
+  assert.equal(newTask.stage, "Mapear Cadena de Flujo");
+  assert.equal(newTask.is_completed, false);
+  assert.equal(project.tasks?.length, aiPlan.tasks.length + 1);
+
+  // 4. Mover tarjeta entre columnas del Trello (drag & drop / cambio de etapa)
+  const movedTask = store.moveWorkProjectTask({
+    project_id: project.id,
+    task_id: newTask.id,
+    target_stage: "Optimizar / Automatizar",
+  });
+  assert.equal(movedTask.stage, "Optimizar / Automatizar");
+
+  // 5. Completar tarjeta del Trello: marca como hecha, acumula minutos y forja GP/XP
+  const initialWallet = store.wallet_gp;
+  const initialMinutes = project.total_minutes_invested || 0;
+  const comp = store.completeWorkProjectTask({
+    project_id: project.id,
+    task_id: newTask.id,
+  });
+
+  assert.equal(comp.task.is_completed, true);
+  assert.equal(comp.task.stage, "Optimizar / Automatizar");
+  assert.equal(project.completed_tasks_count, 1);
+  assert.equal(project.total_minutes_invested, initialMinutes + 50);
+  assert.ok(store.wallet_gp > initialWallet, "Completar la tarjeta del Trello debe liberar GP a la Billetera");
+});
+
 
 
 

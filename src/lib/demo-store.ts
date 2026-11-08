@@ -25,6 +25,7 @@ import type {
   UserSkillConfig,
   AgileMethodology,
   WorkProject,
+  WorkProjectTask,
 } from "../types/rpg";
 import {
   buildBookReadingChecklist,
@@ -613,6 +614,8 @@ export class RPGEngineMemoryStore {
     {
       id: "proj-1",
       name: "Automatización OPGs & Cargas de Precios",
+      description:
+        "Eliminación de pasos manuales y automatización del procesamiento de 200 OPGs mayoristas con scripts en Python y Excel.",
       methodology: "lean",
       current_stage: "Optimizar / Automatizar",
       status: "active",
@@ -620,17 +623,153 @@ export class RPGEngineMemoryStore {
       completed_tasks_count: 3,
       total_minutes_invested: 180,
       created_at: "2026-11-04T10:00:00Z",
+      tasks: [
+        {
+          id: "task-1-1",
+          project_id: "proj-1",
+          title: "Diagnóstico de cuellos de botella en procesamiento de 200 OPGs",
+          description: "Mapeo de tiempos muertos en digitación y validación manual.",
+          stage: "Identificar Valor",
+          priority: "high",
+          estimated_minutes: 45,
+          reward_gp: 5300,
+          reward_xp: 110,
+          is_completed: true,
+          created_at: "2026-11-04T10:15:00Z",
+        },
+        {
+          id: "task-1-2",
+          project_id: "proj-1",
+          title: "Mapeo de la cadena de flujo entre ERP y pedidos mayoristas",
+          description: "Identificar campos obligatorios y fuentes de inconsistencia.",
+          stage: "Mapear Cadena de Flujo",
+          priority: "medium",
+          estimated_minutes: 60,
+          reward_gp: 5700,
+          reward_xp: 150,
+          is_completed: true,
+          created_at: "2026-11-04T11:00:00Z",
+        },
+        {
+          id: "task-1-3",
+          project_id: "proj-1",
+          title: "Script de validación sintáctica de tarifas y referencias en Python",
+          description: "Verificación automática de listas de precios mayoristas.",
+          stage: "Optimizar / Automatizar",
+          priority: "critical",
+          estimated_minutes: 75,
+          reward_gp: 9500,
+          reward_xp: 190,
+          is_completed: true,
+          created_at: "2026-11-05T09:30:00Z",
+        },
+        {
+          id: "task-1-4",
+          project_id: "proj-1",
+          title: "Macro de carga masiva automatizada con control de excepciones",
+          description: "Generar carga directa con reporte de filas procesadas con éxito.",
+          stage: "Optimizar / Automatizar",
+          priority: "high",
+          estimated_minutes: 60,
+          reward_gp: 7100,
+          reward_xp: 150,
+          is_completed: false,
+          created_at: "2026-11-06T14:00:00Z",
+        },
+        {
+          id: "task-1-5",
+          project_id: "proj-1",
+          title: "Prueba piloto con canal mayorista y auditoría de horas ahorradas",
+          description: "Validar reducción de 4h a 20min por corrida semanal.",
+          stage: "Optimizar / Automatizar",
+          priority: "medium",
+          estimated_minutes: 45,
+          reward_gp: 4200,
+          reward_xp: 110,
+          is_completed: false,
+          created_at: "2026-11-07T08:30:00Z",
+        },
+      ],
     },
     {
       id: "proj-2",
       name: "Dashboard Financiero & RPG Life-Engine",
+      description:
+        "Gamificación y control financiero personal con Snowball/Avalanche y Santuario de Habilidades.",
       methodology: "scrum",
       current_stage: "Sprint Backlog",
       status: "active",
-      tasks_count: 8,
-      completed_tasks_count: 6,
+      tasks_count: 5,
+      completed_tasks_count: 3,
       total_minutes_invested: 240,
       created_at: "2026-11-01T15:30:00Z",
+      tasks: [
+        {
+          id: "task-2-1",
+          project_id: "proj-2",
+          title: "Simulador de Daño DoT y Enrage Timer en Debt Bosses",
+          description: "Impacto visual de intereses pasivos si no hay abonos a capital.",
+          stage: "Hecho",
+          priority: "critical",
+          estimated_minutes: 90,
+          reward_gp: 11500,
+          reward_xp: 220,
+          is_completed: true,
+          created_at: "2026-11-02T10:00:00Z",
+        },
+        {
+          id: "task-2-2",
+          project_id: "proj-2",
+          title: "Gating de Racha e Impuesto al Impulso en Wishlist",
+          description: "Restringir canjes por días de racha e incremento de 20% si hay sobrecostos.",
+          stage: "Hecho",
+          priority: "high",
+          estimated_minutes: 60,
+          reward_gp: 7100,
+          reward_xp: 150,
+          is_completed: true,
+          created_at: "2026-11-03T11:00:00Z",
+        },
+        {
+          id: "task-2-3",
+          project_id: "proj-2",
+          title: "Amortización Automática de Sobregiro en Billetera GP",
+          description: "Maldición levantada al recuperar saldo positivo con sesiones.",
+          stage: "Hecho",
+          priority: "high",
+          estimated_minutes: 45,
+          reward_gp: 5300,
+          reward_xp: 110,
+          is_completed: true,
+          created_at: "2026-11-04T12:00:00Z",
+        },
+        {
+          id: "task-2-4",
+          project_id: "proj-2",
+          title: "Tablero interactivo Trello para gestión ágil de proyectos",
+          description: "Columnas dinámicas según Scrum/Kanban/Lean con movimiento de tarjetas.",
+          stage: "En Progreso",
+          priority: "critical",
+          estimated_minutes: 50,
+          reward_gp: 6500,
+          reward_xp: 130,
+          is_completed: false,
+          created_at: "2026-11-07T16:00:00Z",
+        },
+        {
+          id: "task-2-5",
+          project_id: "proj-2",
+          title: "Skill 9 de Gemini para descomposición ágil de proyectos",
+          description: "Generador asistido por IA que crea proyectos y tareas en el Trello.",
+          stage: "Sprint Backlog",
+          priority: "high",
+          estimated_minutes: 45,
+          reward_gp: 5300,
+          reward_xp: 110,
+          is_completed: false,
+          created_at: "2026-11-07T18:00:00Z",
+        },
+      ],
     },
   ];
 
@@ -1485,8 +1624,16 @@ export class RPGEngineMemoryStore {
 
   addWorkProject(params: {
     name: string;
+    description?: string;
     methodology?: AgileMethodology;
     current_stage?: string;
+    tasks?: Array<{
+      title: string;
+      description?: string;
+      stage?: string;
+      priority?: "low" | "medium" | "high" | "critical";
+      estimated_minutes?: number;
+    }>;
   }): WorkProject {
     const cleanName = (params.name || "").trim();
     if (!cleanName) {
@@ -1502,19 +1649,186 @@ export class RPGEngineMemoryStore {
         ? "Optimizar / Automatizar"
         : "En Progreso";
 
+    const projId = `proj-${crypto.randomUUID().slice(0, 8)}`;
+    const initialTasks: WorkProjectTask[] = (params.tasks || []).map(
+      (t, idx) => {
+        const priority = t.priority || (idx === 0 ? "high" : "medium");
+        const mins = t.estimated_minutes || 45;
+        const mult =
+          priority === "critical" ? 1.5 : priority === "high" ? 1.25 : 1.0;
+        return {
+          id: `task-${crypto.randomUUID().slice(0, 8)}`,
+          project_id: projId,
+          title: (t.title || `Tarea #${idx + 1}`).trim(),
+          description: t.description?.trim(),
+          stage:
+            t.stage ||
+            (meth === "scrum"
+              ? "Backlog"
+              : meth === "kanban"
+              ? "Por Hacer (To-Do)"
+              : "Identificar Valor"),
+          priority,
+          estimated_minutes: mins,
+          reward_gp: Math.min(12000, Math.round(mins * 95 * mult)),
+          reward_xp: Math.round(mins * 2.4 * mult),
+          is_completed: false,
+          created_at: new Date().toISOString(),
+        };
+      }
+    );
+
     const newProj: WorkProject = {
-      id: `proj-${crypto.randomUUID().slice(0, 8)}`,
+      id: projId,
       name: cleanName,
+      description: params.description?.trim(),
       methodology: meth,
       current_stage: params.current_stage || defaultStage,
       status: "active",
-      tasks_count: 1,
+      tasks: initialTasks,
+      tasks_count: initialTasks.length,
       completed_tasks_count: 0,
       total_minutes_invested: 0,
       created_at: new Date().toISOString(),
     };
     this.workProjects.unshift(newProj);
     return newProj;
+  }
+
+  addWorkProjectTask(params: {
+    project_id: string;
+    title: string;
+    description?: string;
+    stage?: string;
+    priority?: "low" | "medium" | "high" | "critical";
+    estimated_minutes?: number;
+  }): WorkProjectTask {
+    const proj = this.workProjects.find((p) => p.id === params.project_id);
+    if (!proj) {
+      throw new Error(`Proyecto con ID "${params.project_id}" no encontrado.`);
+    }
+    const cleanTitle = (params.title || "").trim();
+    if (!cleanTitle) {
+      throw new Error("El título de la tarea es obligatorio.");
+    }
+    const priority = params.priority || "medium";
+    const mins = Math.max(10, Math.round(params.estimated_minutes || 45));
+    const mult =
+      priority === "critical" ? 1.5 : priority === "high" ? 1.25 : 1.0;
+
+    const defaultStage =
+      params.stage ||
+      (proj.methodology === "scrum"
+        ? "Backlog"
+        : proj.methodology === "kanban"
+        ? "Por Hacer (To-Do)"
+        : "Identificar Valor");
+
+    const newTask: WorkProjectTask = {
+      id: `task-${crypto.randomUUID().slice(0, 8)}`,
+      project_id: proj.id,
+      title: cleanTitle,
+      description: params.description?.trim(),
+      stage: defaultStage,
+      priority,
+      estimated_minutes: mins,
+      reward_gp: Math.min(12000, Math.round(mins * 95 * mult)),
+      reward_xp: Math.round(mins * 2.4 * mult),
+      is_completed: false,
+      created_at: new Date().toISOString(),
+    };
+
+    if (!Array.isArray(proj.tasks)) {
+      proj.tasks = [];
+    }
+    proj.tasks.push(newTask);
+    proj.tasks_count = proj.tasks.length;
+    return newTask;
+  }
+
+  moveWorkProjectTask(params: {
+    project_id: string;
+    task_id: string;
+    target_stage: string;
+  }): WorkProjectTask {
+    const proj = this.workProjects.find((p) => p.id === params.project_id);
+    if (!proj || !Array.isArray(proj.tasks)) {
+      throw new Error(`Proyecto con ID "${params.project_id}" no encontrado.`);
+    }
+    const task = proj.tasks.find((t) => t.id === params.task_id);
+    if (!task) {
+      throw new Error(`Tarea con ID "${params.task_id}" no encontrada.`);
+    }
+    task.stage = params.target_stage;
+    return task;
+  }
+
+  completeWorkProjectTask(params: {
+    project_id: string;
+    task_id: string;
+  }): {
+    task: WorkProjectTask;
+    project: WorkProject;
+    reward: ReturnType<RPGEngineMemoryStore["completeActivity"]>;
+  } {
+    const proj = this.workProjects.find((p) => p.id === params.project_id);
+    if (!proj || !Array.isArray(proj.tasks)) {
+      throw new Error(`Proyecto con ID "${params.project_id}" no encontrado.`);
+    }
+    const task = proj.tasks.find((t) => t.id === params.task_id);
+    if (!task) {
+      throw new Error(`Tarea con ID "${params.task_id}" no encontrada.`);
+    }
+    if (task.is_completed) {
+      throw new Error("Esta tarea ya fue completada.");
+    }
+
+    task.is_completed = true;
+    const doneStage =
+      proj.methodology === "scrum"
+        ? "Hecho"
+        : proj.methodology === "kanban"
+        ? "Completado"
+        : "Optimizar / Automatizar";
+    task.stage = doneStage;
+
+    proj.completed_tasks_count = proj.tasks.filter((t) => t.is_completed).length;
+    const duration = task.estimated_minutes || 45;
+    proj.total_minutes_invested = (proj.total_minutes_invested || 0) + duration;
+
+    const reward = this.completeActivity({
+      code: "WORK_TASK_DONE",
+      title: `Tarea Completada: ${task.title}`,
+      domain: "work",
+      requested_gp: task.reward_gp || 5000,
+      earned_xp: task.reward_xp || 110,
+    });
+
+    const sessionRecord: SkillSessionRecord = {
+      id: crypto.randomUUID(),
+      domain: "work",
+      title: `Trello Task: ${task.title}`,
+      duration_minutes: duration,
+      gp_earned: reward.transferred_gp,
+      xp_earned: task.reward_xp || 110,
+      details: `Completada tarjeta del proyecto ${
+        proj.name
+      } (${proj.methodology.toUpperCase()}) • Prioridad: ${task.priority.toUpperCase()}`,
+      metadata: {
+        work_mode: "projects",
+        project_id: proj.id,
+        project_name: proj.name,
+        agile_methodology: proj.methodology,
+        agile_stage: doneStage,
+        deliverable: task.title,
+        impact_level:
+          task.priority === "critical" ? "milestone" : "high_impact",
+      },
+      timestamp: new Date().toISOString(),
+    };
+    this.skillSessions.unshift(sessionRecord);
+
+    return { task, project: proj, reward };
   }
 
   // 1. Trigger de Hábitos + Multiplicador de Racha (1.1x / 1.25x) + Escudo Aegis cada 7 rachas

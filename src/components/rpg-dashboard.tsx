@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import {
   AgileMethodology,
+  AgileProjectGenerationAI,
   BookComplexity,
   BookFormat,
   BossTTKProjection,
@@ -64,6 +65,7 @@ import {
   TrialCheckpointSnapshot,
   UserSkillConfig,
   WorkProject,
+  WorkProjectTask,
   DailyScheduleConfig,
 } from "@/types/rpg";
 import { computeBioCalendarPlan } from "@/lib/calendar-planner";
@@ -573,6 +575,20 @@ export function RPGLifeEngineDashboard({
   const [selectedAgileStage, setSelectedAgileStage] =
     useState<string>("Sprint Backlog");
 
+  // Estados de Gemini AI Project Planner (Skill 9) & Tablero Trello
+  const [aiProjectPrompt, setAiProjectPrompt] = useState("");
+  const [generatingAiProject, setGeneratingAiProject] = useState(false);
+  const [generatedAiPlan, setGeneratedAiPlan] =
+    useState<AgileProjectGenerationAI | null>(null);
+  const [showAiPlannerModal, setShowAiPlannerModal] = useState(false);
+  const [addingCardToStage, setAddingCardToStage] = useState<string | null>(null);
+  const [newCardTitle, setNewCardTitle] = useState("");
+  const [newCardDesc, setNewCardDesc] = useState("");
+  const [newCardPriority, setNewCardPriority] = useState<
+    "low" | "medium" | "high" | "critical"
+  >("medium");
+  const [newCardMinutes, setNewCardMinutes] = useState(45);
+
   // Estados del Laboratorio iOS Shortcuts
   const [activeLabTab, setActiveLabTab] = useState<
     "sms_siri" | "receipt_vision" | "ios_widget"
@@ -977,6 +993,125 @@ export function RPGLifeEngineDashboard({
         setSelectedProjectId(json.project.id);
       }
       return json;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGenerateAiProject = async () => {
+    const q = aiProjectPrompt.trim();
+    if (!q) return;
+    setGeneratingAiProject(true);
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate_ai_project",
+          raw_query: q,
+        }),
+      });
+      const json = await res.json();
+      if (json.ai_plan) {
+        setGeneratedAiPlan(json.ai_plan as AgileProjectGenerationAI);
+      }
+    } finally {
+      setGeneratingAiProject(false);
+    }
+  };
+
+  const handleImportAiProject = async () => {
+    if (!generatedAiPlan) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add_work_project",
+          work_project_name: generatedAiPlan.name,
+          work_project_description: generatedAiPlan.description,
+          agile_methodology: generatedAiPlan.methodology,
+          agile_stage: generatedAiPlan.suggested_stages[0],
+          project_tasks: generatedAiPlan.tasks,
+        }),
+      });
+      const json = await res.json();
+      await fetchState();
+      if (json.project) {
+        setSelectedProjectId(json.project.id);
+        setSelectedAgileMethodology(json.project.methodology);
+        setSelectedAgileStage(json.project.current_stage || "");
+      }
+      setShowAiPlannerModal(false);
+      setGeneratedAiPlan(null);
+      setAiProjectPrompt("");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleAddTrelloCard = async (stage: string) => {
+    if (!newCardTitle.trim() || !selectedProjectId) return;
+    setSubmitting(true);
+    try {
+      await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add_work_project_task",
+          project_id: selectedProjectId,
+          task_title: newCardTitle.trim(),
+          task_description: newCardDesc.trim() || undefined,
+          task_stage: stage,
+          task_priority: newCardPriority,
+          duration_minutes: newCardMinutes,
+        }),
+      });
+      await fetchState();
+      setAddingCardToStage(null);
+      setNewCardTitle("");
+      setNewCardDesc("");
+      setNewCardPriority("medium");
+      setNewCardMinutes(45);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleMoveTrelloCard = async (taskId: string, targetStage: string) => {
+    if (!selectedProjectId || !taskId || !targetStage) return;
+    try {
+      await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "move_work_project_task",
+          project_id: selectedProjectId,
+          task_id: taskId,
+          target_stage: targetStage,
+        }),
+      });
+      await fetchState();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCompleteTrelloCard = async (taskId: string) => {
+    if (!selectedProjectId || !taskId) return;
+    setSubmitting(true);
+    try {
+      await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "complete_work_project_task",
+          project_id: selectedProjectId,
+          task_id: taskId,
+        }),
+      });
+      await fetchState();
     } finally {
       setSubmitting(false);
     }
@@ -5618,280 +5753,619 @@ export function RPGLifeEngineDashboard({
               )}
 
               {/* VISTA 2: PROYECTOS & METODOLOGÍA ÁGIL */}
-              {workViewMode === "projects" && (
-                <div id="view-projects" className="work-view space-y-6">
-                  {/* Selector / Listado de Proyectos Existentes */}
-                  <div className="p-5 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h4 className="font-semibold text-indigo-300 flex items-center gap-2">
-                        <span>📁</span> Proyectos Estratégicos en Curso
-                      </h4>
-                      <span className="text-xs text-slate-400">
-                        {(state.work_projects || []).length} proyecto(s) activo(s)
-                      </span>
+              {workViewMode === "projects" && (() => {
+                const projects = state.work_projects || [];
+                const activeProject =
+                  projects.find((p) => p.id === selectedProjectId) ||
+                  projects[0];
+                const activeMethodology: AgileMethodology =
+                  activeProject?.methodology || selectedAgileMethodology || "scrum";
+
+                const trelloStages: string[] =
+                  activeMethodology === "scrum"
+                    ? ["Backlog", "Sprint Backlog", "En Progreso", "Hecho"]
+                    : activeMethodology === "kanban"
+                    ? [
+                        "Por Hacer (To-Do)",
+                        "En Proceso (WIP)",
+                        "Bloqueado",
+                        "Completado",
+                      ]
+                    : [
+                        "Identificar Valor",
+                        "Mapear Cadena de Flujo",
+                        "Optimizar / Automatizar",
+                      ];
+
+                const projectTasks = activeProject?.tasks || [];
+                const completedTasks = projectTasks.filter((t) => t.is_completed);
+                const progressPct =
+                  projectTasks.length > 0
+                    ? Math.round((completedTasks.length / projectTasks.length) * 100)
+                    : 0;
+
+                return (
+                  <div id="view-projects" className="work-view space-y-6">
+                    {/* Barra Superior: Proyectos Activos & Botones de Creación */}
+                    <div className="p-5 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-semibold text-indigo-300 flex items-center gap-2">
+                            <span>📁</span> Proyectos Estratégicos & Tableros Trello
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Selecciona un proyecto para abrir su tablero interactivo o genera uno nuevo con la IA.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowAiPlannerModal((v) => !v)}
+                            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20 cursor-pointer"
+                          >
+                            <Sparkles className="h-4 w-4 text-amber-300" />
+                            {showAiPlannerModal
+                              ? "Cerrar Asistente IA"
+                              : "✨ Diseñar Proyecto con Gemini IA"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Tarjetas selectoras de proyectos */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {projects.map((proj) => {
+                          const isSelected = activeProject?.id === proj.id;
+                          const pTasks = proj.tasks || [];
+                          const pCompleted = pTasks.filter((t) => t.is_completed).length;
+                          const pPct =
+                            pTasks.length > 0
+                              ? Math.round((pCompleted / pTasks.length) * 100)
+                              : 0;
+
+                          return (
+                            <div
+                              key={proj.id}
+                              onClick={() => {
+                                setSelectedProjectId(proj.id);
+                                if (proj.methodology && proj.methodology !== "none") {
+                                  setSelectedAgileMethodology(proj.methodology);
+                                }
+                                if (proj.current_stage) {
+                                  setSelectedAgileStage(proj.current_stage);
+                                }
+                              }}
+                              className={`p-4 rounded-xl border transition-all cursor-pointer relative overflow-hidden ${
+                                isSelected
+                                  ? "border-indigo-500 bg-indigo-950/40 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/50"
+                                  : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-bold text-xs text-white truncate pr-2">
+                                  {proj.name}
+                                </span>
+                                <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 uppercase shrink-0">
+                                  {proj.methodology}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-400 line-clamp-1 mb-2.5">
+                                {proj.description || "Proyecto estratégico ágil"}
+                              </p>
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                  <span>
+                                    {pCompleted}/{pTasks.length} tarjetas ({pPct}%)
+                                  </span>
+                                  <span>⏱ {proj.total_minutes_invested || 0}m Deep Work</span>
+                                </div>
+                                <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className="bg-indigo-500 h-full rounded-full transition-all"
+                                    style={{ width: `${pPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {(state.work_projects || []).map((proj) => (
-                        <div
-                          key={proj.id}
-                          onClick={() => {
-                            setSelectedProjectId(proj.id);
-                            if (proj.methodology && proj.methodology !== "none") {
-                              setSelectedAgileMethodology(proj.methodology);
-                            }
-                            if (proj.current_stage) {
-                              setSelectedAgileStage(proj.current_stage);
-                            }
-                          }}
-                          className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
-                            selectedProjectId === proj.id
-                              ? "border-indigo-500 bg-indigo-950/40 shadow-md shadow-indigo-500/10"
-                              : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="font-bold text-xs text-white">
-                              {proj.name}
-                            </span>
-                            <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 uppercase">
-                              {proj.methodology}
-                            </span>
+                    {/* MÓDULO DE PLANIFICACIÓN ASISTIDA POR GEMINI IA (SKILL 9) */}
+                    {showAiPlannerModal && (
+                      <div className="p-5 bg-gradient-to-br from-indigo-950/70 via-slate-900/90 to-purple-950/60 rounded-2xl border border-indigo-500/40 shadow-xl space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-indigo-300 flex items-center gap-2 text-sm">
+                            <Bot className="h-5 w-5 text-indigo-400" />
+                            <span>Skill 9: Arquitecto Ágil con Gemini IA</span>
+                          </h4>
+                          <span className="text-[11px] text-indigo-300/80 font-mono">
+                            gemini-2.5-flash • Auto-Backlog & Trello
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 leading-relaxed">
+                          Describe tu meta de trabajo o proyecto. Gemini seleccionará la metodología óptima (Scrum, Kanban o Lean), redactará los criterios de aceptación y construirá las tarjetas listas para tu tablero Trello.
+                        </p>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                            ¿Qué proyecto, proceso o meta quieres estructurar?
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={aiProjectPrompt}
+                            onChange={(e) => setAiProjectPrompt(e.target.value)}
+                            placeholder="Ej: Automatizar validación y cruce de 200 OPGs mayoristas con scripts en Python y plantillas Excel..."
+                            className="w-full bg-slate-950/90 border border-indigo-500/30 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                          />
+                        </div>
+
+                        {/* Atajos de proyectos rápidos */}
+                        <div className="flex flex-wrap gap-2 items-center text-[11px]">
+                          <span className="text-slate-400 font-medium">Ideas rápidas:</span>
+                          {[
+                            "Automatización OPGs & Cargas de Precios",
+                            "Dashboard Financiero & RPG Life-Engine",
+                            "E-commerce de Prendas de Tejido Artesanal",
+                          ].map((idea) => (
+                            <button
+                              key={idea}
+                              type="button"
+                              onClick={() => setAiProjectPrompt(idea)}
+                              className="rounded-lg border border-indigo-500/20 bg-indigo-950/40 px-2.5 py-1 text-[11px] text-indigo-200 hover:border-indigo-400 transition-all cursor-pointer"
+                            >
+                              + {idea}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[11px] text-slate-400">
+                            Cero fricción: genera tareas con minutos estimados y recompensas GP.
+                          </span>
+                          <button
+                            type="button"
+                            disabled={generatingAiProject || !aiProjectPrompt.trim()}
+                            onClick={handleGenerateAiProject}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/30 disabled:opacity-50 cursor-pointer"
+                          >
+                            <Sparkles className="h-4 w-4" />
+                            {generatingAiProject
+                              ? "Estructurando con Gemini..."
+                              : "🤖 Descomponer Proyecto con Gemini"}
+                          </button>
+                        </div>
+
+                        {/* Vista previa del plan generado por la IA */}
+                        {generatedAiPlan && (
+                          <div className="mt-4 p-4 rounded-xl border border-indigo-500/40 bg-slate-950/80 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                              <div>
+                                <span className="text-xs font-bold text-white block">
+                                  {generatedAiPlan.name}
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  {generatedAiPlan.description}
+                                </span>
+                              </div>
+                              <span className="rounded bg-indigo-500/20 px-2.5 py-1 text-xs font-bold text-indigo-300 uppercase">
+                                Metodología: {generatedAiPlan.methodology}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-indigo-200 italic bg-indigo-950/30 p-2.5 rounded-lg border border-indigo-500/20">
+                              💡 <strong>Diagnóstico Ágil:</strong> {generatedAiPlan.executive_summary}
+                            </p>
+
+                            <div className="space-y-1.5">
+                              <span className="text-xs font-semibold text-slate-300 block">
+                                Tarjetas Trello generadas ({generatedAiPlan.tasks.length}):
+                              </span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {generatedAiPlan.tasks.map((t, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="p-2.5 rounded-lg border border-slate-800 bg-slate-900/60 text-xs space-y-1"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-white text-[11px]">
+                                        {t.title}
+                                      </span>
+                                      <span className="rounded bg-slate-800 px-1.5 py-0.2 text-[9px] text-indigo-300 uppercase">
+                                        {t.priority}
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 line-clamp-1">
+                                      {t.description}
+                                    </p>
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                      <span>Columna: {t.stage}</span>
+                                      <span>⏱ {t.estimated_minutes}m</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="flex justify-end pt-2">
+                              <button
+                                type="button"
+                                disabled={submitting}
+                                onClick={handleImportAiProject}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                                🚀 Crear Tablero Trello con este Plan
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center justify-between text-[11px] text-slate-400">
-                            <span>
-                              Etapa:{" "}
-                              <strong className="text-slate-200">
-                                {proj.current_stage || "En Progreso"}
-                              </strong>
-                            </span>
-                            <span>⏱ {proj.total_minutes_invested || 0} min</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Creación Manual de Proyecto */}
+                    <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-700/60 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
+                          <Settings2 className="h-4 w-4" /> Configuración de Proyecto Manual
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        <div className="sm:col-span-2">
+                          <input
+                            type="text"
+                            value={newProjectName}
+                            onChange={(e) => setNewProjectName(e.target.value)}
+                            placeholder="Nombre del nuevo proyecto..."
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200"
+                          />
+                        </div>
+                        <div>
+                          <select
+                            value={selectedAgileMethodology}
+                            onChange={(e) =>
+                              setSelectedAgileMethodology(e.target.value as AgileMethodology)
+                            }
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200"
+                          >
+                            <option value="scrum">Scrum (Sprints)</option>
+                            <option value="kanban">Kanban (Flujo WIP)</option>
+                            <option value="lean">Lean (Kaizen)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          disabled={submitting || !newProjectName.trim()}
+                          onClick={submitCreateWorkProject}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3.5 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Guardar Proyecto
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ============================================================ */}
+                    {/* TABLERO TRELLO INTERACTIVO DEL PROYECTO SELECCIONADO        */}
+                    {/* ============================================================ */}
+                    {activeProject && (
+                      <div className="space-y-4">
+                        {/* Cabecera del Tablero */}
+                        <div className="p-5 bg-slate-950/80 rounded-2xl border border-indigo-500/30 flex flex-wrap items-center justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-base">📋</span>
+                              <h4 className="text-base font-bold text-white">
+                                {activeProject.name}
+                              </h4>
+                              <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 uppercase">
+                                {activeMethodology}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                              {activeProject.description ||
+                                "Gestión ágil con tarjetas y flujo de trabajo continuo."}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <span className="text-xs font-bold text-white block">
+                                {completedTasks.length} de {projectTasks.length} tareas completadas
+                              </span>
+                              <span className="text-[11px] text-slate-400">
+                                {progressPct}% de avance • ⏱ {activeProject.total_minutes_invested || 0}m Deep Work
+                              </span>
+                            </div>
+                            <div className="w-24 bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                              <div
+                                className="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full rounded-full transition-all"
+                                style={{ width: `${progressPct}%` }}
+                              />
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
 
-                  {/* Configuración de Proyecto Estratégico */}
-                  <div className="p-5 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-4">
-                    <h4 className="font-semibold text-indigo-300 flex items-center gap-2">
-                      <span>🛠️</span> Configuración del Proyecto Estratégico
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Columnas del Tablero Trello */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 items-start">
+                          {trelloStages.map((stageName, stageIdx) => {
+                            const cardsInStage = projectTasks.filter(
+                              (t) =>
+                                t.stage === stageName ||
+                                (!t.stage && stageIdx === 0)
+                            );
+
+                            return (
+                              <div
+                                key={stageName}
+                                className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 space-y-3 min-h-[260px] flex flex-col justify-between"
+                              >
+                                <div>
+                                  {/* Encabezado de Columna */}
+                                  <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-bold text-slate-200">
+                                        {stageName}
+                                      </span>
+                                    </div>
+                                    <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-400">
+                                      {cardsInStage.length}
+                                    </span>
+                                  </div>
+
+                                  {/* Lista de Tarjetas en la Columna */}
+                                  <div className="space-y-2.5">
+                                    {cardsInStage.map((card) => {
+                                      const priorityColor =
+                                        card.priority === "critical"
+                                          ? "border-rose-500/40 bg-rose-950/20 text-rose-300"
+                                          : card.priority === "high"
+                                          ? "border-amber-500/40 bg-amber-950/20 text-amber-300"
+                                          : card.priority === "medium"
+                                          ? "border-indigo-500/40 bg-indigo-950/20 text-indigo-300"
+                                          : "border-slate-700 bg-slate-800/40 text-slate-400";
+
+                                      return (
+                                        <div
+                                          key={card.id}
+                                          className={`p-3 rounded-xl border transition-all text-xs space-y-2 shadow-sm ${
+                                            card.is_completed
+                                              ? "border-emerald-500/30 bg-emerald-950/15 opacity-80"
+                                              : "border-slate-800 bg-slate-950/90 hover:border-slate-700"
+                                          }`}
+                                        >
+                                          {/* Prioridad y Recompensa */}
+                                          <div className="flex items-center justify-between gap-1">
+                                            <span
+                                              className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase border ${priorityColor}`}
+                                            >
+                                              {card.priority}
+                                            </span>
+                                            <span className="font-mono text-[10px] font-bold text-emerald-400">
+                                              +{card.reward_gp?.toLocaleString("es-CO") || 5000} GP
+                                            </span>
+                                          </div>
+
+                                          {/* Título y Descripción */}
+                                          <div>
+                                            <h5
+                                              className={`font-semibold text-xs leading-snug ${
+                                                card.is_completed
+                                                  ? "line-through text-slate-400"
+                                                  : "text-white"
+                                              }`}
+                                            >
+                                              {card.title}
+                                            </h5>
+                                            {card.description && (
+                                              <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
+                                                {card.description}
+                                              </p>
+                                            )}
+                                          </div>
+
+                                          <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-850">
+                                            <span>⏱ {card.estimated_minutes || 45}m</span>
+                                            {card.is_completed ? (
+                                              <span className="text-emerald-400 font-bold flex items-center gap-1">
+                                                <Check className="h-3 w-3" /> Hecho
+                                              </span>
+                                            ) : (
+                                              <div className="flex items-center gap-1">
+                                                {/* Mover a columna anterior */}
+                                                {stageIdx > 0 && (
+                                                  <button
+                                                    type="button"
+                                                    title={`Mover a ${trelloStages[stageIdx - 1]}`}
+                                                    onClick={() =>
+                                                      handleMoveTrelloCard(
+                                                        card.id,
+                                                        trelloStages[stageIdx - 1]
+                                                      )
+                                                    }
+                                                    className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                                                  >
+                                                    ←
+                                                  </button>
+                                                )}
+                                                {/* Mover a columna siguiente */}
+                                                {stageIdx < trelloStages.length - 1 && (
+                                                  <button
+                                                    type="button"
+                                                    title={`Mover a ${trelloStages[stageIdx + 1]}`}
+                                                    onClick={() =>
+                                                      handleMoveTrelloCard(
+                                                        card.id,
+                                                        trelloStages[stageIdx + 1]
+                                                      )
+                                                    }
+                                                    className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                                                  >
+                                                    →
+                                                  </button>
+                                                )}
+                                                {/* Completar tarjeta */}
+                                                <button
+                                                  type="button"
+                                                  disabled={submitting}
+                                                  onClick={() => handleCompleteTrelloCard(card.id)}
+                                                  className="bg-emerald-600/80 hover:bg-emerald-600 text-white font-bold px-2 py-0.5 rounded text-[10px] transition-all cursor-pointer flex items-center gap-0.5 ml-1"
+                                                >
+                                                  <Check className="h-3 w-3" /> Listo
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Formulario para agregar tarjeta en esta columna */}
+                                <div className="pt-2">
+                                  {addingCardToStage === stageName ? (
+                                    <div className="p-2.5 rounded-xl border border-indigo-500/40 bg-slate-950 space-y-2">
+                                      <input
+                                        type="text"
+                                        value={newCardTitle}
+                                        onChange={(e) => setNewCardTitle(e.target.value)}
+                                        placeholder="Título de la tarjeta..."
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
+                                      />
+                                      <textarea
+                                        rows={2}
+                                        value={newCardDesc}
+                                        onChange={(e) => setNewCardDesc(e.target.value)}
+                                        placeholder="Descripción o criterios de aceptación..."
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
+                                      />
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <select
+                                          value={newCardPriority}
+                                          onChange={(e) =>
+                                            setNewCardPriority(
+                                              e.target.value as "low" | "medium" | "high" | "critical"
+                                            )
+                                          }
+                                          className="bg-slate-900 border border-slate-700 rounded p-1 text-[11px] text-white"
+                                        >
+                                          <option value="medium">Media</option>
+                                          <option value="high">Alta</option>
+                                          <option value="critical">Crítica</option>
+                                          <option value="low">Baja</option>
+                                        </select>
+                                        <input
+                                          type="number"
+                                          min="10"
+                                          value={newCardMinutes}
+                                          onChange={(e) =>
+                                            setNewCardMinutes(Math.max(10, Number(e.target.value)))
+                                          }
+                                          className="bg-slate-900 border border-slate-700 rounded p-1 text-[11px] text-white"
+                                        />
+                                      </div>
+                                      <div className="flex items-center justify-between pt-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => setAddingCardToStage(null)}
+                                          className="text-[11px] text-slate-400 hover:text-white cursor-pointer"
+                                        >
+                                          Cancelar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={submitting || !newCardTitle.trim()}
+                                          onClick={() => handleAddTrelloCard(stageName)}
+                                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-2.5 py-1 rounded text-[11px] cursor-pointer"
+                                        >
+                                          Agregar Tarjeta
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setAddingCardToStage(stageName);
+                                        setNewCardTitle("");
+                                        setNewCardDesc("");
+                                      }}
+                                      className="w-full py-1.5 rounded-lg border border-dashed border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-all"
+                                    >
+                                      <span>+</span> Añadir tarjeta
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Guía y Reglas de Implementación Ágil */}
+                    <div id="agile-guide-container" className="p-4 bg-indigo-950/30 border border-indigo-500/20 rounded-xl text-xs space-y-2 text-indigo-200">
+                      <h5 className="font-bold flex items-center gap-1.5 text-indigo-300">
+                        <span>💡</span> Principios de Ejecución Ágil ({activeMethodology.toUpperCase()}):
+                      </h5>
+                      {activeMethodology === "scrum" ? (
+                        <p className="leading-relaxed">
+                          <strong>Reglas de Sprint & Backlog:</strong> Divide tus grandes entregables en iteraciones de 1 a 2 semanas. Cada tarjeta completada en el Trello libera GP automáticamente a tu Billetera y alimenta tu progreso de nivel.
+                        </p>
+                      ) : activeMethodology === "kanban" ? (
+                        <p className="leading-relaxed">
+                          <strong>Límites WIP Estrictos:</strong> No inicies una nueva tarjeta si ya tienes 2 tareas en estado &ldquo;En Proceso (WIP)&rdquo;. Termina lo que empezaste para reducir los tiempos de ciclo y destrabar cuellos de botella.
+                        </p>
+                      ) : (
+                        <p className="leading-relaxed">
+                          <strong>Filosofía Kaizen & Lean:</strong> Identifica pasos manuales repetitivos (ej. copiar y pegar datos de OPGs, conciliación manual de Excel) y construye scripts o macros en la etapa &ldquo;Optimizar / Automatizar&rdquo;.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Registro de Sesión Deep Work vinculada al Proyecto */}
+                    <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-700/60 flex flex-wrap items-center justify-between gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                          Nombre del Proyecto
-                        </label>
+                        <span className="text-xs font-semibold text-slate-300 block">
+                          Registrar Bloque de Deep Work en Proyecto Seleccionado
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {activeProject?.name || "Selecciona un proyecto"} • Etapa: {selectedAgileStage || activeProject?.current_stage || "En Progreso"} (1.25x GP)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
                         <input
-                          type="text"
-                          id="project-name-input"
-                          value={newProjectName}
-                          onChange={(e) => setNewProjectName(e.target.value)}
-                          placeholder="Ej: Automatización OPGs / Dashboard Finanzas"
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                          type="number"
+                          min="15"
+                          value={workMinutes}
+                          onChange={(e) => setWorkMinutes(Math.max(1, Number(e.target.value)))}
+                          className="w-20 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200"
                         />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                          Metodología Ágil Aplicable
-                        </label>
-                        <select
-                          id="project-methodology-select"
-                          value={selectedAgileMethodology}
-                          onChange={(e) => {
-                            const val = e.target.value as AgileMethodology;
-                            setSelectedAgileMethodology(val);
-                            if (val === "scrum") setSelectedAgileStage("Sprint Backlog");
-                            else if (val === "kanban") setSelectedAgileStage("En Proceso (WIP)");
-                            else if (val === "lean") setSelectedAgileStage("Optimizar / Automatizar");
+                        <button
+                          type="button"
+                          disabled={submitting || !activeProject}
+                          onClick={() => {
+                            submitSkillSession({
+                              domain: "work",
+                              work_mode: "projects",
+                              project_id: activeProject?.id,
+                              deliverable: activeProject ? activeProject.name : "Proyecto Estratégico",
+                              agile_stage: selectedAgileStage || activeProject?.current_stage,
+                              impact_level: "high_impact",
+                              duration_minutes: workMinutes,
+                            });
                           }}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 rounded-lg text-xs transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
                         >
-                          <option value="none">Seleccionar Metodología...</option>
-                          <option value="scrum">Scrum (Sprints, Entregas Incrementales y Backlog)</option>
-                          <option value="kanban">Kanban (Flujo Continuo, Límites WIP y Tablero Visual)</option>
-                          <option value="lean">Lean / Kaizen (Eliminación de Desperdicios y Automatización)</option>
-                        </select>
+                          <Zap className="h-4 w-4" /> Registrar Avance en Proyecto (+GP / +XP)
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        disabled={submitting || !newProjectName.trim()}
-                        onClick={submitCreateWorkProject}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2 rounded-lg text-xs transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-md shadow-indigo-600/20"
-                      >
-                        <CheckCircle2 className="h-4 w-4" /> Crear y Guardar Proyecto Estratégico
-                      </button>
-                    </div>
                   </div>
-
-                  {/* Tableros y Estructuras Dinámicas según Metodología */}
-                  <div id="agile-board-container" className="space-y-4">
-                    {selectedAgileMethodology === "scrum" && (
-                      <div className="p-4 bg-slate-950/60 rounded-xl border border-indigo-500/30 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>📋</span> Pipeline Scrum: Ciclo de Sprint
-                          </h5>
-                          <span className="text-[11px] text-slate-400">Selecciona la etapa de avance</span>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                          {[
-                            { name: "Backlog", desc: "Requerimientos & Historias" },
-                            { name: "Sprint Backlog", desc: "Compromiso del Sprint" },
-                            { name: "En Progreso", desc: "Construcción activa" },
-                            { name: "Hecho (Done)", desc: "Validado & Desplegado" },
-                          ].map((col) => (
-                            <button
-                              key={col.name}
-                              type="button"
-                              onClick={() => setSelectedAgileStage(col.name)}
-                              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
-                                selectedAgileStage === col.name
-                                  ? "border-indigo-400 bg-indigo-600/30 text-white shadow-sm"
-                                  : "border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700"
-                              }`}
-                            >
-                              <span className="block font-bold text-xs text-white">{col.name}</span>
-                              <span className="block text-[10px] text-slate-400 mt-0.5">{col.desc}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedAgileMethodology === "kanban" && (
-                      <div className="p-4 bg-slate-950/60 rounded-xl border border-teal-500/30 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-xs font-bold text-teal-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>📊</span> Tablero Kanban: Flujo Continuo
-                          </h5>
-                          <span className="text-[11px] text-teal-400 font-mono">WIP Limit: Máx 2</span>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                          {[
-                            { name: "Por Hacer (To-Do)", desc: "Cola priorizada" },
-                            { name: "En Proceso (WIP)", desc: "Máx 2 tareas activas" },
-                            { name: "Bloqueado", desc: "Dependencia o traba" },
-                            { name: "Completado", desc: "Entregado con éxito" },
-                          ].map((col) => (
-                            <button
-                              key={col.name}
-                              type="button"
-                              onClick={() => setSelectedAgileStage(col.name)}
-                              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
-                                selectedAgileStage === col.name
-                                  ? "border-teal-400 bg-teal-600/30 text-white shadow-sm"
-                                  : "border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700"
-                              }`}
-                            >
-                              <span className="block font-bold text-xs text-white">{col.name}</span>
-                              <span className="block text-[10px] text-slate-400 mt-0.5">{col.desc}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedAgileMethodology === "lean" && (
-                      <div className="p-4 bg-slate-950/60 rounded-xl border border-amber-500/30 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>⚙️</span> Flujo Lean / Kaizen: Eliminación de Desperdicios
-                          </h5>
-                          <span className="text-[11px] text-amber-400">Optimización continua</span>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                          {[
-                            { name: "Identificar Valor", desc: "Eliminar desperdicios (Muda)" },
-                            { name: "Mapear Cadena de Flujo", desc: "Detectar cuellos de botella" },
-                            { name: "Optimizar / Automatizar", desc: "Estandarización y scripts" },
-                          ].map((col) => (
-                            <button
-                              key={col.name}
-                              type="button"
-                              onClick={() => setSelectedAgileStage(col.name)}
-                              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
-                                selectedAgileStage === col.name
-                                  ? "border-amber-400 bg-amber-600/30 text-white shadow-sm"
-                                  : "border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700"
-                              }`}
-                            >
-                              <span className="block font-bold text-xs text-white">{col.name}</span>
-                              <span className="block text-[10px] text-slate-400 mt-0.5">{col.desc}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Guía y Reglas de Implementación Ágil */}
-                  <div id="agile-guide-container" className="p-4 bg-indigo-950/30 border border-indigo-500/20 rounded-xl text-xs space-y-2 text-indigo-200">
-                    <h5 className="font-bold flex items-center gap-1.5 text-indigo-300">
-                      <span>💡</span> Principios de Ejecución Ágil:
-                    </h5>
-                    {selectedAgileMethodology === "scrum" ? (
-                      <p className="leading-relaxed">
-                        <strong>Reglas de Sprint:</strong> Divide tus grandes entregables en iteraciones de 1 a 2 semanas. Cada sesión de Deep Work debe apuntar a una historia de usuario comprobable con criterios de aceptación claros (&ldquo;Definition of Done&rdquo;).
-                      </p>
-                    ) : selectedAgileMethodology === "kanban" ? (
-                      <p className="leading-relaxed">
-                        <strong>Límites WIP Estrictos:</strong> No inicies una nueva tarea si ya tienes 2 tareas en estado &ldquo;En Proceso&rdquo;. Termina lo que empezaste para reducir los tiempos de ciclo y destrabar bloqueos inmediatamente.
-                      </p>
-                    ) : (
-                      <p className="leading-relaxed">
-                        <strong>Filosofía Kaizen & Lean:</strong> Identifica pasos manuales repetitivos (ej. copiar y pegar datos de OPGs, conciliación manual de Excel) y construye automatizaciones o macros que eliminen el desperdicio operativo.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Registro de Sesión vinculada al Proyecto */}
-                  <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-700/60 flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-300 block">
-                        Registrar Sesión Deep Work en Proyecto Seleccionado
-                      </span>
-                      <span className="text-[11px] text-slate-400">
-                        {state.work_projects?.find((p) => p.id === selectedProjectId)?.name || "Selecciona un proyecto arriba"} • Etapa: {selectedAgileStage || "En Progreso"} (1.25x GP)
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="number"
-                        min="15"
-                        value={workMinutes}
-                        onChange={(e) => setWorkMinutes(Math.max(1, Number(e.target.value)))}
-                        className="w-20 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200"
-                      />
-                      <button
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => {
-                          const activeProj =
-                            state.work_projects?.find((p) => p.id === selectedProjectId) ||
-                            state.work_projects?.[0];
-                          submitSkillSession({
-                            domain: "work",
-                            work_mode: "projects",
-                            project_id: activeProj?.id,
-                            deliverable: activeProj ? activeProj.name : "Proyecto Estratégico",
-                            agile_stage: selectedAgileStage || activeProj?.current_stage,
-                            impact_level: "high_impact",
-                            duration_minutes: workMinutes,
-                          });
-                        }}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 rounded-lg text-xs transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
-                      >
-                        <Zap className="h-4 w-4" /> Registrar Avance en Proyecto (+GP / +XP)
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Historial de Entregables & Sesiones Recientes */}

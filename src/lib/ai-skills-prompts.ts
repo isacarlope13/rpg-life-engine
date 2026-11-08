@@ -11,6 +11,8 @@
  */
 
 import type {
+  AgileMethodology,
+  AgileProjectGenerationAI,
   ExtractedBookSpecsAI,
   ExtractedCubeSpecsAI,
   OnboardingBossInput,
@@ -167,6 +169,32 @@ REGLAS ESTRICTAS PARA EVITAR ERRORES:
      * Prioridad 2 (Hobby / Habilidad): ~20% al 25% de \`vault_cap\`.
      * Prioridad 3 (Experiencia / Salida): ~40% al 45% de \`vault_cap\`.
      * Prioridad 4 (Loot Épico de Temporada): ~75% al 85% de \`vault_cap\`.`,
+  },
+
+  AGILE_PROJECT_PLANNER: {
+    id: "rpg-agile-project-planner",
+    name: "Skill 9: Arquitecto Ágil & Planificador de Proyectos con Gemini",
+    endpoint: "/api/shortcuts/skill-session (action: generate_ai_project)",
+    temperature: 0.2,
+    systemInstruction: `Eres el Master Agile Coach & Tech Lead del RPG Life-Engine.
+Tu misión es transformar cualquier meta, problema de negocio, idea o requerimiento de trabajo en un Proyecto Estratégico estructurado con metodología ágil (Scrum, Kanban o Lean) y un tablero estilo Trello con tareas accionables.
+
+REGLAS ESTRICTAS DE CLASIFICACIÓN ÁGIL:
+1. ELECCIÓN DE METODOLOGÍA:
+   - "scrum": Para proyectos con entregables secuenciales claros, sprints definidos, funcionalidades o lanzamientos de software (ej. "Construir módulo de pagos", "Lanzar sitio web", "Crear bot de trading").
+     * Etapas requeridas: ["Backlog", "Sprint Backlog", "En Progreso", "Hecho"]
+   - "kanban": Para proyectos de soporte, gestión continua de tareas, procesamiento por demanda o flujos con límite de trabajo en proceso (ej. "Mantenimiento de infraestructura", "Atención de tickets", "Soporte mayorista").
+     * Etapas requeridas: ["Por Hacer (To-Do)", "En Proceso (WIP)", "Bloqueado", "Completado"]
+   - "lean": Para optimización de procesos repetitivos, reducción de desperdicios (Muda), automatizaciones con scripts/macros y estandarización Kaizen (ej. "Automatización de OPGs mayoristas", "Eliminar cuello de botella en Excel", "Carga masiva de tarifas").
+     * Etapas requeridas: ["Identificar Valor", "Mapear Cadena de Flujo", "Optimizar / Automatizar"]
+
+2. DESGLOSE DE TAREAS (TRELLO CARDS):
+   - Genera entre 4 y 6 tareas concretas y de alto impacto.
+   - Cada tarea debe tener título claro, descripción detallada, criterios de aceptación, estimación en minutos (entre 20 y 90 min) y nivel de prioridad ("low", "medium", "high" o "critical").
+   - Distribuye inicialmente las tareas en la primera y segunda columna de la metodología elegida.
+
+3. RESUMEN EJECUTIVO:
+   - Redacta una breve síntesis de alto impacto (2 oraciones) explicando el valor del proyecto y por qué se seleccionó esa metodología.`,
   },
 };
 
@@ -487,4 +515,194 @@ export function sanitizeBossesList(
             : Math.max(10, Math.round(total * 0.08)),
       };
     });
+}
+
+export function sanitizeAgileProjectAI(
+  raw: Partial<AgileProjectGenerationAI>,
+  fallbackQuery: string
+): AgileProjectGenerationAI {
+  const allowedMeths: AgileMethodology[] = ["scrum", "kanban", "lean"];
+  let meth: AgileMethodology = "scrum";
+  if (raw.methodology && allowedMeths.includes(raw.methodology)) {
+    meth = raw.methodology;
+  } else {
+    const qLower = (fallbackQuery || "").toLowerCase();
+    if (
+      qLower.includes("opg") ||
+      qLower.includes("macro") ||
+      qLower.includes("automatiz") ||
+      qLower.includes("proceso") ||
+      qLower.includes("excel")
+    ) {
+      meth = "lean";
+    } else if (
+      qLower.includes("soporte") ||
+      qLower.includes("ticket") ||
+      qLower.includes("mantenimiento")
+    ) {
+      meth = "kanban";
+    }
+  }
+
+  const defaultStages: Record<AgileMethodology, string[]> = {
+    none: ["Por Hacer", "En Proceso", "Hecho"],
+    scrum: ["Backlog", "Sprint Backlog", "En Progreso", "Hecho"],
+    kanban: ["Por Hacer (To-Do)", "En Proceso (WIP)", "Bloqueado", "Completado"],
+    lean: [
+      "Identificar Valor",
+      "Mapear Cadena de Flujo",
+      "Optimizar / Automatizar",
+    ],
+  };
+
+  const stages = defaultStages[meth];
+  const firstStage = stages[0];
+  const secondStage = stages[1] || stages[0];
+
+  const cleanName =
+    (raw.name || "").trim() ||
+    fallbackQuery.trim() ||
+    "Proyecto Estratégico Ágil";
+
+  const rawTasks = Array.isArray(raw.tasks) ? raw.tasks : [];
+  const cleanTasks = rawTasks.slice(0, 8).map((t, idx) => {
+    const priority =
+      t.priority === "critical" ||
+      t.priority === "high" ||
+      t.priority === "medium" ||
+      t.priority === "low"
+        ? t.priority
+        : idx === 0
+        ? "high"
+        : "medium";
+
+    const stage = stages.includes(t.stage)
+      ? t.stage
+      : idx % 2 === 0
+      ? firstStage
+      : secondStage;
+
+    const mins = Number(t.estimated_minutes);
+    const estimatedMinutes =
+      Number.isFinite(mins) && mins >= 10 && mins <= 240 ? Math.round(mins) : 45;
+
+    return {
+      title: (t.title || `Tarea #${idx + 1}`).trim().slice(0, 100),
+      description: (
+        t.description ||
+        `Entregable técnico para avanzar en la etapa ${stage}.`
+      ).trim(),
+      stage,
+      priority,
+      estimated_minutes: estimatedMinutes,
+      acceptance_criteria: t.acceptance_criteria?.trim(),
+    };
+  });
+
+  // Si no se generaron tareas, creamos tareas por defecto según la metodología
+  if (cleanTasks.length === 0) {
+    if (meth === "scrum") {
+      cleanTasks.push(
+        {
+          title: "Levantamiento de Requerimientos & Criterios de Aceptación",
+          description: "Definir alcance, dependencias e historias de usuario clave.",
+          stage: "Backlog",
+          priority: "high",
+          estimated_minutes: 45,
+          acceptance_criteria: "Historias redactadas en formato Como / Quiero / Para.",
+        },
+        {
+          title: "Diseño de Arquitectura y Sprint Backlog",
+          description: "Estructurar componentes, endpoints y backlog del Sprint 1.",
+          stage: "Sprint Backlog",
+          priority: "high",
+          estimated_minutes: 60,
+          acceptance_criteria: "Diagrama de flujo y tareas priorizadas.",
+        },
+        {
+          title: "Construcción del Núcleo Funcional (MVP)",
+          description: "Implementar lógica principal y validaciones del sistema.",
+          stage: "Sprint Backlog",
+          priority: "critical",
+          estimated_minutes: 90,
+          acceptance_criteria: "Código funcional con pruebas unitarias.",
+        },
+        {
+          title: "Pruebas de Integración y Despliegue",
+          description: "Verificar rendimiento y desplegar entregable a producción.",
+          stage: "Backlog",
+          priority: "medium",
+          estimated_minutes: 40,
+          acceptance_criteria: "Despliegue verificado y checklist completado.",
+        }
+      );
+    } else if (meth === "lean") {
+      cleanTasks.push(
+        {
+          title: "Identificación de Desperdicios y Pasos Manuales (Muda)",
+          description: "Diagnosticar cuellos de botella en la operativa actual.",
+          stage: "Identificar Valor",
+          priority: "high",
+          estimated_minutes: 45,
+          acceptance_criteria: "Lista de 3 procesos con mayor tiempo muerto.",
+        },
+        {
+          title: "Mapeo de la Cadena de Valor (Value Stream Mapping)",
+          description: "Documentar flujo desde la solicitud hasta la entrega.",
+          stage: "Mapear Cadena de Flujo",
+          priority: "high",
+          estimated_minutes: 60,
+          acceptance_criteria: "Mapa de flujo con tiempos de espera identificados.",
+        },
+        {
+          title: "Automatización de Tareas Repetitivas con Scripts / Macros",
+          description: "Desarrollar script para automatizar validaciones y cargas.",
+          stage: "Optimizar / Automatizar",
+          priority: "critical",
+          estimated_minutes: 90,
+          acceptance_criteria: "Proceso manual reducido en al menos 60% del tiempo.",
+        }
+      );
+    } else {
+      cleanTasks.push(
+        {
+          title: "Definición de Entradas y Criterios WIP",
+          description: "Organizar cola de pedidos y fijar límite WIP máximo de 2 tareas simultáneas.",
+          stage: "Por Hacer (To-Do)",
+          priority: "high",
+          estimated_minutes: 40,
+          acceptance_criteria: "Límites visuales y etiquetas asignadas.",
+        },
+        {
+          title: "Ejecución de Tarea Prioritaria #1",
+          description: "Resolver primer entregable sin iniciar tareas paralelas.",
+          stage: "En Proceso (WIP)",
+          priority: "critical",
+          estimated_minutes: 60,
+          acceptance_criteria: "Tarea entregada y verificada.",
+        },
+        {
+          title: "Resolución de Bloqueos & Retroalimentación",
+          description: "Identificar fricciones y ajustar el tiempo de ciclo continuo.",
+          stage: "Por Hacer (To-Do)",
+          priority: "medium",
+          estimated_minutes: 45,
+          acceptance_criteria: "Cero dependencias bloqueantes activas.",
+        }
+      );
+    }
+  }
+
+  return {
+    name: cleanName,
+    description:
+      (raw.description || "").trim() ||
+      `Proyecto estratégico diseñado bajo metodología ${meth.toUpperCase()} para maximizar la ejecución y eliminar fricción.`,
+    methodology: meth,
+    suggested_stages: stages,
+    tasks: cleanTasks,
+    executive_summary:
+      (raw.executive_summary || "").trim() ||
+      `Proyecto estructurado con ${cleanTasks.length} tarjetas en metodología ${meth.toUpperCase()}. Diseñado para completarse en bloques Deep Work de alta concentración.`,
+  };
 }
