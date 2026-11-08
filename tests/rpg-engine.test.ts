@@ -1022,6 +1022,35 @@ test("13. Tablero Trello para Proyectos y Skill de Gemini IA (planAgileProjectWi
   assert.ok(store.wallet_gp > initialWallet, "Completar la tarjeta del Trello debe liberar GP a la Billetera");
 });
 
+test("14. Cronograma Biológico Circadiano: persistencia de horas de vigilia, sueño y ventanas", () => {
+  const store = new RPGEngineMemoryStore();
+  const initial = store.dailySchedule;
+  assert.ok(initial);
+
+  const updated = store.updateDailySchedule({
+    wake_up_time: "05:30",
+    sleep_time: "21:45",
+    weekend_wake_up_time: "07:00",
+    weekend_sleep_time: "22:30",
+    work_start_hour: "08:30",
+    work_end_hour: "17:30",
+    free_slot_preference: "before_work",
+  });
+
+  assert.equal(updated.wake_up_time, "05:30");
+  assert.equal(updated.sleep_time, "21:45");
+  assert.equal(updated.weekend_wake_up_time, "07:00");
+  assert.equal(updated.weekend_sleep_time, "22:30");
+  assert.equal(updated.work_start_hour, "08:30");
+  assert.equal(updated.work_end_hour, "17:30");
+  assert.equal(updated.free_slot_preference, "before_work");
+
+  // Verificar que la propiedad en memoria se actualizó
+  assert.equal(store.dailySchedule.wake_up_time, "05:30");
+  assert.equal(store.dailySchedule.free_slot_preference, "before_work");
+});
+
+
 
 
 

@@ -40,6 +40,7 @@ import {
   FileText,
   Settings2,
   LayoutDashboard,
+  Save,
 } from "lucide-react";
 import {
   AgileMethodology,
@@ -1170,22 +1171,79 @@ export function RPGLifeEngineDashboard({
     }
   };
 
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleSavedToast, setScheduleSavedToast] = useState(false);
+
   const jumpToRegisterCube = () => {
+    setHomeActiveTab("skills");
     setActiveSkillTab("rubik");
     setTimeout(() => {
       document
         .getElementById("register-cube-section")
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 80);
+    }, 150);
   };
 
   const jumpToRegisterBook = () => {
+    setHomeActiveTab("skills");
     setActiveSkillTab("reading");
     setTimeout(() => {
       document
         .getElementById("register-book-section")
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 80);
+    }, 150);
+  };
+
+  const jumpToRegisterProject = () => {
+    setHomeActiveTab("skills");
+    setActiveSkillTab("work");
+    setWorkViewMode("projects");
+    setShowAiPlannerModal(true);
+    setTimeout(() => {
+      document
+        .getElementById("work-section-container")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (e) {
+      console.error(e);
+    }
+    window.location.href = "/login";
+  };
+
+  const handleSaveDailySchedule = async () => {
+    setScheduleSaving(true);
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_daily_schedule",
+          daily_schedule: {
+            wake_up_time: bioWakeUpTime,
+            sleep_time: bioSleepTime,
+            weekend_wake_up_time: bioWeekendWakeUpTime,
+            weekend_sleep_time: bioWeekendSleepTime,
+            work_start_hour: bioWorkStart,
+            work_end_hour: bioWorkEnd,
+            free_slot_preference: bioSlotPref,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setScheduleSavedToast(true);
+        setTimeout(() => setScheduleSavedToast(false), 4000);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setScheduleSaving(false);
+    }
   };
 
   const extractCubeSpecsFromInput = async (queryOverride?: string) => {
@@ -1668,6 +1726,21 @@ export function RPGLifeEngineDashboard({
             >
               ➕📚 Registrar Libro + Galería IA
             </button>
+            <button
+              type="button"
+              onClick={jumpToRegisterProject}
+              className="inline-flex items-center gap-1.5 rounded-full border border-purple-500/40 bg-purple-500/15 px-3 py-1 text-xs font-bold text-purple-200 hover:bg-purple-500/25 cursor-pointer"
+            >
+              ➕💼 Registrar Proyecto + IA
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/40 bg-rose-500/15 px-3 py-1 text-xs font-bold text-rose-300 hover:bg-rose-500/25 cursor-pointer"
+              title="Cerrar sesión segura y volver a Login"
+            >
+              🚪 Cerrar Sesión
+            </button>
           </div>
           <h1 className="mt-2.5 text-2xl font-bold tracking-tight text-white sm:text-3xl">
             RPG Productivity & Personal Finance Life-Engine{" "}
@@ -1743,8 +1816,16 @@ export function RPGLifeEngineDashboard({
               Liberado: {vaultUnlockedPct}% ({state.streak_multiplier}x)
             </p>
             <button
-              disabled={submitting || state.vault_remaining_gp < 10000}
-              onClick={() => triggerLimitBreak(50000)}
+              disabled={submitting}
+              onClick={() => {
+                if (state.vault_remaining_gp < 10000) {
+                  alert(
+                    "Requiere al menos 10,000 GP en tu Bóveda Mensual para ejecutar un Limit Break. ¡Registra sesiones de hábitos o habilidades para acumular GP!"
+                  );
+                  return;
+                }
+                triggerLimitBreak(50000);
+              }}
               className="rounded-lg bg-indigo-500/20 px-2.5 py-1 text-[11px] font-semibold text-indigo-200 ring-1 ring-indigo-500/40 hover:bg-indigo-500/30 disabled:opacity-40 cursor-pointer"
               title="Sacrifica 50,000 GP de tu Bóveda para atacar directamente a un Debt Boss y ganar +250 XP"
             >
@@ -1974,12 +2055,26 @@ export function RPGLifeEngineDashboard({
                       </div>
                     </div>
 
-                    <Link
-                      href={`/skills/${dom.domain}`}
-                      className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition shadow"
-                    >
-                      Abrir Página Dedicada ➔
-                    </Link>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeActiveTab("skills");
+                          setActiveSkillTab(dom.domain);
+                        }}
+                        className="flex-1 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 px-2 py-2 text-xs font-semibold text-slate-200 transition cursor-pointer text-center"
+                        title="Ver dentro de la pestaña Santuario"
+                      >
+                        En Santuario
+                      </button>
+                      <Link
+                        href={`/skills/${dom.domain}`}
+                        className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 px-2 py-2 text-xs font-bold text-white transition shadow text-center cursor-pointer"
+                        title="Abrir a pantalla completa sin distracciones"
+                      >
+                        Página Completa ➔
+                      </Link>
+                    </div>
                   </div>
                 );
               })}
@@ -2268,6 +2363,28 @@ export function RPGLifeEngineDashboard({
             </div>
           </div>
 
+          {/* BOTÓN DE GUARDADO DEL HORARIO */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+            <div className="text-xs text-slate-400">
+              {scheduleSavedToast ? (
+                <span className="font-semibold text-emerald-400">
+                  ✅ ¡Horario circadiano guardado en tu perfil con éxito!
+                </span>
+              ) : (
+                <span>Guarda tus horarios despierto/sueño para calibrar tus ventanas de enfoque.</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveDailySchedule}
+              disabled={scheduleSaving}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 px-4 py-2 text-xs font-bold text-white transition disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-950/30"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {scheduleSaving ? "Guardando..." : "💾 Guardar Horario Circadiano"}
+            </button>
+          </div>
+
           {/* DIAGNÓSTICO BIOLÓGICO */}
           <div className="grid grid-cols-1 gap-2 rounded-xl border border-slate-800 bg-slate-900/40 p-3 text-xs sm:grid-cols-3 mb-4">
             <div>
@@ -2374,7 +2491,8 @@ export function RPGLifeEngineDashboard({
           </div>
 
           {/* TABS SELECTOR DE DISCIPLINAS ELEGIDAS POR EL USUARIO */}
-          <div className="flex flex-wrap gap-1.5 rounded-xl border border-slate-800 bg-slate-950 p-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1.5 rounded-xl border border-slate-800 bg-slate-950 p-1.5">
             {state.skill_summaries.some((s) => s.domain === "rubik") && (
               <button
                 type="button"
@@ -2487,9 +2605,19 @@ export function RPGLifeEngineDashboard({
               </button>
             )}
           </div>
+          {!dedicatedSkillDomain && (
+            <Link
+              href={`/skills/${activeSkillTab}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/15 px-3 py-2 text-xs font-bold text-indigo-300 hover:bg-indigo-500/25 transition cursor-pointer shadow-sm"
+              title="Abrir esta disciplina en una página dedicada a pantalla completa"
+            >
+              <span>↗</span> Pantalla Completa Dedicada
+            </Link>
+          )}
         </div>
+      </div>
 
-        {/* TARJETAS RESUMEN DE NIVEL POR HABILIDAD */}
+      {/* TARJETAS RESUMEN DE NIVEL POR HABILIDAD */}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
           {state.skill_summaries.map((s) => (
             <div
@@ -5520,7 +5648,7 @@ export function RPGLifeEngineDashboard({
         {/* 5. APARTADO: MÓDULO DE TRABAJO: PROYECTOS VS ACTIVIDADES */}
         {activeSkillTab === "work" && (
           <div className="space-y-6">
-            <div className="work-management-engine rounded-2xl border border-indigo-500/30 bg-slate-900/90 p-6 shadow-xl shadow-indigo-950/20 text-slate-100">
+            <div id="work-section-container" className="work-management-engine rounded-2xl border border-indigo-500/30 bg-slate-900/90 p-6 shadow-xl shadow-indigo-950/20 text-slate-100">
               <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                 <h3 className="text-xl font-bold flex items-center gap-2 text-indigo-400">
                   <span>💼</span> Núcleo de Gestión: Proyectos & Actividades Diarias
@@ -6755,15 +6883,25 @@ export function RPGLifeEngineDashboard({
 
                 <div className="mt-3 flex gap-2">
                   <button
-                    disabled={submitting || isDefeated}
-                    onClick={() => attackBoss(boss.name, 50000)}
+                    disabled={submitting}
+                    onClick={() => {
+                      if (isDefeated) {
+                        alert(`¡${boss.name} ya está totalmente derrotado y liquidado al 100%!`);
+                        return;
+                      }
+                      attackBoss(boss.name, 50000);
+                    }}
                     className="flex-1 rounded-lg bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/25 disabled:opacity-40 cursor-pointer"
                   >
-                    Atacar -$50k HP
+                    {isDefeated ? "Derrotado ✓" : "Atacar -$50k HP"}
                   </button>
                   <button
-                    disabled={submitting || isDefeated}
+                    disabled={submitting}
                     onClick={() => {
+                      if (isDefeated) {
+                        alert(`¡${boss.name} ya ha sido liquidado! No requiere pociones de purificación.`);
+                        return;
+                      }
                       setPurifyingBossId(boss.id);
                       setPurifyAmountCop(
                         Math.min(
@@ -6778,7 +6916,7 @@ export function RPGLifeEngineDashboard({
                     }}
                     className="flex-1 rounded-lg border border-teal-500/40 bg-teal-500/15 px-2.5 py-1.5 text-xs font-semibold text-teal-300 hover:bg-teal-500/25 disabled:opacity-40 cursor-pointer"
                   >
-                    🧪 Poción Purificar
+                    {isDefeated ? "Purificado ✓" : "🧪 Poción Purificar"}
                   </button>
                 </div>
 
@@ -6932,19 +7070,43 @@ export function RPGLifeEngineDashboard({
                   )}
                 </div>
                 <button
-                  disabled={submitting || isLocked}
-                  onClick={() => redeemWishlist(item)}
-                  className="mt-3 w-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-40 cursor-pointer"
+                  disabled={submitting}
+                  onClick={() => {
+                    if (item.is_redeemed) {
+                      alert("Este ítem ya ha sido redimido con éxito anteriormente.");
+                      return;
+                    }
+                    if (isLocked) {
+                      alert(
+                        "🔒 Ítem Bloqueado:\n" +
+                          (item.locked_reason ||
+                            (!streakPassed
+                              ? `Requiere una racha activa de al menos ${minStreak} días para poder canjearlo.`
+                              : isOverdrawn
+                              ? "Tu Billetera está en sobregiro (Maldición Activa). Realiza sesiones de estudio o trabajo para purificarla antes de canjear."
+                              : "No dispones de suficientes GP en tu Billetera para este ítem."))
+                      );
+                      return;
+                    }
+                    redeemWishlist(item);
+                  }}
+                  className={`mt-3 w-full rounded-lg border px-3 py-1.5 text-xs font-semibold cursor-pointer transition ${
+                    item.is_redeemed
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                      : isLocked
+                      ? "border-slate-700 bg-slate-800/60 text-slate-400 hover:border-amber-500/50 hover:text-amber-200"
+                      : "border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                  }`}
                 >
                   {item.is_redeemed
                     ? "Redimido ✓"
                     : !streakPassed
-                    ? `Requiere Racha ${minStreak}d`
+                    ? `Requiere Racha ${minStreak}d 🔒`
                     : isOverdrawn
                     ? "Sobregiro Activo ⚠️"
                     : canAfford
                     ? "Canjear con GP"
-                    : "Faltan GP"}
+                    : "Faltan GP 🔒"}
                 </button>
               </div>
             );

@@ -3,6 +3,7 @@ import {
   AgileMethodology,
   BookComplexity,
   BookFormat,
+  DailyScheduleConfig,
   DebtStrategy,
   RubikCubeType,
   RubikPenalty,
@@ -41,6 +42,7 @@ export interface SkillSessionEndpointRequest {
     | "add_work_project_task"
     | "move_work_project_task"
     | "complete_work_project_task"
+    | "update_daily_schedule"
     | "create_trial_checkpoint"
     | "new_scramble";
   checkpoint_label?: string;
@@ -152,6 +154,7 @@ export interface SkillSessionEndpointRequest {
   amount_cop?: number;
   use_wallet_gp?: boolean;
   wishlist_item_id?: string;
+  daily_schedule?: Partial<DailyScheduleConfig>;
 }
 
 export async function POST(req: Request) {
@@ -658,6 +661,18 @@ export async function POST(req: Request) {
         wallet_gp: store.wallet_gp,
         vault_remaining_gp: store.vault_remaining_gp,
         shortcut_tts_message: `¡Tarjeta "${compRes.task.title}" completada! Liberaste ${compRes.reward.transferred_gp.toLocaleString("es-CO")} GP a tu Billetera.`,
+      });
+    }
+
+    if (body.action === "update_daily_schedule" && body.daily_schedule) {
+      const updated = store.updateDailySchedule(body.daily_schedule);
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "update_daily_schedule",
+        daily_schedule: updated,
+        shortcut_tts_message: `Horario circadiano actualizado y guardado: despertar a las ${updated.wake_up_time} y dormir a las ${updated.sleep_time}.`,
       });
     }
 

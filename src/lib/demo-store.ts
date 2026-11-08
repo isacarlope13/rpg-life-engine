@@ -1831,6 +1831,16 @@ export class RPGEngineMemoryStore {
     return { task, project: proj, reward };
   }
 
+  updateDailySchedule(
+    schedule: Partial<DailyScheduleConfig>
+  ): DailyScheduleConfig {
+    this.dailySchedule = {
+      ...this.dailySchedule,
+      ...schedule,
+    };
+    return this.dailySchedule;
+  }
+
   // 1. Trigger de Hábitos + Multiplicador de Racha (1.1x / 1.25x) + Escudo Aegis cada 7 rachas
   completeActivity(params: {
     code: string;
