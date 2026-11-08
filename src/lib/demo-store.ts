@@ -253,6 +253,9 @@ export class RPGEngineMemoryStore {
   main_goal: string | null = "Eliminar deudas de corto plazo y dominar mis hábitos";
   goal_deadline: string | null = "2027-06-30";
   onboarding_completed = true;
+  data_privacy_accepted = true;
+  privacy_accepted_at: string | null = "2026-11-01T00:00:00.000Z";
+  privacy_version = "3.4";
 
   monthly_income_cop = 2300000;
   fixed_costs_budget_cop = 848000;
@@ -3105,6 +3108,9 @@ export class RPGEngineMemoryStore {
     this.savings_goal_monthly = Math.max(0, Math.round(payload.savings_goal_monthly || 0));
     this.main_goal = payload.main_goal?.trim() || null;
     this.goal_deadline = payload.goal_deadline?.trim() || null;
+    this.data_privacy_accepted = payload.data_privacy_accepted ?? true;
+    this.privacy_accepted_at = payload.privacy_accepted_at || new Date().toISOString();
+    this.privacy_version = payload.privacy_version || "3.4";
 
     this.fixedCosts = (payload.fixed_costs || []).map((fc, idx) => ({
       id: fc.id || `fc-${idx + 1}`,

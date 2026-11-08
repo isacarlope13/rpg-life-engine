@@ -176,6 +176,9 @@ export function updateLocalUserProfile(
     fixed_costs_budget_cop?: number;
     variable_ops_budget_cop?: number;
     vault_cap_gp?: number;
+    data_privacy_accepted?: boolean;
+    privacy_accepted_at?: string;
+    privacy_version?: string;
   }
 ): UserProfile | null {
   const record = authRegistry.localUsersById.get(userId);
@@ -191,6 +194,15 @@ export function updateLocalUserProfile(
     record.profile.avatar_url = updates.avatar_url
       ? updates.avatar_url.trim()
       : null;
+  }
+  if (updates.data_privacy_accepted !== undefined) {
+    record.profile.data_privacy_accepted = updates.data_privacy_accepted;
+  }
+  if (updates.privacy_accepted_at !== undefined) {
+    record.profile.privacy_accepted_at = updates.privacy_accepted_at;
+  }
+  if (updates.privacy_version !== undefined) {
+    record.profile.privacy_version = updates.privacy_version;
   }
   record.profile.updated_at = new Date().toISOString();
 
@@ -239,6 +251,9 @@ export function registerLocalUser(params: {
     display_name: displayName,
     character_class: characterClass,
     avatar_url: null,
+    data_privacy_accepted: true,
+    privacy_accepted_at: nowIso,
+    privacy_version: "3.4",
     created_at: nowIso,
     updated_at: nowIso,
   };

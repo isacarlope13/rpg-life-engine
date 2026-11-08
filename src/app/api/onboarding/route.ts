@@ -88,6 +88,16 @@ export async function POST(req: Request) {
     );
   }
 
+  if (body.data_privacy_accepted !== true) {
+    return NextResponse.json(
+      {
+        error:
+          "Debes autorizar expresamente la Política de Tratamiento de Datos Personales y sus posibles cambios y mejoras para crear tu partida.",
+      },
+      { status: 400 }
+    );
+  }
+
   // 1. Actualizar siempre el espejo en memoria del usuario
   const userStore = getUserStore(session.userId);
   userStore.applyOnboarding(body);
@@ -96,6 +106,9 @@ export async function POST(req: Request) {
     display_name: cleanName,
     character_class: body.character_class?.trim() || session.characterClass,
     avatar_url: body.avatar_url ?? session.avatarUrl,
+    data_privacy_accepted: true,
+    privacy_accepted_at: body.privacy_accepted_at || new Date().toISOString(),
+    privacy_version: body.privacy_version || "3.4",
   });
 
   // 2. Si está en modo Supabase, persistir en las tablas del usuario

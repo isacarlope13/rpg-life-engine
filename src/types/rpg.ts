@@ -475,6 +475,9 @@ export interface OnboardingPayload {
   wishlist: OnboardingWishlistInput[];
   main_goal?: string;
   goal_deadline?: string;
+  data_privacy_accepted?: boolean;
+  privacy_accepted_at?: string;
+  privacy_version?: string;
 }
 
 export interface UserProfile {
@@ -491,6 +494,9 @@ export interface UserProfile {
   savings_goal_monthly?: number;
   main_goal?: string | null;
   goal_deadline?: string | null;
+  data_privacy_accepted?: boolean;
+  privacy_accepted_at?: string;
+  privacy_version?: string;
   onboarding_completed?: boolean;
   created_at: string;
   updated_at?: string;

@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [acceptDataPolicy, setAcceptDataPolicy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -25,6 +26,14 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setInfo(null);
+
+    if (mode === "signup" && !acceptDataPolicy) {
+      setError(
+        "Debes aceptar la Política de Tratamiento de Datos Personales y sus posibles cambios y mejoras para crear tu cuenta."
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/auth/login", {
@@ -35,6 +44,7 @@ export default function LoginPage() {
           password,
           action: mode,
           display_name: displayName || undefined,
+          data_privacy_accepted: mode === "signup" ? acceptDataPolicy : undefined,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as {
@@ -105,20 +115,45 @@ export default function LoginPage() {
         {error && <p className="text-sm text-rose-400">{error}</p>}
         {info && <p className="text-sm text-emerald-400">{info}</p>}
 
-        <p className="text-[11px] text-slate-400 text-center leading-relaxed">
-          Al continuar, autorizas el tratamiento de tus datos conforme a nuestra{" "}
-          <Link
-            href="/privacidad"
-            target="_blank"
-            className="text-emerald-400 underline hover:text-emerald-300 font-medium"
-          >
-            Política de Privacidad & Habeas Data
-          </Link>.
-        </p>
+        {mode === "signup" && (
+          <label className="flex items-start gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 text-xs cursor-pointer select-none">
+            <input
+              type="checkbox"
+              required
+              checked={acceptDataPolicy}
+              onChange={(e) => setAcceptDataPolicy(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-950 text-emerald-600 focus:ring-emerald-500 shrink-0 cursor-pointer"
+            />
+            <span className="text-slate-300 leading-snug">
+              He leído y <strong>acepto expresamente</strong> la{" "}
+              <Link
+                href="/privacidad"
+                target="_blank"
+                className="text-emerald-400 underline hover:text-emerald-300 font-bold"
+              >
+                Política de Tratamiento de Datos Personales
+              </Link>
+              , autorizando la gestión de mi información bajo Habeas Data, así como sus <strong>posibles cambios, actualizaciones y mejoras futuras</strong>.
+            </span>
+          </label>
+        )}
+
+        {mode === "login" && (
+          <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+            Al continuar, autorizas el tratamiento de tus datos conforme a nuestra{" "}
+            <Link
+              href="/privacidad"
+              target="_blank"
+              className="text-emerald-400 underline hover:text-emerald-300 font-medium"
+            >
+              Política de Privacidad & Habeas Data
+            </Link>.
+          </p>
+        )}
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || (mode === "signup" && !acceptDataPolicy)}
           className="w-full rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 cursor-pointer"
         >
           {submitting

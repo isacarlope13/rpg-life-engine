@@ -1096,6 +1096,38 @@ test("16. Árbol de Talentos Pasivos: desbloqueo de perks por nivel y mitigació
   assert.equal(austerity?.is_unlocked, true);
 });
 
+test("17. Política de Tratamiento de Datos: Aceptación obligatoria, Habeas Data y registro de consentimiento", () => {
+  const store = new RPGEngineMemoryStore();
+
+  assert.equal(store.data_privacy_accepted, true);
+  assert.ok(store.privacy_accepted_at);
+  assert.equal(store.privacy_version, "3.4");
+
+  store.applyOnboarding({
+    display_name: "GuerreroPrivacidad",
+    character_class: "Paladín de Datos",
+    currency: "COP",
+    timezone: "America/Bogota",
+    monthly_income: 3500000,
+    pay_frequency: "monthly",
+    pay_day: 15,
+    fixed_costs: [{ name: "Arriendo", amount: 1200000, category: "hogar" }],
+    variable_ops_budget: 800000,
+    vault_cap: 1000000,
+    debt_strategy: "avalanche",
+    bosses: [],
+    skills: [{ domain: "study", label: "Estudio Profundo", weekly_target_minutes: 180 }],
+    wishlist: [{ name: "Libro Físico", cost_gp: 50000, priority: 1 }],
+    data_privacy_accepted: true,
+    privacy_accepted_at: new Date().toISOString(),
+    privacy_version: "3.4",
+  });
+
+  assert.equal(store.data_privacy_accepted, true);
+  assert.ok(store.privacy_accepted_at);
+  assert.equal(store.privacy_version, "3.4");
+});
+
 
 
 

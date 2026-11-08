@@ -42,6 +42,17 @@ export async function POST(req: Request) {
     );
   }
 
+  const dataPrivacyAccepted = (body as Record<string, unknown>).data_privacy_accepted === true;
+  if (action === "signup" && !dataPrivacyAccepted) {
+    return NextResponse.json(
+      {
+        error:
+          "Debes aceptar expresamente la Política de Tratamiento de Datos Personales y sus posibles cambios y mejoras para crear tu cuenta.",
+      },
+      { status: 400 }
+    );
+  }
+
   let cookieHeaders: string[] = [];
 
   try {
@@ -55,7 +66,12 @@ export async function POST(req: Request) {
             email,
             password,
             email_confirm: true,
-            user_metadata: { display_name: displayName },
+            user_metadata: {
+              display_name: displayName,
+              data_privacy_accepted: true,
+              privacy_accepted_at: new Date().toISOString(),
+              privacy_version: "3.4",
+            },
           });
 
         if (createErr && /already|exists|registered/i.test(createErr.message)) {

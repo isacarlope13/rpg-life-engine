@@ -130,6 +130,7 @@ const CURRENCY_LOCALE: Record<CurrencyCode, string> = {
 export default function OnboardingWizardPage() {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [submitting, setSubmitting] = useState(false);
+  const [acceptedDataPrivacy, setAcceptedDataPrivacy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Paso 1: Identidad única + Profesión + Clases con caché / Gemini
@@ -715,6 +716,12 @@ export default function OnboardingWizardPage() {
       setStep(2);
       return;
     }
+    if (!acceptedDataPrivacy) {
+      setError(
+        "Debes autorizar la Política de Tratamiento de Datos Personales y sus posibles cambios y mejoras para crear y guardar tu partida."
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const finalSkills: UserSkillConfig[] = [
@@ -779,6 +786,9 @@ export default function OnboardingWizardPage() {
           weekday_free_minutes: weekdayFreeMinutes,
           weekend_free_minutes: weekendFreeMinutes,
         },
+        data_privacy_accepted: true,
+        privacy_accepted_at: new Date().toISOString(),
+        privacy_version: "3.4",
       };
 
       const res = await fetch("/api/onboarding", {
@@ -2553,6 +2563,31 @@ export default function OnboardingWizardPage() {
                 ))}
               </div>
             </div>
+
+            {/* AUTORIZACIÓN OBLIGATORIA DE HABEAS DATA & MEJORAS FUTURAS */}
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/20 p-4 space-y-2 mt-4">
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  required
+                  checked={acceptedDataPrivacy}
+                  onChange={(e) => setAcceptedDataPrivacy(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-950 text-emerald-600 focus:ring-emerald-500 shrink-0 cursor-pointer"
+                />
+                <span className="text-xs text-slate-200 leading-relaxed">
+                  Autorizo el tratamiento de mis datos personales, métricas de productividad, ritmos circadianos y estimaciones financieras conforme a la{" "}
+                  <a
+                    href="/privacidad"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-emerald-400 font-bold underline hover:text-emerald-300"
+                  >
+                    Política de Tratamiento de Datos Personales (Habeas Data)
+                  </a>
+                  , y acepto expresamente sus <strong>posibles cambios, actualizaciones y mejoras futuras</strong> en la plataforma.
+                </span>
+              </label>
+            </div>
           </div>
         )}
 
@@ -2582,9 +2617,9 @@ export default function OnboardingWizardPage() {
           ) : (
             <button
               type="button"
-              disabled={submitting}
+              disabled={submitting || (step === 5 && !acceptedDataPrivacy)}
               onClick={finishOnboarding}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500 disabled:opacity-50 cursor-pointer"
             >
               <Sparkles className="h-4 w-4" />
               {submitting
