@@ -24,6 +24,7 @@ import {
   FileSpreadsheet,
   Download,
   Terminal,
+  BarChart3,
 } from "lucide-react";
 
 export function LandingPage() {
@@ -178,19 +179,18 @@ export function LandingPage() {
         <div className="mx-auto max-w-5xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 shadow-inner mb-6">
             <Sparkles className="h-4 w-4 text-emerald-400" />
-            <span>Gamificación de Alto Rendimiento & Finanzas Cuantitativas</span>
+            <span>Sistema Integral de Tracking de Vida, Rendimiento & Sistematización de Datos • v3.4</span>
           </div>
 
           <h1 className="text-4xl font-black tracking-tight text-white sm:text-6xl sm:leading-[1.15]">
-            Convierte tu Vida, Deudas y Hábitos en un{" "}
+            Convierte tu Productividad, Datos y Habilidades en un{" "}
             <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-              Juego de Rol Épico
+              Sistema de Alto Rendimiento
             </span>
           </h1>
 
           <p className="mx-auto mt-6 max-w-3xl text-base text-slate-300 sm:text-lg leading-relaxed">
-            Liquida tus deudas bancarias reales atacando a los <strong>Debt Bosses</strong> (ADDI, Nequi, Bancolombia),
-            desbloquea oro (<strong>GP</strong>) cumpliendo sesiones de <strong>Cubos de Rubik WCA</strong>, <strong>Lectura</strong> y <strong>Trabajo Ágil</strong>, y sube de nivel a tu Aventurero con un <strong>Árbol de Talentos Pasivos</strong>.
+            Sistematiza tus <strong>Proyectos Ágiles (Scrum, Kanban, Lean)</strong>, métricas cuantitativas en el <strong>Santuario de Habilidades</strong> (Speedcubing WCA, Biblioteca con Repetición Espaciada SM-2, Deep Work), <strong>Heatmaps Anuales de Constancia</strong> y un motor económico de <strong>XP/GP</strong> con cámara financiera opcional.
           </p>
 
           {/* BOTONES PRINCIPALES DE ACCIÓN */}
@@ -248,25 +248,25 @@ export function LandingPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Tarjeta 1: Debt Boss ADDI */}
-              <div className="rounded-2xl border border-rose-500/30 bg-rose-950/15 p-4 space-y-2.5">
+              {/* Tarjeta 1: Analítica & Heatmap de Constancia */}
+              <div className="rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-4 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
-                    <Swords className="h-4 w-4" /> Debt Boss: ADDI
+                  <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                    <BarChart3 className="h-4 w-4" /> Analítica de Vida & Hábitos
                   </span>
-                  <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
-                    Tasa 28.9% E.A.
+                  <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
+                    Consistencia: 94%
                   </span>
                 </div>
                 <p className="text-lg font-mono font-extrabold text-white">
-                  $1.137.647 COP
+                  🔥 21 Días de Racha Activa
                 </p>
                 <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                  <div className="h-full bg-rose-500 w-[65%]" />
+                  <div className="h-full bg-indigo-500 w-[94%]" />
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                  <span>Sangrado DoT: -913 GP/día</span>
-                  <span className="text-emerald-400 font-bold">🧪 Poción Activa</span>
+                  <span>365 días monitoreados</span>
+                  <span className="text-emerald-400 font-bold">+18.400 XP Forjados</span>
                 </div>
               </div>
 
@@ -274,7 +274,7 @@ export function LandingPage() {
               <div className="rounded-2xl border border-cyan-500/30 bg-cyan-950/15 p-4 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                    <Box className="h-4 w-4" /> Rubik WCA & Lectura
+                    <Box className="h-4 w-4" /> Rubik WCA & Lectura SM-2
                   </span>
                   <span className="rounded bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300 font-mono">
                     Ao5: 18.42s
@@ -292,13 +292,13 @@ export function LandingPage() {
               </div>
 
               {/* Tarjeta 3: Trabajo Ágil Trello */}
-              <div className="rounded-2xl border border-indigo-500/30 bg-indigo-950/15 p-4 space-y-2.5">
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/15 p-4 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-                    <Briefcase className="h-4 w-4" /> Tablero Trello Ágil
+                  <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                    <Briefcase className="h-4 w-4" /> Trabajo Ágil & Trello
                   </span>
-                  <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
-                    Scrum / Sprint 1
+                  <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                    Scrum / Kanban / Lean
                   </span>
                 </div>
                 <p className="text-lg font-mono font-extrabold text-white">
@@ -307,7 +307,7 @@ export function LandingPage() {
                 <p className="text-xs text-slate-300 leading-snug">
                   Automatización de órdenes y validación de plantillas completada (+5.000 GP).
                 </p>
-                <div className="text-[11px] text-indigo-400 font-semibold pt-1">
+                <div className="text-[11px] text-emerald-400 font-semibold pt-1">
                   🚀 Planificado con Gemini IA Skill
                 </div>
               </div>
@@ -317,64 +317,64 @@ export function LandingPage() {
       </section>
 
       {/* =====================================================================
-          3. SECCIÓN: ¿CÓMO FUNCIONA LA ECONOMÍA RPG?
+          3. SECCIÓN: ¿CÓMO FUNCIONA EL MOTOR DE VIDA?
          ===================================================================== */}
       <section id="economia" className="border-t border-slate-800/80 bg-slate-950/60 px-4 py-20 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-              Mecánica Central
+              Arquitectura del Sistema
             </span>
             <h2 className="mt-2 text-3xl font-extrabold text-white sm:text-4xl">
-              Una Economía Diseñada para Erradicar la Procrastinación
+              Diseñado para Erradicar la Fricción y Sistematizar tus Días
             </h2>
             <p className="mt-3 text-sm text-slate-400 leading-relaxed">
-              El motor elimina la trampa de gastar sin control y la fricción de los hábitos aburridos, unificando todo bajo cuatro pilares matemáticos:
+              El motor combina productividad cuantitativa, marcos ágiles de trabajo y una economía de restricción gamificada:
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Pilar 1 */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-3 shadow-lg hover:border-emerald-500/40 transition">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-3 shadow-lg hover:border-indigo-500/40 transition">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/15 text-indigo-400">
-                <Vault className="h-6 w-6" />
+                <BarChart3 className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-white">1. Bóveda vs Billetera</h3>
+              <h3 className="text-base font-bold text-white">1. Analítica & Heatmap 365d</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Tus ingresos están bloqueados en la <strong>Bóveda Mensual</strong>. No puedes transferirlos a tu Billetera para antojos a menos que completes tus hábitos y sesiones de enfoque.
+                Visualiza tu constancia diaria estilo GitHub con analítica de hábitos, distribución porcentual de energía de vida y exportación a Notion y CSV.
               </p>
             </div>
 
             {/* Pilar 2 */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-3 shadow-lg hover:border-rose-500/40 transition">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-400">
-                <Swords className="h-6 w-6" />
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-3 shadow-lg hover:border-emerald-500/40 transition">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-400">
+                <Briefcase className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-white">2. Debt Bosses & DoT Pasivo</h3>
+              <h3 className="text-base font-bold text-white">2. Proyectos Ágiles Duales</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Cada deuda (ADDI, Nequi, Bancolombia) tiene HP. Cada día sin abono te causa <strong>Daño Pasivo diario (DoT)</strong> en intereses. Las Pociones de Purificación detienen el sangrado.
+                Separación nítida entre Actividades Diarias operativas y Proyectos de Alto Impacto con marcos <strong>Scrum, Kanban y Lean</strong> asistidos por Gemini IA.
               </p>
             </div>
 
             {/* Pilar 3 */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-3 shadow-lg hover:border-amber-500/40 transition">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
-                <Flame className="h-6 w-6" />
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-3 shadow-lg hover:border-cyan-500/40 transition">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/15 text-cyan-400">
+                <Box className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-white">3. Rachas & Escudos Aegis</h3>
+              <h3 className="text-base font-bold text-white">3. Santuario de Habilidades</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                La constancia multiplica tus recompensas (1.1x y 1.25x de GP). Cada 7 días de racha ganas un <strong>Escudo Aegis 🛡️</strong> para tomar días de descanso sin perder tu progreso.
+                Speedcubing WCA con algoritmos oficiales, biblioteca con repetición espaciada SM-2, tejido y cronómetros de Deep Work en vivo.
               </p>
             </div>
 
             {/* Pilar 4 */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-3 shadow-lg hover:border-cyan-500/40 transition">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/15 text-cyan-400">
-                <Lock className="h-6 w-6" />
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-3 shadow-lg hover:border-amber-500/40 transition">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
+                <Vault className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-white">4. Maldición de Sobregiro</h3>
+              <h3 className="text-base font-bold text-white">4. Economía de Restricción</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Si gastas más de lo presupuestado o entras en números rojos, la <strong>Tienda Wishlist</strong> se bloquea con un Impuesto al Impulso del +20% hasta que te purifiques trabajando o estudiando.
+                Tus gustos en la <strong>Tienda Wishlist</strong> exigen una racha mínima activa de hábitos y saldo positivo, con cámara de pasivos opcional.
               </p>
             </div>
           </div>

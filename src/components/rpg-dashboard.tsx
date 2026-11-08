@@ -41,6 +41,9 @@ import {
   Settings2,
   LayoutDashboard,
   Save,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   AgileMethodology,
@@ -79,8 +82,15 @@ import {
   SpacedRepetitionDuelingWidget,
   RpgTalentTreeSection,
   ExportAndNotionHub,
+  AgileMethodologyGuideBox,
+  AnalyticsOverviewDashboard,
 } from "@/components/rpg-advanced-widgets";
-import { registerServiceWorker, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
+import {
+  registerServiceWorker,
+  processOfflineQueue,
+  triggerHaptic,
+  queueOfflineAction,
+} from "@/lib/offline-sync";
 
 interface Boss {
   id: string;
@@ -339,10 +349,14 @@ export function RPGLifeEngineDashboard({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Pestaña activa del Dashboard Principal (para evitar saturación visual)
+  // Pestaña activa del Dashboard Principal (enfoque en Sistema & Datos)
   const [homeActiveTab, setHomeActiveTab] = useState<
-    "hub" | "skills" | "debts" | "calendar" | "lab"
+    "hub" | "skills" | "analytics" | "calendar" | "debts" | "lab"
   >("hub");
+
+  // Control secundario/opcional de la Arena de Deudas
+  const [showDebtArena, setShowDebtArena] = useState(false);
+  const [showAgileProjectGuide, setShowAgileProjectGuide] = useState(false);
 
   // Tabs del Santuario de Habilidades
   const [activeSkillTab, setActiveSkillTab] = useState<SkillDomain>(
@@ -963,17 +977,34 @@ export function RPGLifeEngineDashboard({
   // Registrar Sesión o Acción en el Santuario de Habilidades (Rubik, Lectura, Tejido, Estudio, Trabajo)
   const submitSkillSession = async (payload: Record<string, unknown>) => {
     setSubmitting(true);
+    const bodyPayload = {
+      idempotency_key: `skill-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 6)}`,
+      action: "log_session",
+      ...payload,
+    };
+
+    if (typeof window !== "undefined" && !navigator.onLine) {
+      queueOfflineAction({
+        url: "/api/shortcuts/skill-session",
+        method: "POST",
+        body: bodyPayload,
+        description: `Sesión de ${String(payload.domain || "habilidad")}`,
+      });
+      triggerHaptic("warning");
+      alert(
+        "📱 Modo Offline Activado: Estás sin conexión a internet. Tu sesión fue almacenada en cola local y se sincronizará automáticamente cuando vuelva internet."
+      );
+      setSubmitting(false);
+      return { success: true, offline: true };
+    }
+
     try {
       const res = await fetch("/api/shortcuts/skill-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idempotency_key: `skill-${Date.now()}-${Math.random()
-            .toString(36)
-            .slice(2, 6)}`,
-          action: "log_session",
-          ...payload,
-        }),
+        body: JSON.stringify(bodyPayload),
       });
       const json = await res.json();
       setLastShortcutResponse(JSON.stringify(json, null, 2));
@@ -994,6 +1025,19 @@ export function RPGLifeEngineDashboard({
         }
       }
       return json;
+    } catch {
+      if (typeof window !== "undefined") {
+        queueOfflineAction({
+          url: "/api/shortcuts/skill-session",
+          method: "POST",
+          body: bodyPayload,
+          description: `Sesión de ${String(payload.domain || "habilidad")}`,
+        });
+        triggerHaptic("warning");
+        alert(
+          "📱 Conexión interrumpida: Tu sesión fue asegurada en el almacenamiento local PWA para sincronización automática."
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1508,19 +1552,49 @@ export function RPGLifeEngineDashboard({
 
   const triggerHabitShortcut = async (questCode: string) => {
     setSubmitting(true);
+    const bodyPayload = {
+      idempotency_key: `ios-hab-${Date.now()}`,
+      quest_code: questCode,
+      timestamp: new Date().toISOString(),
+    };
+
+    if (typeof window !== "undefined" && !navigator.onLine) {
+      queueOfflineAction({
+        url: "/api/shortcuts/habit-log",
+        method: "POST",
+        body: bodyPayload,
+        description: `Misión de hábito (${questCode})`,
+      });
+      triggerHaptic("success");
+      alert(
+        "📱 Misión Guardada Offline: No hay conexión ahora mismo, pero tu hábito fue registrado localmente y se enviará tan pronto vuelvas a tener red."
+      );
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/shortcuts/habit-log", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idempotency_key: `ios-hab-${Date.now()}`,
-          quest_code: questCode,
-          timestamp: new Date().toISOString(),
-        }),
+        body: JSON.stringify(bodyPayload),
       });
       const json = await res.json();
       setLastShortcutResponse(JSON.stringify(json, null, 2));
       await fetchState();
+    } catch {
+      if (typeof window !== "undefined") {
+        queueOfflineAction({
+          url: "/api/shortcuts/habit-log",
+          method: "POST",
+          body: bodyPayload,
+          description: `Misión de hábito (${questCode})`,
+        });
+        triggerHaptic("warning");
+        alert(
+          "📱 Misión guardada en cola local: La conexión falló pero tu progreso de racha quedó seguro en tu dispositivo."
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -2115,24 +2189,19 @@ export function RPGLifeEngineDashboard({
               }`}
             >
               <Trophy className="h-4 w-4" />
-              Santuario de Habilidades
+              Santuario & Proyectos
             </button>
             <button
               type="button"
-              onClick={() => setHomeActiveTab("debts")}
+              onClick={() => setHomeActiveTab("analytics")}
               className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
-                homeActiveTab === "debts"
-                  ? "bg-gradient-to-r from-rose-600 to-amber-600 text-white shadow-lg ring-1 ring-rose-400/50"
+                homeActiveTab === "analytics"
+                  ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg ring-1 ring-indigo-400/50"
                   : "text-slate-400 hover:bg-slate-900 hover:text-white"
               }`}
             >
-              <Swords className="h-4 w-4" />
-              Debt Bosses & Tienda
-              {totalActiveDot > 0 && (
-                <span className="ml-1 rounded-full bg-rose-500/20 px-1.5 py-0.5 text-[10px] text-rose-300 animate-pulse">
-                  DoT Activo
-                </span>
-              )}
+              <BarChart3 className="h-4 w-4" />
+              Analítica & Heatmaps
             </button>
             <button
               type="button"
@@ -2145,6 +2214,23 @@ export function RPGLifeEngineDashboard({
             >
               <CalendarClock className="h-4 w-4" />
               Calendario Circadiano
+            </button>
+            <button
+              type="button"
+              onClick={() => setHomeActiveTab("debts")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                homeActiveTab === "debts"
+                  ? "bg-gradient-to-r from-amber-600 to-rose-600 text-white shadow-lg ring-1 ring-amber-400/50"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              }`}
+            >
+              <Wallet className="h-4 w-4" />
+              Finanzas & Wishlist
+              {totalActiveDot > 0 && (
+                <span className="ml-1 rounded-full bg-rose-500/20 px-1.5 py-0.5 text-[10px] text-rose-300 animate-pulse">
+                  DoT
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -2253,42 +2339,37 @@ export function RPGLifeEngineDashboard({
 
           {/* 2. TRES WIDGETS TÁCTICOS EJECUTIVOS */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            {/* WIDGET BOSSES */}
-            <div className="flex flex-col justify-between rounded-2xl border border-rose-500/30 bg-gradient-to-br from-rose-950/20 via-slate-900 to-slate-950 p-5 shadow-lg">
+            {/* WIDGET 1: RENDIMIENTO & CONSTANCIA CUANTITATIVA */}
+            <div className="flex flex-col justify-between rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/20 via-slate-900 to-slate-950 p-5 shadow-lg">
               <div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Swords className="h-4 w-4 text-rose-400" />
-                    <h3 className="font-bold text-white text-sm">Arena de Debt Bosses</h3>
+                    <BarChart3 className="h-4 w-4 text-indigo-400" />
+                    <h3 className="font-bold text-white text-sm">Rendimiento & Constancia</h3>
                   </div>
-                  {totalActiveDot > 0 && (
-                    <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300 animate-pulse">
-                      DoT Activo
-                    </span>
-                  )}
+                  <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
+                    NVL {state.player_level}
+                  </span>
                 </div>
                 <div className="mt-3">
-                  <span className="text-xs text-slate-400">Deuda Restante:</span>
-                  <p className="text-xl font-extrabold text-rose-300 font-mono">
-                    ${state.bosses.reduce((acc, b) => acc + Math.max(0, b.current_hp), 0).toLocaleString("es-CO")} COP
+                  <span className="text-xs text-slate-400">Racha de Hábitos Activa:</span>
+                  <p className="text-xl font-extrabold text-white font-mono flex items-center gap-2">
+                    🔥 {state.current_streak_days} días
+                    <span className="text-xs font-semibold text-emerald-400">
+                      ({state.streak_multiplier}x GP)
+                    </span>
                   </p>
                 </div>
-                {totalActiveDot > 0 ? (
-                  <p className="mt-1 text-xs text-rose-400">
-                    🔥 Sangrado Pasivo: -{totalActiveDot.toLocaleString("es-CO")} GP/día drenando billetera.
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-emerald-400">
-                    🕊️ Todos los Bosses purificados para este ciclo.
-                  </p>
-                )}
+                <p className="mt-1 text-xs text-slate-300">
+                  ⚡ {state.logs?.length || 0} sesiones y eventos de vida sistematizados.
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setHomeActiveTab("debts")}
-                className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20 cursor-pointer text-center"
+                onClick={() => setHomeActiveTab("analytics")}
+                className="mt-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer text-center flex items-center justify-center gap-1.5 transition"
               >
-                Abrir Arena & Pociones de Purificación ➔
+                <BarChart3 className="h-3.5 w-3.5" /> Ver Analítica & Heatmap ➔
               </button>
             </div>
 
@@ -2370,6 +2451,32 @@ export function RPGLifeEngineDashboard({
             </div>
           </div>
 
+          {/* BANNER FINANCIERO COMPLEMENTARIO (OPCIONAL) */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="text-base">💼</span>
+              <div>
+                <span className="font-bold text-slate-200">Cámara Financiera & Wishlist:</span>
+                <span className="text-slate-400 ml-2">
+                  Billetera: <strong className="text-amber-300">{state.wallet_gp.toLocaleString("es-CO")} GP</strong> • 
+                  Bóveda: <strong className="text-slate-300">{state.vault_remaining_gp.toLocaleString("es-CO")} GP</strong>
+                  {totalActiveDot > 0 && (
+                    <span className="text-rose-400 ml-2">
+                      (DoT Pasivo: -{totalActiveDot.toLocaleString("es-CO")} GP/d)
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setHomeActiveTab("debts")}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:text-white hover:border-slate-600 transition cursor-pointer"
+            >
+              Abrir Finanzas & Wishlist ➔
+            </button>
+          </div>
+
           {/* 3. BITÁCORA RECIENTE (FEED COMPACTO) */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
             <div className="mb-4 flex items-center justify-between">
@@ -2425,6 +2532,46 @@ export function RPGLifeEngineDashboard({
             talentPerks={state.talent_perks || []}
             unlockedPerks={state.unlocked_perks || []}
             onUnlockPerk={handleUnlockTalentPerk}
+          />
+        </div>
+      )}
+
+      {/* =====================================================================
+          TAB: ANALÍTICA DE DATOS PERSONALES, RENDIMIENTO & HEATMAPS
+         ===================================================================== */}
+      {!dedicatedSkillDomain && homeActiveTab === "analytics" && (
+        <div className="mb-8">
+          <AnalyticsOverviewDashboard
+            logs={state.logs || []}
+            currentStreak={state.current_streak_days}
+            playerLevel={state.player_level}
+            totalXp={state.current_xp || 0}
+            rubikStats={state.rubik_stats}
+            books={state.reading_books || []}
+            quests={state.quests || []}
+            bosses={state.bosses || []}
+            fixedCosts={state.fixed_costs || []}
+            shortcutApiKey={state.user?.shortcut_api_key}
+            onRestoreBackup={async (importedJson: unknown) => {
+              try {
+                const res = await fetch("/api/shortcuts/skill-session", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "restore_backup",
+                    backup_data: importedJson,
+                  }),
+                });
+                if (res.ok) {
+                  alert("¡Respaldo restaurado con éxito!");
+                  await fetchState();
+                } else {
+                  alert("Error al restaurar respaldo.");
+                }
+              } catch {
+                alert("Error al conectar para restaurar respaldo.");
+              }
+            }}
           />
         </div>
       )}
@@ -6355,12 +6502,16 @@ export function RPGLifeEngineDashboard({
                             }
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200"
                           >
-                            <option value="scrum">Scrum (Sprints)</option>
-                            <option value="kanban">Kanban (Flujo WIP)</option>
-                            <option value="lean">Lean (Kaizen)</option>
+                            <option value="scrum">Scrum (Sprints & Incrementos)</option>
+                            <option value="kanban">Kanban (Flujo Continuo & WIP Limits)</option>
+                            <option value="lean">Lean / Kaizen (Eliminación de Desperdicio)</option>
                           </select>
                         </div>
                       </div>
+
+                      {/* GUÍA INTERACTIVA DE METODOLOGÍA & MAPEO VISUAL */}
+                      <AgileMethodologyGuideBox methodology={selectedAgileMethodology} />
+
                       <div className="flex justify-end">
                         <button
                           type="button"
@@ -6396,7 +6547,14 @@ export function RPGLifeEngineDashboard({
                             </p>
                           </div>
 
-                          <div className="flex items-center gap-4">
+                          <div className="flex flex-wrap items-center gap-4">
+                            <button
+                              type="button"
+                              onClick={() => setShowAgileProjectGuide((v) => !v)}
+                              className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer transition flex items-center gap-1.5"
+                            >
+                              <span>📖</span> {showAgileProjectGuide ? "Ocultar Guía Ágil" : "Guía Ágil & Mapeo"}
+                            </button>
                             <div className="text-right">
                               <span className="text-xs font-bold text-white block">
                                 {completedTasks.length} de {projectTasks.length} tareas completadas
@@ -6413,6 +6571,11 @@ export function RPGLifeEngineDashboard({
                             </div>
                           </div>
                         </div>
+
+                        {/* Despliegue interactivo de la Guía Ágil en el Tablero Activo */}
+                        {showAgileProjectGuide && (
+                          <AgileMethodologyGuideBox methodology={activeMethodology} compact={false} />
+                        )}
 
                         {/* Columnas del Tablero Trello */}
                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 items-start">
@@ -6888,18 +7051,187 @@ export function RPGLifeEngineDashboard({
       )}
 
       {/* =====================================================================
-          TAB 4: DEBT BOSSES ARENA & TIENDA WISHLIST
+          TAB 5: ECONOMÍA DE RESTRICCIÓN (WISHLIST) & CÁMARA DE PASIVOS
          ===================================================================== */}
       {!dedicatedSkillDomain && homeActiveTab === "debts" && (
         <div className="space-y-8 mb-8">
-          {/* GRÁFICA DE AMORTIZACIÓN & DÍA DE LIBERTAD FINANCIERA */}
-          <AmortizationFreedomChart
-            bosses={state.bosses || []}
-            monthlyFreeCashflow={freeCashflowCop}
-          />
+          {/* 1. CATÁLOGO WISHLIST (ECONOMÍA DE RESTRICCIÓN) */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="h-5 w-5 text-amber-400" />
+                <div>
+                  <h2 className="text-lg font-bold text-white">
+                    Tienda Wishlist (Economía de Restricción)
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Redime recompensas y gustos personales forjados con tus hábitos diarios.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {((state.variable_ops_spent_cop > state.variable_ops_budget_cop) ||
+                  state.wallet_gp < 0 ||
+                  state.total_penalty_gp > 0) ? (
+                  <span className="rounded-full bg-amber-500/20 px-2.5 py-1 text-xs font-bold text-amber-300 ring-1 ring-amber-500/40 animate-pulse">
+                    ⚡ Impuesto al Impulso (+20%) Activo
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-xs font-bold text-emerald-300">
+                    ✓ Precios Regulares
+                  </span>
+                )}
+              </div>
+            </div>
 
-          {/* DEBT BOSSES ARENA + SNOWBALL VS AVALANCHE + COMBO OVERFLOW + COUNTER-ATTACK */}
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {state.wishlist.map((item) => {
+                const effectiveCost =
+                  item.effective_cost_gp ?? item.cost_gp;
+                const minStreak =
+                  item.min_streak_required ??
+                  (item.priority === 1 ? 1 : item.priority === 2 ? 3 : 7);
+                const streakPassed =
+                  state.current_streak_days >= minStreak;
+                const canAfford = state.wallet_gp >= effectiveCost;
+                const isOverdrawn = state.wallet_gp < 0;
+                const isLocked =
+                  item.is_redeemed ||
+                  !streakPassed ||
+                  isOverdrawn ||
+                  !canAfford;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`flex flex-col justify-between rounded-xl border p-4 transition ${
+                      item.is_redeemed
+                        ? "border-slate-800 bg-slate-950/40 opacity-50"
+                        : isLocked
+                        ? "border-slate-800 bg-slate-950/70"
+                        : "border-amber-500/30 bg-slate-950/90 ring-1 ring-amber-500/20"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-amber-400">
+                          Prioridad #{item.priority}
+                        </span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                            streakPassed
+                              ? "bg-emerald-500/20 text-emerald-300"
+                              : "bg-rose-500/20 text-rose-300"
+                          }`}
+                        >
+                          Racha: {minStreak}d mín
+                        </span>
+                      </div>
+                      <h3 className="mt-1 text-sm font-semibold text-white">
+                        {item.name}
+                      </h3>
+                      <div className="mt-1.5 flex items-baseline gap-2">
+                        <p className="text-base font-bold text-amber-300">
+                          {effectiveCost.toLocaleString("es-CO")} GP
+                        </p>
+                        {(item.impulse_tax_pct || 0) > 0 && (
+                          <span className="text-[10px] text-amber-400/80 font-mono">
+                            (+20% multa)
+                          </span>
+                        )}
+                      </div>
+                      {item.locked_reason && !item.is_redeemed && (
+                        <p className="mt-2 text-[11px] leading-tight text-rose-400 bg-rose-950/30 p-1.5 rounded border border-rose-500/20">
+                          🔒 {item.locked_reason}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      disabled={submitting}
+                      onClick={() => {
+                        if (item.is_redeemed) {
+                          alert("Este ítem ya ha sido redimido con éxito anteriormente.");
+                          return;
+                        }
+                        if (isLocked) {
+                          alert(
+                            "🔒 Ítem Bloqueado:\n" +
+                              (item.locked_reason ||
+                                (!streakPassed
+                                  ? `Requiere una racha activa de al menos ${minStreak} días para poder canjearlo.`
+                                  : isOverdrawn
+                                  ? "Tu Billetera está en sobregiro (Maldición Activa). Realiza sesiones de estudio o trabajo para purificarla antes de canjear."
+                                  : "No dispones de suficientes GP en tu Billetera para este ítem."))
+                          );
+                          return;
+                        }
+                        redeemWishlist(item);
+                      }}
+                      className={`mt-3 w-full rounded-lg border px-3 py-1.5 text-xs font-semibold cursor-pointer transition ${
+                        item.is_redeemed
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                          : isLocked
+                          ? "border-slate-700 bg-slate-800/60 text-slate-400 hover:border-amber-500/50 hover:text-amber-200"
+                          : "border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                      }`}
+                    >
+                      {item.is_redeemed
+                        ? "Redimido ✓"
+                        : !streakPassed
+                        ? `Requiere Racha ${minStreak}d 🔒`
+                        : isOverdrawn
+                        ? "Sobregiro Activo ⚠️"
+                        : canAfford
+                        ? "Canjear con GP"
+                        : "Faltan GP 🔒"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 2. CÁMARA DE PASIVOS & DEBT BOSSES (OPCIONAL / COLAPSABLE) */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Swords className="h-5 w-5 text-rose-400" />
+                <div>
+                  <h3 className="font-bold text-white text-base">
+                    Cámara de Pasivos & Debt Bosses (Opcional)
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Cálculo de intereses DoT, simulación Bola de Nieve vs Avalancha y pociones de purificación.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDebtArena((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-700 cursor-pointer transition shadow"
+              >
+                {showDebtArena ? (
+                  <>
+                    <ChevronUp className="h-4 w-4" /> Ocultar Arena de Pasivos
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" /> Desplegar Arena de Pasivos ({state.bosses.length} Bosses)
+                  </>
+                )}
+              </button>
+            </div>
+
+            {showDebtArena && (
+              <div className="space-y-6 pt-2">
+                {/* GRÁFICA DE AMORTIZACIÓN & DÍA DE LIBERTAD FINANCIERA */}
+                <AmortizationFreedomChart
+                  bosses={state.bosses || []}
+                  monthlyFreeCashflow={freeCashflowCop}
+                />
+
+                {/* DEBT BOSSES ARENA + SNOWBALL VS AVALANCHE + COMBO OVERFLOW + COUNTER-ATTACK */}
+                <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
         <div className="mb-5 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
           <div>
             <div className="flex items-center gap-2">
@@ -7192,134 +7524,12 @@ export function RPGLifeEngineDashboard({
             );
           })}
         </div>
-      </section>
-
-      {/* CATÁLOGO WISHLIST (ECONOMÍA DE RESTRICCIÓN) */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <ShoppingBag className="h-5 w-5 text-amber-400" />
-            <h2 className="text-lg font-bold text-white">
-              Tienda Wishlist (Economía de Restricción)
-            </h2>
-          </div>
-          {((state.variable_ops_spent_cop > state.variable_ops_budget_cop) ||
-            state.wallet_gp < 0 ||
-            state.total_penalty_gp > 0) && (
-            <span className="rounded-full bg-amber-500/20 px-2.5 py-1 text-xs font-bold text-amber-300 ring-1 ring-amber-500/40 animate-pulse">
-              ⚡ Impuesto al Impulso (+20%) Activo
-            </span>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {state.wishlist.map((item) => {
-            const effectiveCost =
-              item.effective_cost_gp ?? item.cost_gp;
-            const minStreak =
-              item.min_streak_required ??
-              (item.priority === 1 ? 1 : item.priority === 2 ? 3 : 7);
-            const streakPassed =
-              state.current_streak_days >= minStreak;
-            const canAfford = state.wallet_gp >= effectiveCost;
-            const isOverdrawn = state.wallet_gp < 0;
-            const isLocked =
-              item.is_redeemed ||
-              !streakPassed ||
-              isOverdrawn ||
-              !canAfford;
-
-            return (
-              <div
-                key={item.id}
-                className={`flex flex-col justify-between rounded-xl border p-4 transition ${
-                  item.is_redeemed
-                    ? "border-slate-800 bg-slate-950/40 opacity-50"
-                    : isLocked
-                    ? "border-slate-800 bg-slate-950/70"
-                    : "border-amber-500/30 bg-slate-950/90 ring-1 ring-amber-500/20"
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-amber-400">
-                      Prioridad #{item.priority}
-                    </span>
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                        streakPassed
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : "bg-rose-500/20 text-rose-300"
-                      }`}
-                    >
-                      Racha: {minStreak}d mín
-                    </span>
-                  </div>
-                  <h3 className="mt-1 text-sm font-semibold text-white">
-                    {item.name}
-                  </h3>
-                  <div className="mt-1.5 flex items-baseline gap-2">
-                    <p className="text-base font-bold text-amber-300">
-                      {effectiveCost.toLocaleString("es-CO")} GP
-                    </p>
-                    {(item.impulse_tax_pct || 0) > 0 && (
-                      <span className="text-[10px] text-amber-400/80 font-mono">
-                        (+20% multa)
-                      </span>
-                    )}
-                  </div>
-                  {item.locked_reason && !item.is_redeemed && (
-                    <p className="mt-2 text-[11px] leading-tight text-rose-400 bg-rose-950/30 p-1.5 rounded border border-rose-500/20">
-                      🔒 {item.locked_reason}
-                    </p>
-                  )}
-                </div>
-                <button
-                  disabled={submitting}
-                  onClick={() => {
-                    if (item.is_redeemed) {
-                      alert("Este ítem ya ha sido redimido con éxito anteriormente.");
-                      return;
-                    }
-                    if (isLocked) {
-                      alert(
-                        "🔒 Ítem Bloqueado:\n" +
-                          (item.locked_reason ||
-                            (!streakPassed
-                              ? `Requiere una racha activa de al menos ${minStreak} días para poder canjearlo.`
-                              : isOverdrawn
-                              ? "Tu Billetera está en sobregiro (Maldición Activa). Realiza sesiones de estudio o trabajo para purificarla antes de canjear."
-                              : "No dispones de suficientes GP en tu Billetera para este ítem."))
-                      );
-                      return;
-                    }
-                    redeemWishlist(item);
-                  }}
-                  className={`mt-3 w-full rounded-lg border px-3 py-1.5 text-xs font-semibold cursor-pointer transition ${
-                    item.is_redeemed
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                      : isLocked
-                      ? "border-slate-700 bg-slate-800/60 text-slate-400 hover:border-amber-500/50 hover:text-amber-200"
-                      : "border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
-                  }`}
-                >
-                  {item.is_redeemed
-                    ? "Redimido ✓"
-                    : !streakPassed
-                    ? `Requiere Racha ${minStreak}d 🔒`
-                    : isOverdrawn
-                    ? "Sobregiro Activo ⚠️"
-                    : canAfford
-                    ? "Canjear con GP"
-                    : "Faltan GP 🔒"}
-                </button>
+        </section>
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
-      </div>
-    </div>
-  )}
+      )}
 
   {/* =====================================================================
       TAB 5: LABORATORIO IOS SHORTCUTS, HÁBITOS & BITÁCORA DE PRUEBAS

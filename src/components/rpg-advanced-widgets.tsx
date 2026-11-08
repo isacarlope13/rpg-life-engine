@@ -19,6 +19,17 @@ import {
   FileText,
   Shield,
   Zap,
+  BarChart3,
+  Flame,
+  Layers,
+  Activity,
+  ArrowRight,
+  Clock,
+  Target,
+  BookOpen,
+  Box,
+  Briefcase,
+  Trophy,
 } from "lucide-react";
 import type {
   ReadingBook,
@@ -26,6 +37,7 @@ import type {
   SpacedRepetitionCard,
   TalentPerk,
   FixedCostItem,
+  AgileMethodology,
 } from "@/types/rpg";
 import type { DemoBoss } from "@/lib/demo-store";
 import {
@@ -881,6 +893,449 @@ export function ExportAndNotionHub({
           />
         </label>
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// 7. GUÍA INTERACTIVA DE METODOLOGÍA ÁGIL & MAPEO VISUAL DEL TABLERO
+// ============================================================================
+export function AgileMethodologyGuideBox({
+  methodology,
+  compact = false,
+}: {
+  methodology: AgileMethodology;
+  compact?: boolean;
+}) {
+  if (methodology === "none") {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 p-3.5 text-center text-xs text-slate-400 italic">
+        Selecciona un marco ágil (Scrum, Kanban o Lean) para desplegar su guía de uso y mapeo de flujo.
+      </div>
+    );
+  }
+
+  const stages =
+    methodology === "scrum"
+      ? [
+          { name: "Backlog", desc: "Historias priorizadas" },
+          { name: "Sprint Backlog", desc: "Compromiso del ciclo (1-2 sem)" },
+          { name: "En Progreso", desc: "En ejecución activa" },
+          { name: "Completado (DoD)", desc: "Incremento entregable" },
+        ]
+      : methodology === "kanban"
+      ? [
+          { name: "Por Hacer (To-Do)", desc: "Búfer de demanda" },
+          { name: "En Proceso (WIP)", desc: "Límite: 2-3 tareas max" },
+          { name: "Bloqueado / Revisión", desc: "Cuellos de botella" },
+          { name: "Completado", desc: "Flujo finalizado" },
+        ]
+      : [
+          { name: "Identificar Valor", desc: "Impacto real para el usuario" },
+          { name: "Mapear Flujo (VSM)", desc: "Eliminar pasos redundantes" },
+          { name: "Optimizar / Automatizar", desc: "Ciclo PDCA Kaizen" },
+          { name: "Estandarizado", desc: "Checklist repetible" },
+        ];
+
+  const guide =
+    methodology === "scrum"
+      ? {
+          title: "🎯 Guía de Implementación Scrum (Sprints & Incrementos)",
+          badge: "Time-Boxed",
+          color: "border-indigo-500/40 bg-indigo-950/30 text-indigo-300",
+          steps: [
+            {
+              step: "1. Sprints de Tiempo:",
+              text: "Divide tu meta en ciclos cerrados de 1 a 2 semanas con un objetivo de valor claro.",
+            },
+            {
+              step: "2. Backlog de Producto:",
+              text: "Descompón tareas en unidades atómicas estimadas en minutos o puntos de esfuerzo.",
+            },
+            {
+              step: "3. Ceremonias de Cierre:",
+              text: "Realiza una retrospectiva corta al terminar cada sprint para evaluar XP ganado y fricciones.",
+            },
+            {
+              step: "4. Definición de Hecho (DoD):",
+              text: "No muevas una tarjeta a 'Completado' sin cumplir criterios de aceptación verificables.",
+            },
+          ],
+        }
+      : methodology === "kanban"
+      ? {
+          title: "📊 Guía de Implementación Kanban (Flujo Continuo & Límites WIP)",
+          badge: "Continuous Flow",
+          color: "border-cyan-500/40 bg-cyan-950/30 text-cyan-300",
+          steps: [
+            {
+              step: "1. Flujo Continuo (Pull):",
+              text: "No fuerces sprints con fechas artificiales; toma la siguiente tarjeta solo cuando tengas capacidad libre.",
+            },
+            {
+              step: "2. Límite de WIP Estricto:",
+              text: "Mantén un máximo de 2 a 3 tareas en 'En Proceso' simultáneamente para erradicar la multitarea tóxica.",
+            },
+            {
+              step: "3. Destrabar Bloqueos Primero:",
+              text: "Si una tarjeta entra en 'Bloqueado', conviértela en tu prioridad de desbloqueo antes de iniciar otra.",
+            },
+            {
+              step: "4. Métricas de Tiempo de Ciclo:",
+              text: "Mide cuánto tarda una tarjeta desde que entra al tablero hasta completarse.",
+            },
+          ],
+        }
+      : {
+          title: "⚡ Guía de Implementación Lean / Kaizen (Eliminación de Desperdicio)",
+          badge: "Zero Waste",
+          color: "border-emerald-500/40 bg-emerald-950/30 text-emerald-300",
+          steps: [
+            {
+              step: "1. Definir Valor Real:",
+              text: "Solo cuenta como progreso lo que produce un resultado útil; elimina la ilusión de ocupación.",
+            },
+            {
+              step: "2. Erradicar Desperdicios (Muda):",
+              text: "Identifica y suprime reprocesos, duplicaciones de datos y pasos manuales innecesarios.",
+            },
+            {
+              step: "3. Ciclo PDCA (Kaizen):",
+              text: "Planifica, Ejecuta, Chequea los números y Actúa estandarizando la solución encontrada.",
+            },
+            {
+              step: "4. Automatización & Plantillas:",
+              text: "Crea scripts o plantillas maestras para que una tarea operativa nunca vuelva a hacerse desde cero.",
+            },
+          ],
+        };
+
+  return (
+    <div className={`rounded-xl border p-4 space-y-3 ${guide.color}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+        <h5 className="font-bold text-xs sm:text-sm flex items-center gap-2">
+          <span>📖</span> {guide.title}
+        </h5>
+        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider font-bold">
+          {guide.badge}
+        </span>
+      </div>
+
+      {/* Mapeo Visual de Flujo con Flechas */}
+      <div>
+        <span className="text-[11px] font-bold uppercase tracking-wider opacity-80 block mb-1.5">
+          🗺️ Mapeo del Flujo de Tarjetas:
+        </span>
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {stages.map((st, idx) => (
+            <React.Fragment key={st.name}>
+              <div className="rounded-lg border border-white/15 bg-slate-900/70 px-2.5 py-1 text-xs">
+                <span className="font-bold text-white block text-[11px]">{st.name}</span>
+                <span className="text-[9px] text-slate-400 block">{st.desc}</span>
+              </div>
+              {idx < stages.length - 1 && (
+                <ArrowRight className="h-3 w-3 text-slate-400 shrink-0" />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      {/* Principios y Buenas Prácticas */}
+      {!compact && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs">
+          {guide.steps.map((s, idx) => (
+            <div
+              key={idx}
+              className="rounded-lg bg-black/20 p-2.5 border border-white/5 space-y-0.5"
+            >
+              <strong className="text-white block text-[11px]">{s.step}</strong>
+              <p className="text-[11px] text-slate-300 leading-relaxed">{s.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// 8. VISTA DE ANALÍTICA AVANZADA DE DATOS PERSONALES & CONSTANCIA
+// ============================================================================
+export function AnalyticsOverviewDashboard({
+  logs = [],
+  currentStreak = 0,
+  playerLevel = 1,
+  totalXp = 0,
+  rubikStats,
+  books = [],
+  quests = [],
+  bosses = [],
+  fixedCosts = [],
+  shortcutApiKey = "",
+  onRestoreBackup,
+}: {
+  logs: Array<{
+    timestamp: string;
+    gp_delta?: number;
+    xp_delta?: number;
+    domain?: string;
+    description?: string;
+  }>;
+  currentStreak: number;
+  playerLevel: number;
+  totalXp?: number;
+  rubikStats?: {
+    total_solves: number;
+    pb_seconds?: number | null;
+    current_ao5_seconds?: number | null;
+    recent_solves?: RubikSolveEntry[];
+  };
+  books?: ReadingBook[];
+  quests?: Array<{ code: string; title: string; category?: string }>;
+  bosses?: DemoBoss[];
+  fixedCosts?: FixedCostItem[];
+  shortcutApiKey?: string;
+  onRestoreBackup?: (backup: unknown) => Promise<void>;
+}) {
+  // 1. Estadísticas de consistencia y sesiones
+  const stats = useMemo(() => {
+    const totalSessions = logs.length;
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const daysWithActivity = new Set<string>();
+    const domainCounts: Record<string, { count: number; xp: number; gp: number }> = {};
+
+    logs.forEach((log) => {
+      if (log.timestamp) {
+        const dStr = log.timestamp.split("T")[0];
+        const logDate = new Date(log.timestamp);
+        if (logDate >= thirtyDaysAgo) {
+          daysWithActivity.add(dStr);
+        }
+
+        const dom = log.domain || "general";
+        if (!domainCounts[dom]) {
+          domainCounts[dom] = { count: 0, xp: 0, gp: 0 };
+        }
+        domainCounts[dom].count += 1;
+        domainCounts[dom].xp += log.xp_delta || 0;
+        domainCounts[dom].gp += log.gp_delta || 0;
+      }
+    });
+
+    const activeDaysLast30 = daysWithActivity.size;
+    const consistencyRate = Math.round((activeDaysLast30 / 30) * 100);
+
+    // Encontrar dominio líder
+    let topDomain = "study";
+    let maxDomainSessions = 0;
+    Object.entries(domainCounts).forEach(([dom, val]) => {
+      if (val.count > maxDomainSessions) {
+        maxDomainSessions = val.count;
+        topDomain = dom;
+      }
+    });
+
+    const domainLabels: Record<string, string> = {
+      study: "📚 Estudio & Universidad",
+      work: "💼 Trabajo & Proyectos",
+      rubik: "🧩 Speedcubing WCA",
+      reading: "📖 Lectura & Resúmenes",
+      knitting: "🧶 Tejido & Focus",
+      gaming: "🎮 Gaming Disciplinado",
+      sports: "⚡ Deporte & Ejercicio",
+      general: "🛡️ Hábitos Generales",
+    };
+
+    return {
+      totalSessions,
+      activeDaysLast30,
+      consistencyRate,
+      domainCounts,
+      topDomainLabel: domainLabels[topDomain] || topDomain,
+      domainLabels,
+    };
+  }, [logs]);
+
+  return (
+    <div className="space-y-6">
+      {/* CABECERA DE ANALÍTICA */}
+      <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-950 p-6 shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/40">
+                <BarChart3 className="h-4 w-4" />
+              </span>
+              <h2 className="text-xl font-extrabold text-white">
+                Sistematización de Datos & Analítica de Rendimiento
+              </h2>
+            </div>
+            <p className="text-xs text-slate-400">
+              Métricas cuantitativas de hábitos, sesiones de habilidad, persistencia y forja de XP en el tiempo.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+              <Activity className="h-3.5 w-3.5" /> Motor Cuantitativo v3.4
+            </span>
+          </div>
+        </div>
+
+        {/* 4 TARJETAS KPI DE RENDIMIENTO */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+          {/* KPI 1 */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+              <Flame className="h-3.5 w-3.5 text-amber-400" /> Racha Activa
+            </span>
+            <p className="text-2xl font-black text-white font-mono">
+              {currentStreak} <span className="text-xs font-bold text-amber-400">días</span>
+            </p>
+            <span className="text-[10px] text-slate-500 block">
+              Multiplicador de GP en vivo
+            </span>
+          </div>
+
+          {/* KPI 2 */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+              <Activity className="h-3.5 w-3.5 text-emerald-400" /> Consistencia (30d)
+            </span>
+            <p className="text-2xl font-black text-emerald-300 font-mono">
+              {stats.consistencyRate}%
+            </p>
+            <span className="text-[10px] text-slate-500 block">
+              {stats.activeDaysLast30} de 30 días con registros
+            </span>
+          </div>
+
+          {/* KPI 3 */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5 text-cyan-400" /> Total Sesiones
+            </span>
+            <p className="text-2xl font-black text-cyan-300 font-mono">
+              {stats.totalSessions}
+            </p>
+            <span className="text-[10px] text-slate-500 block">
+              Eventos de vida sistematizados
+            </span>
+          </div>
+
+          {/* KPI 4 */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+              <Target className="h-3.5 w-3.5 text-indigo-400" /> Enfoque Dominante
+            </span>
+            <p className="text-sm font-bold text-white truncate mt-1">
+              {stats.topDomainLabel}
+            </p>
+            <span className="text-[10px] text-slate-500 block">
+              Mayor volumen de inversión
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* HEATMAP DE 365 DÍAS */}
+      <AnnualProductivityHeatmap logs={logs} currentStreak={currentStreak} />
+
+      {/* DISTRIBUCIÓN DE ESFUERZO / XP POR DOMINIO */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h3 className="font-bold text-white text-sm flex items-center gap-2">
+              <Layers className="h-4 w-4 text-indigo-400" /> Distribución de Inversión por Habilidad
+            </h3>
+            <p className="text-xs text-slate-400">
+              Desglose porcentual de sesiones registradas en cada dominio del Santuario.
+            </p>
+          </div>
+          <span className="text-xs text-slate-400 font-mono">
+            Nivel de Jugador: {playerLevel}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          {Object.entries(stats.domainCounts).map(([dom, val]) => {
+            const pct =
+              stats.totalSessions > 0
+                ? Math.round((val.count / stats.totalSessions) * 100)
+                : 0;
+
+            return (
+              <div key={dom} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-200">
+                    {stats.domainLabels[dom] || dom}
+                  </span>
+                  <div className="flex items-center gap-3 text-slate-400 font-mono text-[11px]">
+                    <span>{val.count} sesiones</span>
+                    <span className="text-emerald-400 font-bold">+{val.xp.toLocaleString("es-CO")} XP</span>
+                    <span className="text-white font-bold">{pct}%</span>
+                  </div>
+                </div>
+                <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full transition-all duration-500"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+
+          {Object.keys(stats.domainCounts).length === 0 && (
+            <p className="text-xs text-slate-500 italic text-center py-4">
+              Aún no hay registros de habilidades en la bitácora. Completa sesiones en el Santuario para ver tu mapa de esfuerzo.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* CURVA DE RENDIMIENTO WCA (SI EXISTEN SOLVES) */}
+      {rubikStats && rubikStats.recent_solves && rubikStats.recent_solves.length > 0 && (
+        <WcaPerformanceCurve
+          solves={rubikStats.recent_solves}
+          pbSeconds={rubikStats.pb_seconds ?? null}
+          ao5Seconds={rubikStats.current_ao5_seconds ?? null}
+        />
+      )}
+
+      {/* EXPORTADOR UNIVERSAL NOTION / CSV & RESPALDOS */}
+      <ExportAndNotionHub
+        books={books}
+        solves={rubikStats?.recent_solves || []}
+        fixedCosts={fixedCosts}
+        bosses={bosses}
+        fullState={{
+          logs,
+          current_streak_days: currentStreak,
+          player_level: playerLevel,
+          total_xp: totalXp,
+          rubik_stats: rubikStats,
+          books,
+          quests,
+          fixed_costs: fixedCosts,
+          bosses,
+        }}
+        apiKey={shortcutApiKey}
+        onImportBackup={async (file: File) => {
+          try {
+            const text = await file.text();
+            const json = JSON.parse(text);
+            if (onRestoreBackup) {
+              await onRestoreBackup(json);
+            }
+          } catch {
+            alert("El archivo seleccionado no es un respaldo JSON válido.");
+          }
+        }}
+      />
     </div>
   );
 }
