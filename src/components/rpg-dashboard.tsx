@@ -51,6 +51,13 @@ import {
   ExternalLink,
   ChevronRight,
   X,
+  Edit3,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  Plus,
+  Minus,
+  GripVertical,
 } from "lucide-react";
 import {
   AgileMethodology,
@@ -82,7 +89,12 @@ import {
   TalentPerk,
   FinancialMovementRecord,
 } from "@/types/rpg";
-import { computeBioCalendarPlan } from "@/lib/calendar-planner";
+import {
+  computeBioCalendarPlan,
+  parseTimeToMinutes,
+  formatMinutesToHHMM,
+  ScheduledSkillBlock,
+} from "@/lib/calendar-planner";
 import {
   AnnualProductivityHeatmap,
   WcaPerformanceCurve,
@@ -485,6 +497,318 @@ export function RPGLifeEngineDashboard({
     state?.skill_summaries,
     state?.vault_cap_gp,
   ]);
+
+  // =========================================================================
+  // ESTADOS Y HANDLERS PARA CALENDARIO DINÁMICO & INTERACTIVO
+  // (Edición inline, reordenamiento, DND, Now Marker y botón Completar)
+  // =========================================================================
+  const [dayOverrides, setDayOverrides] = useState<Record<string, ScheduledSkillBlock[]>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("rpg_calendar_day_overrides");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {
+        console.error("Error reading rpg_calendar_day_overrides:", e);
+      }
+    }
+    return {};
+  });
+
+  const [completedCalendarBlocks, setCompletedCalendarBlocks] = useState<Record<string, boolean>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("rpg_calendar_completed_blocks");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {
+        console.error("Error reading rpg_calendar_completed_blocks:", e);
+      }
+    }
+    return {};
+  });
+
+  const [editingBlock, setEditingBlock] = useState<{
+    dayKey: string;
+    index: number;
+    label: string;
+    timeRange: string;
+    minutes: number;
+    domain: SkillDomain;
+    isNew?: boolean;
+  } | null>(null);
+
+  const [draggedBlock, setDraggedBlock] = useState<{ dayKey: string; index: number } | null>(null);
+  const [calendarToastMsg, setCalendarToastMsg] = useState<string | null>(null);
+
+  // Hora actual del sistema (se recalibra cada 15 segundos para el Now Marker)
+  const [currentSystemTime, setCurrentSystemTime] = useState<string>(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const d = new Date();
+      setCurrentSystemTime(
+        `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+      );
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentDayKey = useMemo(() => {
+    const map = ["dom", "lun", "mar", "mie", "jue", "vie", "sab"];
+    return map[new Date().getDay()];
+  }, []);
+
+  const getBlocksForDay = (d: { key: string; scheduled: ScheduledSkillBlock[] }): ScheduledSkillBlock[] => {
+    if (dayOverrides[d.key] && Array.isArray(dayOverrides[d.key])) {
+      return dayOverrides[d.key];
+    }
+    return d.scheduled || [];
+  };
+
+  const isBlockNow = (dayKey: string, timeRange: string): boolean => {
+    if (dayKey !== currentDayKey || !timeRange) return false;
+    const parts = timeRange.split(/[–-]/).map((s) => s.trim());
+    if (parts.length < 2) return false;
+    const startMin = parseTimeToMinutes(parts[0], -1);
+    const endMin = parseTimeToMinutes(parts[1], -1);
+    const nowMin = parseTimeToMinutes(currentSystemTime, -1);
+    if (startMin < 0 || endMin < 0 || nowMin < 0) return false;
+    return nowMin >= startMin && nowMin < endMin;
+  };
+
+  const getBlockProgressNow = (timeRange: string): number => {
+    const parts = timeRange.split(/[–-]/).map((s) => s.trim());
+    if (parts.length < 2) return 0;
+    const startMin = parseTimeToMinutes(parts[0], 0);
+    const endMin = parseTimeToMinutes(parts[1], 0);
+    const nowMin = parseTimeToMinutes(currentSystemTime, 0);
+    if (endMin <= startMin) return 0;
+    const pct = ((nowMin - startMin) / (endMin - startMin)) * 100;
+    return Math.min(100, Math.max(0, Math.round(pct)));
+  };
+
+  const handleAdjustDuration = (dayKey: string, index: number, deltaMinutes: number) => {
+    const dayPlan = bioCalendarPlan.days.find((p) => p.key === dayKey);
+    if (!dayPlan) return;
+    const currentList = [...getBlocksForDay(dayPlan)];
+    if (!currentList[index]) return;
+    const target = { ...currentList[index] };
+    const newMins = Math.max(10, Math.min(180, (target.minutes || 30) + deltaMinutes));
+    target.minutes = newMins;
+    const parts = target.timeRange.split(/[–-]/).map((s) => s.trim());
+    const startMin = parseTimeToMinutes(parts[0], 480);
+    const newEndMin = startMin + newMins;
+    target.timeRange = `${formatMinutesToHHMM(startMin)} – ${formatMinutesToHHMM(newEndMin)}`;
+    currentList[index] = target;
+
+    const newOverrides = { ...dayOverrides, [dayKey]: currentList };
+    setDayOverrides(newOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_calendar_day_overrides", JSON.stringify(newOverrides));
+    }
+    setCalendarToastMsg(`⏱️ Duración de ${target.label} ajustada a ${newMins}m`);
+    setTimeout(() => setCalendarToastMsg(null), 3000);
+  };
+
+  const handleMoveBlock = (dayKey: string, index: number, direction: "up" | "down") => {
+    const dayPlan = bioCalendarPlan.days.find((p) => p.key === dayKey);
+    if (!dayPlan) return;
+    const currentList = [...getBlocksForDay(dayPlan)];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= currentList.length) return;
+
+    const itemA = { ...currentList[index] };
+    const itemB = { ...currentList[targetIndex] };
+    const rangeA = itemA.timeRange;
+    const rangeB = itemB.timeRange;
+    itemA.timeRange = rangeB;
+    itemB.timeRange = rangeA;
+    currentList[index] = itemB;
+    currentList[targetIndex] = itemA;
+
+    const newOverrides = { ...dayOverrides, [dayKey]: currentList };
+    setDayOverrides(newOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_calendar_day_overrides", JSON.stringify(newOverrides));
+    }
+    setCalendarToastMsg(`↕️ "${itemA.label}" desplazada ${direction === "up" ? "hacia arriba" : "hacia abajo"}`);
+    setTimeout(() => setCalendarToastMsg(null), 3000);
+  };
+
+  const handleDropBlock = (targetDayKey: string, targetIndex: number) => {
+    if (!draggedBlock) return;
+    const sourceDayKey = draggedBlock.dayKey;
+    const sourceIndex = draggedBlock.index;
+    setDraggedBlock(null);
+
+    if (sourceDayKey !== targetDayKey) {
+      const sourcePlan = bioCalendarPlan.days.find((p) => p.key === sourceDayKey);
+      const targetPlan = bioCalendarPlan.days.find((p) => p.key === targetDayKey);
+      if (!sourcePlan || !targetPlan) return;
+      const sourceList = [...getBlocksForDay(sourcePlan)];
+      const targetList = [...getBlocksForDay(targetPlan)];
+      const [movedItem] = sourceList.splice(sourceIndex, 1);
+      if (!movedItem) return;
+      targetList.splice(targetIndex, 0, movedItem);
+
+      const newOverrides = {
+        ...dayOverrides,
+        [sourceDayKey]: sourceList,
+        [targetDayKey]: targetList,
+      };
+      setDayOverrides(newOverrides);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("rpg_calendar_day_overrides", JSON.stringify(newOverrides));
+      }
+      setCalendarToastMsg(`🔄 "${movedItem.label}" transferida a ${targetDayKey.toUpperCase()}`);
+      setTimeout(() => setCalendarToastMsg(null), 3000);
+      return;
+    }
+
+    const dayPlan = bioCalendarPlan.days.find((p) => p.key === sourceDayKey);
+    if (!dayPlan) return;
+    const currentList = [...getBlocksForDay(dayPlan)];
+    const [movedItem] = currentList.splice(sourceIndex, 1);
+    if (!movedItem) return;
+    currentList.splice(targetIndex, 0, movedItem);
+
+    const newOverrides = { ...dayOverrides, [sourceDayKey]: currentList };
+    setDayOverrides(newOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_calendar_day_overrides", JSON.stringify(newOverrides));
+    }
+    setCalendarToastMsg(`↕️ "${movedItem.label}" reordenada`);
+    setTimeout(() => setCalendarToastMsg(null), 3000);
+  };
+
+  const handleCompleteCalendarBlock = async (dayKey: string, block: ScheduledSkillBlock, index: number) => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const completionKey = `${dayKey}-${index}-${block.label}-${todayStr}`;
+
+    if (completedCalendarBlocks[completionKey]) {
+      const updated = { ...completedCalendarBlocks };
+      delete updated[completionKey];
+      setCompletedCalendarBlocks(updated);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("rpg_calendar_completed_blocks", JSON.stringify(updated));
+      }
+      return;
+    }
+
+    const updated = { ...completedCalendarBlocks, [completionKey]: true };
+    setCompletedCalendarBlocks(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_calendar_completed_blocks", JSON.stringify(updated));
+    }
+
+    triggerHaptic("success");
+    const earnedGp = Math.round((block.minutes || 30) * 50 * (state?.streak_multiplier || 1));
+    const earnedXp = Math.round((block.minutes || 30) * 2);
+    setCalendarToastMsg(`✨ ¡${block.label} completado! +${earnedGp.toLocaleString("es-CO")} GP y +${earnedXp} XP`);
+    setTimeout(() => setCalendarToastMsg(null), 4500);
+
+    try {
+      await submitSkillSession({
+        domain: block.domain || "study",
+        minutes: block.minutes || 30,
+        title: `Calendario: ${block.label}`,
+        notes: `Completado desde el Calendario Circadiano (${block.timeRange})`,
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveEditingBlock = () => {
+    if (!editingBlock) return;
+    const { dayKey, index, label, timeRange, domain, isNew } = editingBlock;
+    const dayPlan = bioCalendarPlan.days.find((p) => p.key === dayKey);
+    if (!dayPlan) return;
+    const currentList = [...getBlocksForDay(dayPlan)];
+
+    const parts = timeRange.split(/[–-]/).map((s) => s.trim());
+    const startMin = parseTimeToMinutes(parts[0], 480);
+    const endMin = parseTimeToMinutes(parts[1] || parts[0], startMin + 45);
+    const computedMins = Math.max(10, endMin > startMin ? endMin - startMin : 45);
+    const normalizedRange = `${formatMinutesToHHMM(startMin)} – ${formatMinutesToHHMM(startMin + computedMins)}`;
+
+    const updatedItem: ScheduledSkillBlock = {
+      domain,
+      label: label.trim() || "Sesión de Habilidad",
+      minutes: computedMins,
+      timeRange: normalizedRange,
+      period: startMin < 720 ? "manana" : startMin < 1080 ? "tarde" : "noche",
+    };
+
+    if (isNew) {
+      currentList.push(updatedItem);
+    } else {
+      currentList[index] = updatedItem;
+    }
+
+    const newOverrides = { ...dayOverrides, [dayKey]: currentList };
+    setDayOverrides(newOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_calendar_day_overrides", JSON.stringify(newOverrides));
+    }
+    setEditingBlock(null);
+    setCalendarToastMsg(`💾 Bloque "${updatedItem.label}" guardado`);
+    setTimeout(() => setCalendarToastMsg(null), 3000);
+  };
+
+  const handleDeleteBlock = (dayKey: string, index: number) => {
+    const dayPlan = bioCalendarPlan.days.find((p) => p.key === dayKey);
+    if (!dayPlan) return;
+    const currentList = [...getBlocksForDay(dayPlan)];
+    currentList.splice(index, 1);
+    const newOverrides = { ...dayOverrides, [dayKey]: currentList };
+    setDayOverrides(newOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_calendar_day_overrides", JSON.stringify(newOverrides));
+    }
+    setEditingBlock(null);
+    setCalendarToastMsg(`🗑️ Bloque eliminado`);
+    setTimeout(() => setCalendarToastMsg(null), 3000);
+  };
+
+  const handleResetDayOverrides = (dayKey: string) => {
+    const newOverrides = { ...dayOverrides };
+    delete newOverrides[dayKey];
+    setDayOverrides(newOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_calendar_day_overrides", JSON.stringify(newOverrides));
+    }
+    setCalendarToastMsg(`🔄 Horario de ${dayKey.toUpperCase()} restablecido al plan biológico`);
+    setTimeout(() => setCalendarToastMsg(null), 3000);
+  };
+
+  const handleAddNewBlock = (dayKey: string) => {
+    const dayPlan = bioCalendarPlan.days.find((p) => p.key === dayKey);
+    if (!dayPlan) return;
+    const currentList = getBlocksForDay(dayPlan);
+    const lastBlock = currentList[currentList.length - 1];
+    let defaultStart = "18:00";
+    let defaultEnd = "18:45";
+    if (lastBlock && lastBlock.timeRange) {
+      const parts = lastBlock.timeRange.split(/[–-]/).map((s) => s.trim());
+      if (parts[1]) {
+        const lastEndMin = parseTimeToMinutes(parts[1], 1080);
+        defaultStart = formatMinutesToHHMM(lastEndMin + 15);
+        defaultEnd = formatMinutesToHHMM(lastEndMin + 60);
+      }
+    }
+    setEditingBlock({
+      dayKey,
+      index: currentList.length,
+      label: "Nueva Sesión de Práctica",
+      timeRange: `${defaultStart} – ${defaultEnd}`,
+      minutes: 45,
+      domain: "study",
+      isNew: true,
+    });
+  };
   const [customSessionTitle, setCustomSessionTitle] = useState(
     "Sesión de Entrenamiento / Práctica Consciente"
   );
@@ -2903,63 +3227,425 @@ export function RPGLifeEngineDashboard({
             </div>
           </div>
 
-          {/* CRONOGRAMA 7 DÍAS */}
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-7">
-            {bioCalendarPlan.days.map((d) => (
-              <div
-                key={d.key}
-                className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/70 p-2.5 text-xs"
+          {/* TOAST DINÁMICO DEL CALENDARIO */}
+          {calendarToastMsg && (
+            <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-500/40 bg-emerald-950/90 p-3 text-xs font-bold text-emerald-200 shadow-xl animate-in fade-in slide-in-from-top-2">
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                {calendarToastMsg}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCalendarToastMsg(null)}
+                className="text-emerald-400 hover:text-white cursor-pointer ml-3"
               >
-                <div>
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-1">
-                    <span className="font-bold text-white">{d.label}</span>
-                    <span className="rounded bg-emerald-500/15 px-1 py-0.5 text-[9px] font-semibold text-emerald-300">
-                      {d.totalDayMins}m skills
-                    </span>
-                  </div>
+                ✕
+              </button>
+            </div>
+          )}
 
-                  <div className="mt-1 flex items-center justify-between rounded bg-slate-950 px-1.5 py-0.5 text-[9px] text-amber-200">
-                    <span>☀️ {d.wakeUpTime}</span>
-                    <span>🌙 {d.sleepTime}</span>
-                  </div>
+          {/* CRONOGRAMA 7 DÍAS INTERACTIVO & DINÁMICO */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
+            {bioCalendarPlan.days.map((d) => {
+              const isToday = d.key === currentDayKey;
+              const blocks = getBlocksForDay(d);
+              const hasOverrides = !!dayOverrides[d.key];
 
-                  <div className="mt-2 space-y-1">
-                    {d.scheduled.map((item, i) => (
-                      <div
-                        key={i}
-                        className="rounded border border-emerald-500/30 bg-emerald-950/20 px-1.5 py-1 text-[10px] text-white"
-                      >
-                        <div className="text-[9px] font-semibold text-cyan-300">
-                          {item.timeRange}
-                        </div>
-                        <p className="font-semibold truncate">{item.label}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-2 space-y-0.5 border-t border-slate-800/80 pt-1 text-[9px] text-slate-400">
-                    {d.timeline
-                      .filter((slot) => slot.kind !== "skill")
-                      .map((slot, sIdx) => (
-                        <div
-                          key={sIdx}
-                          className="flex items-center justify-between truncate"
-                        >
-                          <span className="truncate pr-1">{slot.title}</span>
-                          <span className="font-mono text-slate-500 shrink-0">
-                            {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
+              return (
+                <div
+                  key={d.key}
+                  className={`flex flex-col justify-between rounded-2xl border p-3 text-xs transition-all ${
+                    isToday
+                      ? "border-emerald-500/60 bg-slate-900/90 shadow-xl shadow-emerald-500/10 ring-1 ring-emerald-500/30"
+                      : "border-white/[0.08] bg-slate-900/50 hover:border-white/20"
+                  }`}
+                >
+                  <div>
+                    {/* Day Header */}
+                    <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`font-bold ${isToday ? "text-emerald-300" : "text-white"}`}>
+                          {d.label}
+                        </span>
+                        {isToday && (
+                          <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 font-mono text-[9px] font-bold text-emerald-300 animate-pulse">
+                            HOY
                           </span>
-                        </div>
-                      ))}
+                        )}
+                      </div>
+                      <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-emerald-300">
+                        {d.totalDayMins}m
+                      </span>
+                    </div>
+
+                    {/* Wake / Sleep pill + Day actions */}
+                    <div className="mt-1.5 flex items-center justify-between rounded-lg bg-slate-950/80 px-2 py-1 text-[9px] text-amber-200/90 font-mono">
+                      <span>☀️ {d.wakeUpTime} – 🌙 {d.sleepTime}</span>
+                      <div className="flex items-center gap-1">
+                        {hasOverrides && (
+                          <button
+                            type="button"
+                            onClick={() => handleResetDayOverrides(d.key)}
+                            className="text-slate-400 hover:text-amber-300 transition"
+                            title="Restablecer bloques automáticos"
+                          >
+                            <RotateCcw className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleAddNewBlock(d.key)}
+                          className="text-emerald-400 hover:text-white transition font-bold cursor-pointer"
+                          title="Añadir nueva actividad"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Interactive Scheduled Blocks List */}
+                    <div className="mt-2.5 space-y-2">
+                      {blocks.map((item, i) => {
+                        const isNow = isBlockNow(d.key, item.timeRange);
+                        const todayStr = new Date().toISOString().slice(0, 10);
+                        const completionKey = `${d.key}-${i}-${item.label}-${todayStr}`;
+                        const isCompleted = !!completedCalendarBlocks[completionKey];
+
+                        // Domain icon mapping
+                        const domainIcon =
+                          item.domain === "rubik"
+                            ? "🧩"
+                            : item.domain === "reading"
+                            ? "📚"
+                            : item.domain === "knitting"
+                            ? "🧶"
+                            : item.domain === "study"
+                            ? "🎓"
+                            : item.domain === "work"
+                            ? "💼"
+                            : item.domain === "sports"
+                            ? "🏃"
+                            : item.domain === "gaming"
+                            ? "🎮"
+                            : "⚡";
+
+                        return (
+                          <div
+                            key={i}
+                            draggable
+                            onDragStart={() => setDraggedBlock({ dayKey: d.key, index: i })}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              handleDropBlock(d.key, i);
+                            }}
+                            className={`group relative rounded-xl border p-2 transition-all cursor-move ${
+                              isNow
+                                ? "border-emerald-400 bg-emerald-950/40 ring-1 ring-emerald-400/60 shadow-lg shadow-emerald-500/20"
+                                : isCompleted
+                                ? "border-emerald-500/30 bg-emerald-950/15 opacity-80"
+                                : "border-white/[0.08] bg-slate-950/70 hover:border-slate-600 hover:bg-slate-900/90"
+                            }`}
+                          >
+                            {/* Card Top: Time, Domain & Status Badges */}
+                            <div className="flex items-center justify-between text-[10px]">
+                              <div className="flex items-center gap-1 font-mono font-bold text-cyan-300 truncate">
+                                <GripVertical className="h-3 w-3 text-slate-500 shrink-0 opacity-40 group-hover:opacity-100" />
+                                <span>{domainIcon}</span>
+                                <span className="truncate">{item.timeRange}</span>
+                              </div>
+                              {isNow ? (
+                                <span className="rounded bg-emerald-500/25 px-1 py-0.2 font-mono text-[8px] font-black text-emerald-300 animate-pulse ring-1 ring-emerald-400/40">
+                                  🔴 AHORA
+                                </span>
+                              ) : isCompleted ? (
+                                <span className="rounded bg-emerald-500/20 px-1 py-0.2 font-mono text-[8px] font-bold text-emerald-300">
+                                  ✓ HECHO
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {/* Card Title (Click to inline edit) */}
+                            <div
+                              onClick={() =>
+                                setEditingBlock({
+                                  dayKey: d.key,
+                                  index: i,
+                                  label: item.label,
+                                  timeRange: item.timeRange,
+                                  minutes: item.minutes || 30,
+                                  domain: item.domain || "study",
+                                })
+                              }
+                              className={`mt-1 font-semibold text-slate-200 hover:text-white cursor-pointer truncate ${
+                                isCompleted ? "line-through text-slate-500" : ""
+                              }`}
+                              title="Haz clic para editar franja horaria o nombre"
+                            >
+                              {item.label}
+                            </div>
+
+                            {/* Progress bar if active now */}
+                            {isNow && (
+                              <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800">
+                                <div
+                                  className="h-full bg-emerald-400 transition-all duration-1000"
+                                  style={{ width: `${getBlockProgressNow(item.timeRange)}%` }}
+                                />
+                              </div>
+                            )}
+
+                            {/* Quick Action Buttons Row */}
+                            <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-1.5 text-[10px]">
+                              {/* Complete Button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCompleteCalendarBlock(d.key, item, i);
+                                }}
+                                className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 font-bold transition cursor-pointer ${
+                                  isCompleted
+                                    ? "bg-emerald-500/30 text-emerald-300 hover:bg-emerald-500/40"
+                                    : "bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-300"
+                                }`}
+                                title={isCompleted ? "Desmarcar completado" : "Completar sesión y sumar XP/GP"}
+                              >
+                                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                                <span>{isCompleted ? "Listo" : "Completar"}</span>
+                              </button>
+
+                              {/* Reorder and Adjust Controls */}
+                              <div className="flex items-center gap-0.5 text-slate-400">
+                                <button
+                                  type="button"
+                                  disabled={i === 0}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMoveBlock(d.key, i, "up");
+                                  }}
+                                  className="rounded p-0.5 hover:text-white hover:bg-white/10 disabled:opacity-20 cursor-pointer"
+                                  title="Subir prioridad"
+                                >
+                                  <ArrowUp className="h-2.5 w-2.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={i === blocks.length - 1}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMoveBlock(d.key, i, "down");
+                                  }}
+                                  className="rounded p-0.5 hover:text-white hover:bg-white/10 disabled:opacity-20 cursor-pointer"
+                                  title="Bajar prioridad"
+                                >
+                                  <ArrowDown className="h-2.5 w-2.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAdjustDuration(d.key, i, 15);
+                                  }}
+                                  className="rounded px-1 py-0.5 text-[8px] font-mono hover:text-cyan-300 hover:bg-white/10 cursor-pointer"
+                                  title="+15 minutos"
+                                >
+                                  +15m
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAdjustDuration(d.key, i, -15);
+                                  }}
+                                  className="rounded px-1 py-0.5 text-[8px] font-mono hover:text-rose-300 hover:bg-white/10 cursor-pointer"
+                                  title="-15 minutos"
+                                >
+                                  -15m
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingBlock({
+                                      dayKey: d.key,
+                                      index: i,
+                                      label: item.label,
+                                      timeRange: item.timeRange,
+                                      minutes: item.minutes || 30,
+                                      domain: item.domain || "study",
+                                    });
+                                  }}
+                                  className="rounded p-0.5 hover:text-amber-300 hover:bg-white/10 cursor-pointer"
+                                  title="Editar actividad"
+                                >
+                                  <Edit3 className="h-2.5 w-2.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Immovable / Daily Baseline Timeline Slots */}
+                    <div className="mt-2.5 space-y-0.5 border-t border-white/[0.06] pt-1.5 text-[9px] text-slate-400">
+                      {d.timeline
+                        .filter((slot) => slot.kind !== "skill")
+                        .map((slot, sIdx) => (
+                          <div
+                            key={sIdx}
+                            className="flex items-center justify-between truncate"
+                          >
+                            <span className="truncate pr-1 text-slate-400">{slot.title}</span>
+                            <span className="font-mono text-slate-500 shrink-0">
+                              {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  {/* Day Footer with Projected GP */}
+                  <div className="mt-2.5 border-t border-white/[0.08] pt-1.5 flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-slate-400">Potencial:</span>
+                    <strong className="text-amber-300 font-bold">
+                      +{d.gpUnlocked.toLocaleString("es-CO")} GP
+                    </strong>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* =====================================================================
+              MODAL FLOTANTE DE EDICIÓN RÁPIDA DE BLOQUE DE HORARIO (POPOVER)
+             ===================================================================== */}
+          {editingBlock && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in"
+              onClick={() => setEditingBlock(null)}
+            >
+              <div
+                className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-950 p-5 shadow-2xl space-y-4"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Edit3 className="h-4 w-4 text-emerald-400" />
+                    <h3 className="text-sm font-bold text-white">
+                      {editingBlock.isNew ? "Añadir Nueva Actividad" : "Editar Bloque de Horario"} (
+                      {editingBlock.dayKey.toUpperCase()})
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingBlock(null)}
+                    className="rounded p-1 text-slate-400 hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-medium mb-1">
+                      Nombre de la Actividad / Misión
+                    </label>
+                    <input
+                      type="text"
+                      value={editingBlock.label}
+                      onChange={(e) =>
+                        setEditingBlock({ ...editingBlock, label: e.target.value })
+                      }
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                      placeholder="Ej. Speedcubing F2L, Lectura Limpia, Sprint Trabajo..."
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">
+                        Disciplina / Dominio
+                      </label>
+                      <select
+                        value={editingBlock.domain}
+                        onChange={(e) =>
+                          setEditingBlock({
+                            ...editingBlock,
+                            domain: e.target.value as SkillDomain,
+                          })
+                        }
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                      >
+                        <option value="rubik">🧩 Cubos de Rubik</option>
+                        <option value="reading">📚 Lectura</option>
+                        <option value="knitting">🧶 Tejido / Crochet</option>
+                        <option value="study">🎓 Estudio / SM-2</option>
+                        <option value="work">💼 Trabajo Ágil</option>
+                        <option value="sports">🏃 Deporte / Fitness</option>
+                        <option value="gaming">🎮 Gaming Consciente</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">
+                        Franja Horaria (Inicio – Fin)
+                      </label>
+                      <input
+                        type="text"
+                        value={editingBlock.timeRange}
+                        onChange={(e) =>
+                          setEditingBlock({ ...editingBlock, timeRange: e.target.value })
+                        }
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white text-xs font-mono focus:border-emerald-500 focus:outline-none"
+                        placeholder="Ej. 18:00 – 18:45"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-slate-900/60 p-2.5 border border-white/[0.05] text-[11px] text-slate-400">
+                    💡 <strong className="text-slate-300">Tip de Productividad:</strong> Ajustar la franja recalcula la duración y la forja de XP y GP proporcional a tu racha activa.
                   </div>
                 </div>
 
-                <div className="mt-2 border-t border-slate-800 pt-1 text-right text-[10px] font-bold text-amber-300">
-                  +{d.gpUnlocked.toLocaleString("es-CO")} GP
+                <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                  {!editingBlock.isNew ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDeleteBlock(editingBlock.dayKey, editingBlock.index)
+                      }
+                      className="flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Eliminar</span>
+                    </button>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingBlock(null)}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveEditingBlock}
+                      className="flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 text-xs font-bold text-white shadow-lg cursor-pointer transition"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      <span>Guardar</span>
+                    </button>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -8272,18 +8958,99 @@ export function RPGLifeEngineDashboard({
   )}
 
       {/* =====================================================================
-          FLOATING COMMAND ACTION BAR TRIGGER (⌘K)
+          FLOATING ACTION BAR (ACCIONES RÁPIDAS 5s & ⌘K)
          ===================================================================== */}
-      <div className="fixed bottom-5 right-5 z-40 flex items-center gap-2">
+      <div className="fixed bottom-5 right-5 z-40 flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/90 p-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
+        {/* Quick Shortcut 1: Cubo 5s */}
+        <button
+          type="button"
+          onClick={() => {
+            const secStr = prompt("⏱️ Ingresa tiempo del solve de Rubik en segundos (ej. 17.85):", "18.50");
+            if (!secStr) return;
+            const sec = parseFloat(secStr);
+            if (isNaN(sec) || sec <= 0) return;
+            submitSkillSession({
+              domain: "rubik",
+              seconds: sec,
+              solve_status: "OK",
+              title: `Solve Rápido 3x3: ${sec}s`,
+            });
+          }}
+          className="flex items-center gap-1 rounded-full bg-slate-900/90 hover:bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-cyan-300 border border-cyan-500/30 transition cursor-pointer"
+          title="Registrar solve de Cubo Rubik en 5 segundos"
+        >
+          <span>🧩</span>
+          <span className="hidden sm:inline">Cubo 5s</span>
+        </button>
+
+        {/* Quick Shortcut 2: Lectura +10 Páginas 5s */}
+        <button
+          type="button"
+          onClick={() => {
+            const pStr = prompt("📖 ¿Cuántas páginas leíste hoy? (Default: 10):", "10");
+            if (!pStr) return;
+            const p = parseInt(pStr, 10);
+            if (isNaN(p) || p <= 0) return;
+            submitSkillSession({
+              domain: "reading",
+              pages_read: p,
+              minutes: Math.max(10, Math.round(p * 1.5)),
+              title: `Lectura Rápida: +${p} págs`,
+            });
+          }}
+          className="flex items-center gap-1 rounded-full bg-slate-900/90 hover:bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-amber-300 border border-amber-500/30 transition cursor-pointer"
+          title="Registrar páginas leídas en 5 segundos"
+        >
+          <span>📚</span>
+          <span className="hidden sm:inline">+10 Págs</span>
+        </button>
+
+        {/* Quick Shortcut 3: Gasto Hormiga 5s */}
+        <button
+          type="button"
+          onClick={async () => {
+            const amountStr = prompt("☕ Monto del Gasto Hormiga en COP (ej. 6500):", "5000");
+            if (!amountStr) return;
+            const amt = parseInt(amountStr.replace(/\D/g, ""), 10);
+            if (isNaN(amt) || amt <= 0) return;
+            const cat = prompt("Categoría o descripción del gasto:", "Café / Snack") || "Gasto Hormiga";
+            try {
+              const res = await fetch("/api/shortcuts/quick-expense", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  amount_cop: amt,
+                  category: cat,
+                  description: `Gasto rápido desde FAB: ${cat}`,
+                  channel: "web_floating_bar",
+                }),
+              });
+              const data = await res.json();
+              if (data.success) {
+                alert(`💸 Gasto de $${amt.toLocaleString("es-CO")} registrado.`);
+                await fetchState();
+              }
+            } catch {
+              alert("Error al registrar gasto.");
+            }
+          }}
+          className="flex items-center gap-1 rounded-full bg-slate-900/90 hover:bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-rose-300 border border-rose-500/30 transition cursor-pointer"
+          title="Registrar gasto hormiga en 5 segundos"
+        >
+          <span>💸</span>
+          <span className="hidden sm:inline">Gasto</span>
+        </button>
+
+        {/* Main Command Bar Trigger */}
         <button
           type="button"
           onClick={() => setIsCommandBarOpen(true)}
-          className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-slate-950/90 px-4 py-2.5 text-xs font-bold text-emerald-300 shadow-2xl backdrop-blur-md hover:bg-slate-900 hover:border-emerald-400 hover:scale-105 active:scale-95 transition-all cursor-pointer ring-1 ring-white/10"
+          className="flex items-center gap-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 px-3.5 py-1.5 text-xs font-bold text-emerald-300 border border-emerald-500/50 transition cursor-pointer"
           title="Abrir Paleta de Comandos Rápidos (⌘K / Ctrl+K)"
         >
-          <Command className="h-4 w-4 text-emerald-400" />
-          <span>Acciones Rápidas</span>
-          <kbd className="hidden sm:inline-block rounded bg-emerald-950/60 px-1.5 py-0.5 text-[10px] font-mono text-emerald-400">
+          <Command className="h-3.5 w-3.5 text-emerald-400" />
+          <span>Acciones</span>
+          <kbd className="hidden sm:inline-block rounded bg-emerald-950/60 px-1 py-0.2 text-[9px] font-mono text-emerald-400">
             ⌘K
           </kbd>
         </button>
