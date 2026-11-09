@@ -1,7 +1,7 @@
 // Utilidad para exportación a Notion (CSV), respaldos maestros (JSON)
 // y generador automático de atajos de iOS Shortcuts.
 
-import type { ReadingBook, RubikSolveEntry, FixedCostItem } from "@/types/rpg";
+import type { ReadingBook, RubikSolveEntry, FixedCostItem, SessionIntelligenceData } from "@/types/rpg";
 import type { DemoBoss } from "./demo-store";
 
 function downloadBlob(filename: string, text: string, mimeType: string): void {
@@ -184,5 +184,105 @@ export function generateIosShortcutFile(apiKey: string, serverOrigin: string): v
     "RPG-LifeEngine-Atajo.shortcut.json",
     JSON.stringify(shortcutData, null, 2),
     "application/json"
+  );
+}
+
+/**
+ * 6. Convierte una sesión activa de Session Intelligence a formato Markdown compatible con Notion
+ */
+export function formatSessionToNotionMarkdown(session: SessionIntelligenceData): string {
+  const domainEmojis: Record<string, string> = {
+    rubik: "🧊",
+    reading: "📖",
+    knitting: "🧶",
+    study: "🎓",
+    work: "💼",
+    gaming: "🎮",
+    sports: "🏅",
+    journaling: "✍️",
+    gardening: "🌱",
+    drawing: "🎨",
+    ceramics: "🏺",
+    hiking: "🥾",
+    cooking: "🍳",
+    general: "⚡",
+  };
+  const icon = domainEmojis[session.domain] || "📌";
+
+  const checklistLines = session.checklistResults
+    ? Object.entries(session.checklistResults)
+        .map(([k, v]) => `  - **${k}:** ${v}`)
+        .join("\n")
+    : "";
+
+  return `### ${icon} ${session.title}
+- **Fecha:** ${session.timestamp || new Date().toISOString().replace("T", " ").slice(0, 16)}
+- **Dominio:** ${session.domain.toUpperCase()}
+- **Duración:** ${session.durationMinutes} minutos
+- **XP Obtenida:** +${session.xpEarned} XP
+- **GP Ganada:** +${session.gpEarned} GP
+- **Multiplicador de Enfoque:** ${session.focusMultiplier || 1.0}x
+${session.clarityRating ? `- **Claridad Mental / Batería:** ${session.clarityRating}/10` : ""}
+${checklistLines ? `- **Resultados Clave:**\n${checklistLines}` : ""}
+
+#### 📝 Notas de Sesión / Bitácora:
+${session.sessionNotes.trim() ? session.sessionNotes.trim() : "_Sin notas adicionales capturadas._"}
+
+---
+*Sincronizado desde RPG Life-Engine v3.4 • Refugio Libre de Culpa*
+`;
+}
+
+/**
+ * 7. Copia una sesión activa en formato compatible con Notion directamente al portapapeles
+ */
+export async function copySessionToNotionClipboard(
+  session: SessionIntelligenceData
+): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.clipboard) return false;
+  try {
+    const md = formatSessionToNotionMarkdown(session);
+    await navigator.clipboard.writeText(md);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 8. Exporta un lote de sesiones históricas a CSV para Notion Databases
+ */
+export function exportSessionsToNotionCsv(sessions: SessionIntelligenceData[]): void {
+  const headers = [
+    "ID",
+    "Título",
+    "Dominio",
+    "Duración Minutos",
+    "XP Ganada",
+    "GP Ganada",
+    "Multiplicador",
+    "Claridad Mental (1-10)",
+    "Notas de Sesión",
+    "Fecha",
+  ];
+
+  const rows = sessions.map((s) => [
+    escapeCsvCell(s.id),
+    escapeCsvCell(s.title),
+    escapeCsvCell(s.domain),
+    escapeCsvCell(s.durationMinutes),
+    escapeCsvCell(s.xpEarned),
+    escapeCsvCell(s.gpEarned),
+    escapeCsvCell(s.focusMultiplier || 1.0),
+    escapeCsvCell(s.clarityRating || ""),
+    escapeCsvCell(s.sessionNotes || ""),
+    escapeCsvCell(s.timestamp || new Date().toISOString()),
+  ]);
+
+  const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+  downloadBlob(
+    `notion-session-intelligence-${new Date().toISOString().split("T")[0]}.csv`,
+    csvContent,
+    "text/csv;charset=utf-8;"
   );
 }

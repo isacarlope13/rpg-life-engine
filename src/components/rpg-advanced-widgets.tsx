@@ -1190,6 +1190,12 @@ export function AnalyticsOverviewDashboard({
       knitting: "🧶 Tejido & Focus",
       gaming: "🎮 Gaming Disciplinado",
       sports: "⚡ Deporte & Ejercicio",
+      journaling: "✍️ Journaling & Reflexión",
+      gardening: "🌱 Jardinería & Botánica",
+      drawing: "🎨 Dibujo & Ilustración",
+      ceramics: "🏺 Cerámica & Modelado",
+      hiking: "🥾 Senderismo Urbano",
+      cooking: "🍳 Cocina Experimental",
       general: "🛡️ Hábitos Generales",
     };
 

@@ -1332,6 +1332,55 @@ test("19. Auditoría Integral de Forma y Fondo: Curva Canónica de Nivel, Resili
   assert.equal(freshStore.spacedCards.length, store.spacedCards.length);
 });
 
+test("20. Calendar Engine Skill, Santuario Cero Culpa & Exportación Notion", async () => {
+  const { formatSessionToNotionMarkdown } = await import("../src/lib/exporter.ts");
+  const { computeBioCalendarPlan, DEFAULT_DAILY_SCHEDULE_CONFIG } = await import("../src/lib/calendar-planner.ts");
+
+  // 1. Detección automática de Ventanas Circadianas
+  const plan = computeBioCalendarPlan({
+    config: {
+      ...DEFAULT_DAILY_SCHEDULE_CONFIG,
+      wake_up_time: "06:00",
+      sleep_time: "22:30",
+      work_start_hour: "08:00",
+      work_end_hour: "17:30",
+      commute_and_meals_minutes: 45,
+      free_slot_preference: "mixed",
+    },
+    skills: [
+      { domain: "gardening", label: "Jardinería Botánica", weekly_target_minutes: 60, preferred_session_time: "manana" },
+      { domain: "reading", label: "Lectura Profunda", weekly_target_minutes: 120, preferred_session_time: "noche" },
+    ],
+    vaultCap: 300000,
+  });
+
+  assert.ok(plan.morningWindowMinsWeekday > 0, "La ventana matutina debe ser detectada");
+  assert.ok(plan.eveningWindowMinsWeekday > 0, "La ventana nocturna debe ser detectada");
+  assert.equal(plan.days.length, 7, "Debe generar los 7 días de la semana");
+
+  // 2. Formato de Exportación a Notion (Session Intelligence)
+  const sessionSample = {
+    id: "test-sess-1",
+    domain: "gardening" as const,
+    title: "Jardinería Botánica: Esquejes de Monstera y Riego",
+    durationMinutes: 35,
+    xpEarned: 110,
+    gpEarned: 600,
+    sessionNotes: "Excelente desarrollo radicular en esquejes con sustrato de perlita.",
+    checklistResults: { "Especie": "Monstera deliciosa", "Humedad": "Adecuada" },
+    clarityRating: 9,
+    focusMultiplier: 1.25,
+    timestamp: "2026-11-09T05:00:00.000Z",
+  };
+
+  const notionMd = formatSessionToNotionMarkdown(sessionSample);
+  assert.ok(notionMd.includes("Jardinería Botánica"), "Debe contener el título de la sesión");
+  assert.ok(notionMd.includes("+110 XP"), "Debe reflejar el XP obtenido");
+  assert.ok(notionMd.includes("Monstera deliciosa"), "Debe incluir resultados del checklist");
+  assert.ok(notionMd.includes("Claridad Mental"), "Debe incluir la calificación de claridad mental");
+  assert.ok(notionMd.includes("sustrato de perlita"), "Debe persistir las notas de sesión");
+});
+
 
 
 

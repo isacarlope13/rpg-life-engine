@@ -88,7 +88,14 @@ import {
   SpacedRepetitionCard,
   TalentPerk,
   FinancialMovementRecord,
+  FocusProfileMode,
+  SessionIntelligenceData,
 } from "@/types/rpg";
+import {
+  formatSessionToNotionMarkdown,
+  copySessionToNotionClipboard,
+  exportSessionsToNotionCsv,
+} from "@/lib/exporter";
 import {
   computeBioCalendarPlan,
   parseTimeToMinutes,
@@ -106,6 +113,7 @@ import {
   AnalyticsOverviewDashboard,
 } from "@/components/rpg-advanced-widgets";
 import { LookerStudioFinanceDashboard } from "@/components/looker-studio-finance-dashboard";
+import { SpotifyAudioHub } from "@/components/spotify-audio-hub";
 import { INITIAL_FINANCIAL_MOVEMENTS } from "@/lib/initial-financial-movements";
 import {
   registerServiceWorker,
@@ -368,6 +376,62 @@ export const ALL_SKILL_DOMAINS_PORTAL: Array<{
     desc: "Portal guiado de balance mental, victorias del tablero, introspección e insights tácticos para mañana.",
     badge: "✍️ Journaling",
   },
+  {
+    domain: "gardening",
+    label: "Jardinería Botánica",
+    tag: "Huerto & Esquejes",
+    desc: "Cuidado botánico consciente, riego, propagación, poda y conexión restaurativa con la naturaleza.",
+    badge: "🌱 Jardinería",
+  },
+  {
+    domain: "drawing",
+    label: "Dibujo & Ilustración",
+    tag: "Sketchbook & Artes",
+    desc: "Bocetos libres, técnica de trazo, anatomía, acuarelas y exploración plástica sin perfeccionismo.",
+    badge: "🎨 Dibujo",
+  },
+  {
+    domain: "ceramics",
+    label: "Cerámica & Modelado",
+    tag: "Taller de Arcilla",
+    desc: "Modelado manual táctil, piezas escultóricas, texturizado, secado y trabajo sensorial en arcilla.",
+    badge: "🏺 Cerámica",
+  },
+  {
+    domain: "hiking",
+    label: "Senderismo Urbano",
+    tag: "Caminata Consciente",
+    desc: "Exploración de la ciudad, pasos activos, despeje mental, observación urbana y desconexión digital.",
+    badge: "🥾 Senderismo",
+  },
+  {
+    domain: "cooking",
+    label: "Cocina Experimental",
+    tag: "Laboratorio Culinario",
+    desc: "Recetas creativas de autor, técnicas gastronómicas, emplatado y nutrición consciente.",
+    badge: "🍳 Cocina",
+  },
+];
+
+export const LATERAL_ACTIVITY_BANK: Array<{
+  domain: SkillDomain;
+  label: string;
+  defaultMinutes: number;
+  badge: string;
+  tag: string;
+}> = [
+  { domain: "rubik", label: "Cubos de Rubik", defaultMinutes: 30, badge: "🧊", tag: "WCA Solves" },
+  { domain: "reading", label: "Lectura Profunda", defaultMinutes: 30, badge: "📖", tag: "Biblioteca" },
+  { domain: "knitting", label: "Tejido & Crochet", defaultMinutes: 45, badge: "🧶", tag: "Artesanía" },
+  { domain: "journaling", label: "Journaling & Balance", defaultMinutes: 15, badge: "✍️", tag: "Reflexión" },
+  { domain: "gardening", label: "Jardinería Botánica", defaultMinutes: 30, badge: "🌱", tag: "Huerto" },
+  { domain: "drawing", label: "Dibujo & Ilustración", defaultMinutes: 45, badge: "🎨", tag: "Bocetos" },
+  { domain: "ceramics", label: "Cerámica & Arcilla", defaultMinutes: 60, badge: "🏺", tag: "Modelado" },
+  { domain: "hiking", label: "Senderismo Urbano", defaultMinutes: 45, badge: "🥾", tag: "Caminata" },
+  { domain: "cooking", label: "Cocina Experimental", defaultMinutes: 45, badge: "🍳", tag: "Laboratorio" },
+  { domain: "study", label: "Estudio & Pomodoro", defaultMinutes: 50, badge: "🎓", tag: "Deep Study" },
+  { domain: "work", label: "Sprint Laboral", defaultMinutes: 60, badge: "💼", tag: "Deep Work" },
+  { domain: "sports", label: "Entrenamiento & Gym", defaultMinutes: 60, badge: "🏅", tag: "Fitness" },
 ];
 
 export function RPGLifeEngineDashboard({
@@ -918,6 +982,82 @@ export function RPGLifeEngineDashboard({
       console.error(e);
     }
   };
+
+  // 🎛️ FOCUS PROFILE MODE (Modos de Enfoque Adaptativos)
+  const [focusProfileMode, setFocusProfileMode] = useState<FocusProfileMode>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("rpg_focus_profile_mode");
+        if (stored && ["global", "work", "study", "santuario"].includes(stored)) {
+          return stored as FocusProfileMode;
+        }
+      } catch (e) {
+        console.error("Error reading rpg_focus_profile_mode:", e);
+      }
+    }
+    return "global";
+  });
+
+  // 🧠 SESSION INTELLIGENCE MODAL STATE
+  const [activeSessionModal, setActiveSessionModal] = useState<{
+    isOpen: boolean;
+    domain: SkillDomain;
+    title: string;
+    defaultMinutes?: number;
+  } | null>(null);
+
+  const [sessionTimerSeconds, setSessionTimerSeconds] = useState(0);
+  const [sessionTimerActive, setSessionTimerActive] = useState(false);
+  const [sessionTimerPreset, setSessionTimerPreset] = useState<number>(25);
+  const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [sessionNotesText, setSessionNotesText] = useState("");
+  const [sessionClarityRating, setSessionClarityRating] = useState(8);
+  const [sessionChecklistValues, setSessionChecklistValues] = useState<Record<string, string>>({});
+  const [sessionNotionToast, setSessionNotionToast] = useState<string | null>(null);
+
+  const [sessionHistory, setSessionHistory] = useState<SessionIntelligenceData[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("rpg_session_intelligence_history");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {
+        console.error("Error reading rpg_session_intelligence_history:", e);
+      }
+    }
+    return [];
+  });
+
+  // Lateral Activity Bank state
+  const [calendarTargetDay, setCalendarTargetDay] = useState<string>(() => {
+    const todayIndex = new Date().getDay();
+    const map = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    return map[todayIndex] || "Lun";
+  });
+  const [draggedBankItem, setDraggedBankItem] = useState<{
+    domain: SkillDomain;
+    label: string;
+    defaultMinutes: number;
+    badge: string;
+  } | null>(null);
+
+  // Live timer tick for Session Intelligence
+  useEffect(() => {
+    if (sessionTimerActive) {
+      sessionTimerRef.current = setInterval(() => {
+        setSessionTimerSeconds((s) => s + 1);
+      }, 1000);
+    } else if (sessionTimerRef.current) {
+      clearInterval(sessionTimerRef.current);
+      sessionTimerRef.current = null;
+    }
+    return () => {
+      if (sessionTimerRef.current) {
+        clearInterval(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+    };
+  }, [sessionTimerActive]);
 
   const [customSessionTitle, setCustomSessionTitle] = useState(
     "Sesión de Entrenamiento / Práctica Consciente"
@@ -1801,6 +1941,301 @@ export function RPGLifeEngineDashboard({
     }, 150);
   };
 
+  const handleSetFocusProfileMode = (mode: FocusProfileMode) => {
+    setFocusProfileMode(mode);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_focus_profile_mode", mode);
+    }
+    if (mode === "work") {
+      setHomeActiveTab("skills");
+      setActiveSkillTab("work");
+    } else if (mode === "study") {
+      setHomeActiveTab("skills");
+      setActiveSkillTab("study");
+    } else if (mode === "santuario") {
+      setHomeActiveTab("skills");
+      setActiveSkillTab("journaling");
+    }
+    triggerHaptic("light");
+  };
+
+  const handleOpenSessionModal = (domain: SkillDomain, title: string, defaultMinutes = 25) => {
+    setActiveSessionModal({
+      isOpen: true,
+      domain,
+      title,
+      defaultMinutes,
+    });
+    setSessionTimerSeconds(0);
+    setSessionTimerActive(false);
+    setSessionTimerPreset(defaultMinutes);
+    if (typeof window !== "undefined") {
+      const savedNotes = localStorage.getItem(`rpg_session_notes_${domain}`);
+      setSessionNotesText(savedNotes || "");
+    }
+    setSessionChecklistValues({});
+    setSessionNotionToast(null);
+  };
+
+  const handleCloseSessionModal = () => {
+    if (sessionTimerRef.current) {
+      clearInterval(sessionTimerRef.current);
+      sessionTimerRef.current = null;
+    }
+    setActiveSessionModal(null);
+    setSessionTimerActive(false);
+  };
+
+  const handleSyncToNotion = async (sessionData: SessionIntelligenceData) => {
+    const success = await copySessionToNotionClipboard(sessionData);
+    if (success) {
+      setSessionNotionToast("📋 ¡Bitácora estructurada copiada con éxito en formato Notion!");
+      setTimeout(() => setSessionNotionToast(null), 4000);
+    } else {
+      setSessionNotionToast("⚠️ No se pudo copiar al portapapeles. Permiso denegado.");
+      setTimeout(() => setSessionNotionToast(null), 3000);
+    }
+  };
+
+  const handleCompleteSessionModal = async () => {
+    if (!activeSessionModal) return;
+    const elapsedMinutes = Math.max(
+      1,
+      Math.round(sessionTimerSeconds / 60) || activeSessionModal.defaultMinutes || 25
+    );
+    const isLegendaryFocus = elapsedMinutes >= 25 && sessionTimerSeconds >= 25 * 60;
+    const focusMultiplier = isLegendaryFocus ? 1.25 : 1.0;
+
+    const baseDomainXp: Record<string, number> = {
+      study: 120,
+      work: 130,
+      rubik: 95,
+      reading: 100,
+      knitting: 85,
+      journaling: 100,
+      gardening: 90,
+      drawing: 95,
+      ceramics: 100,
+      hiking: 85,
+      cooking: 90,
+      sports: 110,
+      gaming: 75,
+      general: 80,
+    };
+    const baseXp = baseDomainXp[activeSessionModal.domain] || 90;
+    const xpEarned = Math.round(baseXp * focusMultiplier);
+    const gpEarned = Math.round(500 * focusMultiplier);
+
+    const sessionData: SessionIntelligenceData = {
+      id: `session-${Date.now()}`,
+      domain: activeSessionModal.domain,
+      title: activeSessionModal.title,
+      durationMinutes: elapsedMinutes,
+      xpEarned,
+      gpEarned,
+      sessionNotes: sessionNotesText.trim(),
+      checklistResults: sessionChecklistValues,
+      clarityRating: sessionClarityRating,
+      focusMultiplier,
+      timestamp: new Date().toISOString(),
+    };
+
+    const newHistory = [sessionData, ...sessionHistory].slice(0, 50);
+    setSessionHistory(newHistory);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_session_intelligence_history", JSON.stringify(newHistory));
+      localStorage.removeItem(`rpg_session_notes_${activeSessionModal.domain}`);
+    }
+
+    try {
+      await submitSkillSession({
+        domain: activeSessionModal.domain,
+        duration_minutes: elapsedMinutes,
+        title: activeSessionModal.title,
+        notes: sessionNotesText.trim(),
+        clarity_rating: sessionClarityRating,
+      });
+    } catch (e) {
+      console.error("Error submitting session intelligence:", e);
+    }
+
+    triggerHaptic("success");
+    handleCloseSessionModal();
+  };
+
+  const handleAssignFromBank = (
+    activity: { domain: SkillDomain; label: string; defaultMinutes: number; badge: string },
+    windowType: "morning" | "evening",
+    targetDayKey?: string
+  ) => {
+    const dayKey = targetDayKey || calendarTargetDay;
+    const dayPlan = bioCalendarPlan.days.find((d) => d.key === dayKey);
+    if (!dayPlan) return;
+
+    let timeRange = "06:30 - 07:15";
+    if (windowType === "morning") {
+      const wakeMins = parseTimeToMinutes(dayPlan.wakeUpTime, 360);
+      const startMins = wakeMins + 15;
+      const endMins = Math.min(parseTimeToMinutes(bioWorkStart, 480), startMins + activity.defaultMinutes);
+      timeRange = `${formatMinutesToHHMM(startMins)} - ${formatMinutesToHHMM(endMins)}`;
+    } else {
+      const workEndMins = parseTimeToMinutes(bioWorkEnd, 1050);
+      const startMins = workEndMins + 45;
+      const endMins = Math.min(parseTimeToMinutes(dayPlan.sleepTime, 1350) - 15, startMins + activity.defaultMinutes);
+      timeRange = `${formatMinutesToHHMM(startMins)} - ${formatMinutesToHHMM(endMins)}`;
+    }
+
+    const currentBlocks = getBlocksForDay(dayPlan);
+    const newBlock: ScheduledSkillBlock = {
+      label: activity.label,
+      timeRange,
+      domain: activity.domain,
+      minutes: activity.defaultMinutes,
+      period: windowType === "morning" ? "manana" : "noche",
+    };
+
+    const updated = [...currentBlocks, newBlock];
+    const newOverrides = { ...dayOverrides, [dayKey]: updated };
+    setDayOverrides(newOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_calendar_day_overrides", JSON.stringify(newOverrides));
+    }
+    triggerHaptic("light");
+    setCalendarToastMsg(
+      `🎯 ¡"${activity.label}" añadida a la ventana de ${windowType === "morning" ? "mañana ☀️" : "noche 🌙"} de ${dayPlan.label}!`
+    );
+    setTimeout(() => setCalendarToastMsg(null), 4000);
+  };
+
+  const handleDropFromBank = (
+    dayKey: string,
+    activity: { domain: SkillDomain; label: string; defaultMinutes: number }
+  ) => {
+    handleAssignFromBank({ ...activity, badge: "" }, "evening", dayKey);
+    setDraggedBankItem(null);
+  };
+
+  const parsedNaturalCommand = useMemo(() => {
+    const q = commandBarSearch.trim().toLowerCase();
+    if (!q) return null;
+
+    // 1. Reading: "+25 min lectura", "leer 20 paginas", "lectura 30m"
+    const readMatch =
+      q.match(/(?:\+)?(\d+)\s*(?:min|m|p[aá]g(?:inas?)?)?\s*(?:de\s*)?(?:lectura|leer)/) ||
+      q.match(/(?:lectura|leer)\s*(?:\+)?(\d+)/);
+    if (readMatch) {
+      const mins = parseInt(readMatch[1], 10);
+      return {
+        type: "reading",
+        label: `⚡ Registrar ${mins} min de Lectura Profunda (+${mins * 4} XP)`,
+        execute: async () => {
+          await submitSkillSession({ domain: "reading", duration_minutes: mins, pages_read: Math.round(mins * 0.75) });
+          setIsCommandBarOpen(false);
+          setCommandBarSearch("");
+        },
+      };
+    }
+
+    // 2. Expense: "gasto almuerzo 15000", "gasto 5000 cafe", "gasto 25000"
+    const expenseMatch =
+      q.match(/gasto\s+([a-záéíóúñ\s]+)?\s*(\d+[\d\.,]*)/) ||
+      q.match(/gasto\s+(\d+[\d\.,]*)\s*([a-záéíóúñ\s]+)?/);
+    if (expenseMatch) {
+      const numStr = (expenseMatch[2] || expenseMatch[1] || "0").replace(/\./g, "").replace(/,/g, "");
+      const amount = parseInt(numStr, 10);
+      const concept = (
+        expenseMatch[1] && isNaN(Number(expenseMatch[1]))
+          ? expenseMatch[1]
+          : expenseMatch[2] || "Gasto Rápido"
+      ).trim();
+      if (amount > 0) {
+        return {
+          type: "expense",
+          label: `💸 Registrar Gasto de $${amount.toLocaleString("es-CO")} COP ("${concept}")`,
+          execute: async () => {
+            try {
+              await fetch("/api/shortcuts/quick-expense", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  amount_cop: amount,
+                  category: concept || "Gasto desde ⌘K",
+                  description: `Gasto rápido desde ⌘K: ${concept}`,
+                  channel: "command_bar",
+                }),
+              });
+              await fetchState();
+            } catch (err) {
+              console.error(err);
+            }
+            setIsCommandBarOpen(false);
+            setCommandBarSearch("");
+          },
+        };
+      }
+    }
+
+    // 3. Cube: "cubo 18.5", "solve 15.2", "cubo"
+    const cubeMatch = q.match(/(?:cubo|solve|rubik)\s*(\d+(?:\.\d+)?)?/);
+    if (cubeMatch) {
+      const timeSec = cubeMatch[1] ? parseFloat(cubeMatch[1]) : 18.5;
+      return {
+        type: "rubik",
+        label: `🧩 Registrar Solve WCA de ${timeSec}s (+95 XP)`,
+        execute: async () => {
+          await submitSkillSession({ domain: "rubik", duration_minutes: 5, manual_solve_seconds: timeSec });
+          setIsCommandBarOpen(false);
+          setCommandBarSearch("");
+        },
+      };
+    }
+
+    // 4. Mode profile: "modo santuario", "modo trabajo", "modo universidad", "modo global"
+    const modeMatch = q.match(/modo\s+(santuario|zen|trabajo|laboral|universidad|datos|estudio|global)/);
+    if (modeMatch) {
+      const rawMode = modeMatch[1];
+      const targetMode: FocusProfileMode =
+        rawMode === "santuario" || rawMode === "zen"
+          ? "santuario"
+          : rawMode === "trabajo" || rawMode === "laboral"
+          ? "work"
+          : rawMode === "universidad" || rawMode === "datos" || rawMode === "estudio"
+          ? "study"
+          : "global";
+      return {
+        type: "mode",
+        label: `🎛️ Cambiar a Modo de Enfoque: ${targetMode.toUpperCase()}`,
+        execute: () => {
+          handleSetFocusProfileMode(targetMode);
+          setIsCommandBarOpen(false);
+          setCommandBarSearch("");
+        },
+      };
+    }
+
+    // 5. Note: "nota [texto]"
+    const noteMatch = q.match(/^nota\s+(.+)/);
+    if (noteMatch) {
+      const noteContent = noteMatch[1].trim();
+      return {
+        type: "note",
+        label: `📝 Guardar Nota Rápida: "${noteContent.slice(0, 40)}..."`,
+        execute: () => {
+          if (typeof window !== "undefined") {
+            const current = localStorage.getItem("rpg_session_notes_general") || "";
+            localStorage.setItem("rpg_session_notes_general", `${current}\n• ${noteContent}`.trim());
+          }
+          triggerHaptic("success");
+          alert("📝 ¡Nota rápida guardada en tu bitácora!");
+          setIsCommandBarOpen(false);
+          setCommandBarSearch("");
+        },
+      };
+    }
+
+    return null;
+  }, [commandBarSearch]);
+
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
@@ -2448,6 +2883,60 @@ export function RPGLifeEngineDashboard({
                   <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 font-mono text-[10px] font-bold text-indigo-400 ring-1 ring-indigo-500/20">
                     NVL {state.player_level}
                   </span>
+                </div>
+
+                <div className="hidden md:block h-3.5 w-px bg-white/10" />
+
+                {/* MODOS DE ENFOQUE ADAPTATIVOS (Profiles / Módulos de Contexto) */}
+                <div className="flex items-center gap-1 rounded-xl border border-white/[0.08] bg-slate-900/90 p-0.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => handleSetFocusProfileMode("global")}
+                    className={`rounded-lg px-2 py-0.5 font-bold transition cursor-pointer ${
+                      focusProfileMode === "global"
+                        ? "bg-slate-800 text-white shadow-sm ring-1 ring-white/20"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Vista global sin filtros de contexto"
+                  >
+                    🌐 Global
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetFocusProfileMode("work")}
+                    className={`rounded-lg px-2 py-0.5 font-bold transition cursor-pointer ${
+                      focusProfileMode === "work"
+                        ? "bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Modo Laboral / HP: Proyectos y Metodologías Ágiles"
+                  >
+                    💼 Laboral
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetFocusProfileMode("study")}
+                    className={`rounded-lg px-2 py-0.5 font-bold transition cursor-pointer ${
+                      focusProfileMode === "study"
+                        ? "bg-purple-600 text-white shadow-sm ring-1 ring-purple-400"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Modo Universidad & Datos: Estudio y Flashcards SM-2"
+                  >
+                    🎓 Datos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetFocusProfileMode("santuario")}
+                    className={`rounded-lg px-2 py-0.5 font-bold transition cursor-pointer ${
+                      focusProfileMode === "santuario"
+                        ? "bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Modo Santuario & Zen: Desconexión, Arte y Bienestar Libre de Culpa"
+                  >
+                    🌿 Santuario
+                  </button>
                 </div>
               </div>
 
@@ -3354,229 +3843,281 @@ export function RPGLifeEngineDashboard({
             </div>
           )}
 
-          {/* CRONOGRAMA 7 DÍAS INTERACTIVO & DINÁMICO */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
-            {bioCalendarPlan.days.map((d) => {
-              const isToday = d.key === currentDayKey;
-              const blocks = getBlocksForDay(d);
-              const hasOverrides = !!dayOverrides[d.key];
-
-              return (
-                <div
-                  key={d.key}
-                  className={`flex flex-col justify-between rounded-2xl border p-3 text-xs transition-all ${
-                    isToday
-                      ? "border-emerald-500/60 bg-slate-900/90 shadow-xl shadow-emerald-500/10 ring-1 ring-emerald-500/30"
-                      : "border-white/[0.08] bg-slate-900/50 hover:border-white/20"
-                  }`}
-                >
-                  <div>
-                    {/* Day Header */}
-                    <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`font-bold ${isToday ? "text-emerald-300" : "text-white"}`}>
-                          {d.label}
-                        </span>
-                        {isToday && (
-                          <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 font-mono text-[9px] font-bold text-emerald-300 animate-pulse">
-                            HOY
-                          </span>
-                        )}
-                      </div>
-                      <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-emerald-300">
-                        {d.totalDayMins}m
+          {/* CALENDAR ENGINE: BANCO LATERAL DE ACTIVIDADES & CRONOGRAMA */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* PANEL LATERAL: VENTANAS INTELIGENTES & BANCO DE HABILIDADES */}
+            <div className="lg:col-span-4 space-y-4">
+              {/* CARD 1: VENTANAS CIRCADIANAS DETECTADAS */}
+              <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>🧭</span> Ventanas Libres Detectadas
+                  </h4>
+                  <span className="text-[10px] text-cyan-300 font-mono font-bold">Auto-Calibrado</span>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-2.5 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-cyan-300 flex items-center gap-1">
+                        ☀️ Ventana Mañana
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {bioWakeUpTime} a {bioWorkStart || "08:00"}
                       </span>
                     </div>
+                    <span className="font-mono font-bold text-xs text-white">
+                      {bioCalendarPlan.morningWindowMinsWeekday}m libres
+                    </span>
+                  </div>
 
-                    {/* Wake / Sleep pill + Day actions */}
-                    <div className="mt-1.5 flex items-center justify-between rounded-lg bg-slate-950/80 px-2 py-1 text-[9px] text-amber-200/90 font-mono">
-                      <span>☀️ {d.wakeUpTime} – 🌙 {d.sleepTime}</span>
-                      <div className="flex items-center gap-1">
-                        {hasOverrides && (
-                          <button
-                            type="button"
-                            onClick={() => handleResetDayOverrides(d.key)}
-                            className="text-slate-400 hover:text-amber-300 transition"
-                            title="Restablecer bloques automáticos"
-                          >
-                            <RotateCcw className="h-2.5 w-2.5" />
-                          </button>
-                        )}
+                  <div className="rounded-xl border border-slate-700/50 bg-slate-950/40 p-2.5 flex items-center justify-between opacity-75">
+                    <div>
+                      <span className="font-bold text-slate-300 flex items-center gap-1">
+                        🔒 Bloque Laboral Fijo
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {bioWorkStart || "08:00"} a {bioWorkEnd || "17:30"}
+                      </span>
+                    </div>
+                    <span className="font-mono text-xs text-slate-400 font-semibold">
+                      Inamovible
+                    </span>
+                  </div>
+
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-2.5 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-emerald-300 flex items-center gap-1">
+                        🌙 Ventana Noche
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {bioWorkEnd || "17:30"} a {bioSleepTime}
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold text-xs text-white">
+                      {bioCalendarPlan.eveningWindowMinsWeekday}m libres
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* CARD 2: BANCO DE ACTIVIDADES LATERAL */}
+              <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>🎒</span> Banco de Habilidades & Santuario
+                    </h4>
+                    <p className="text-[10px] text-slate-400">
+                      Asigna a tus ventanas libres o arrastra a cualquier día.
+                    </p>
+                  </div>
+                </div>
+
+                {/* SELECTOR DE DÍA DESTINO */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-slate-400">Día destino:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((dKey) => (
+                      <button
+                        key={dKey}
+                        type="button"
+                        onClick={() => setCalendarTargetDay(dKey)}
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold transition cursor-pointer ${
+                          calendarTargetDay === dKey
+                            ? "bg-amber-500 text-slate-950 font-black"
+                            : "bg-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {dKey}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* LISTA DE ACTIVIDADES EN EL BANCO */}
+                <div className="space-y-1.5 max-h-[480px] overflow-y-auto pr-1">
+                  {LATERAL_ACTIVITY_BANK.map((item) => (
+                    <div
+                      key={item.domain}
+                      draggable
+                      onDragStart={() => setDraggedBankItem(item)}
+                      className="group flex items-center justify-between rounded-xl border border-white/[0.06] bg-slate-950/70 p-2 hover:border-amber-500/40 hover:bg-slate-900/80 transition cursor-move"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <GripVertical className="h-3.5 w-3.5 text-slate-600 group-hover:text-amber-400 shrink-0" />
+                        <span className="text-sm shrink-0">{item.badge}</span>
+                        <div className="truncate">
+                          <p className="font-semibold text-xs text-white truncate">{item.label}</p>
+                          <span className="text-[9px] text-slate-400">{item.defaultMinutes}m • {item.tag}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0 ml-1">
                         <button
                           type="button"
-                          onClick={() => handleAddNewBlock(d.key)}
-                          className="text-emerald-400 hover:text-white transition font-bold cursor-pointer"
-                          title="Añadir nueva actividad"
+                          onClick={() => handleAssignFromBank(item, "morning")}
+                          className="rounded bg-cyan-500/20 hover:bg-cyan-500/30 px-1.5 py-1 text-[9px] font-bold text-cyan-300 border border-cyan-500/30 transition cursor-pointer"
+                          title={`Asignar ${item.label} a la ventana de mañana`}
                         >
-                          <Plus className="h-3 w-3" />
+                          +☀️ Mañana
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAssignFromBank(item, "evening")}
+                          className="rounded bg-emerald-500/20 hover:bg-emerald-500/30 px-1.5 py-1 text-[9px] font-bold text-emerald-300 border border-emerald-500/30 transition cursor-pointer"
+                          title={`Asignar ${item.label} a la ventana de noche`}
+                        >
+                          +🌙 Noche
                         </button>
                       </div>
                     </div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-                    {/* Interactive Scheduled Blocks List */}
-                    <div className="mt-2.5 space-y-2">
-                      {blocks.map((item, i) => {
-                        const isNow = isBlockNow(d.key, item.timeRange);
-                        const todayStr = new Date().toISOString().slice(0, 10);
-                        const completionKey = `${d.key}-${i}-${item.label}-${todayStr}`;
-                        const isCompleted = !!completedCalendarBlocks[completionKey];
+            {/* CRONOGRAMA 7 DÍAS INTERACTIVO */}
+            <div className="lg:col-span-8">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-7">
+                {bioCalendarPlan.days.map((d) => {
+                  const isToday = d.key === currentDayKey;
+                  const blocks = getBlocksForDay(d);
+                  const hasOverrides = !!dayOverrides[d.key];
 
-                        // Domain icon mapping
-                        const domainIcon =
-                          item.domain === "rubik"
-                            ? "🧩"
-                            : item.domain === "reading"
-                            ? "📚"
-                            : item.domain === "knitting"
-                            ? "🧶"
-                            : item.domain === "study"
-                            ? "🎓"
-                            : item.domain === "work"
-                            ? "💼"
-                            : item.domain === "sports"
-                            ? "🏃"
-                            : item.domain === "gaming"
-                            ? "🎮"
-                            : "⚡";
-
-                        return (
-                          <div
-                            key={i}
-                            draggable
-                            onDragStart={() => setDraggedBlock({ dayKey: d.key, index: i })}
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              handleDropBlock(d.key, i);
-                            }}
-                            className={`group relative rounded-xl border p-2 transition-all cursor-move ${
-                              isNow
-                                ? "border-emerald-400 bg-emerald-950/40 ring-1 ring-emerald-400/60 shadow-lg shadow-emerald-500/20"
-                                : isCompleted
-                                ? "border-emerald-500/30 bg-emerald-950/15 opacity-80"
-                                : "border-white/[0.08] bg-slate-950/70 hover:border-slate-600 hover:bg-slate-900/90"
-                            }`}
-                          >
-                            {/* Card Top: Time, Domain & Status Badges */}
-                            <div className="flex items-center justify-between text-[10px]">
-                              <div className="flex items-center gap-1 font-mono font-bold text-cyan-300 truncate">
-                                <GripVertical className="h-3 w-3 text-slate-500 shrink-0 opacity-40 group-hover:opacity-100" />
-                                <span>{domainIcon}</span>
-                                <span className="truncate">{item.timeRange}</span>
-                              </div>
-                              {isNow ? (
-                                <span className="rounded bg-emerald-500/25 px-1 py-0.2 font-mono text-[8px] font-black text-emerald-300 animate-pulse ring-1 ring-emerald-400/40">
-                                  🔴 AHORA
-                                </span>
-                              ) : isCompleted ? (
-                                <span className="rounded bg-emerald-500/20 px-1 py-0.2 font-mono text-[8px] font-bold text-emerald-300">
-                                  ✓ HECHO
-                                </span>
-                              ) : null}
-                            </div>
-
-                            {/* Card Title (Click to inline edit) */}
-                            <div
-                              onClick={() =>
-                                setEditingBlock({
-                                  dayKey: d.key,
-                                  index: i,
-                                  label: item.label,
-                                  timeRange: item.timeRange,
-                                  minutes: item.minutes || 30,
-                                  domain: item.domain || "study",
-                                })
-                              }
-                              className={`mt-1 font-semibold text-slate-200 hover:text-white cursor-pointer truncate ${
-                                isCompleted ? "line-through text-slate-500" : ""
-                              }`}
-                              title="Haz clic para editar franja horaria o nombre"
-                            >
-                              {item.label}
-                            </div>
-
-                            {/* Progress bar if active now */}
-                            {isNow && (
-                              <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800">
-                                <div
-                                  className="h-full bg-emerald-400 transition-all duration-1000"
-                                  style={{ width: `${getBlockProgressNow(item.timeRange)}%` }}
-                                />
-                              </div>
+                  return (
+                    <div
+                      key={d.key}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedBankItem) {
+                          handleDropFromBank(d.key, draggedBankItem);
+                        } else if (draggedBlock) {
+                          handleDropBlock(d.key, getBlocksForDay(d).length);
+                        }
+                      }}
+                      className={`flex flex-col justify-between rounded-2xl border p-2.5 text-xs transition-all ${
+                        isToday
+                          ? "border-emerald-500/60 bg-slate-900/90 shadow-xl shadow-emerald-500/10 ring-1 ring-emerald-500/30"
+                          : "border-white/[0.08] bg-slate-900/50 hover:border-white/20"
+                      }`}
+                    >
+                      <div>
+                        {/* Day Header */}
+                        <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-bold ${isToday ? "text-emerald-300" : "text-white"}`}>
+                              {d.label}
+                            </span>
+                            {isToday && (
+                              <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 font-mono text-[9px] font-bold text-emerald-300 animate-pulse">
+                                HOY
+                              </span>
                             )}
+                          </div>
+                          <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-emerald-300">
+                            {d.totalDayMins}m
+                          </span>
+                        </div>
 
-                            {/* Quick Action Buttons Row */}
-                            <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-1.5 text-[10px]">
-                              {/* Complete Button */}
+                        {/* Wake / Sleep pill + Day actions */}
+                        <div className="mt-1.5 flex items-center justify-between rounded-lg bg-slate-950/80 px-2 py-1 text-[9px] text-amber-200/90 font-mono">
+                          <span>☀️ {d.wakeUpTime} – 🌙 {d.sleepTime}</span>
+                          <div className="flex items-center gap-1">
+                            {hasOverrides && (
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCompleteCalendarBlock(d.key, item, i);
-                                }}
-                                className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 font-bold transition cursor-pointer ${
-                                  isCompleted
-                                    ? "bg-emerald-500/30 text-emerald-300 hover:bg-emerald-500/40"
-                                    : "bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-300"
-                                }`}
-                                title={isCompleted ? "Desmarcar completado" : "Completar sesión y sumar XP/GP"}
+                                onClick={() => handleResetDayOverrides(d.key)}
+                                className="text-slate-400 hover:text-amber-300 transition"
+                                title="Restablecer bloques automáticos"
                               >
-                                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                                <span>{isCompleted ? "Listo" : "Completar"}</span>
+                                <RotateCcw className="h-2.5 w-2.5" />
                               </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleAddNewBlock(d.key)}
+                              className="text-emerald-400 hover:text-white transition font-bold cursor-pointer"
+                              title="Añadir nueva actividad"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
 
-                              {/* Reorder and Adjust Controls */}
-                              <div className="flex items-center gap-0.5 text-slate-400">
-                                <button
-                                  type="button"
-                                  disabled={i === 0}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleMoveBlock(d.key, i, "up");
-                                  }}
-                                  className="rounded p-0.5 hover:text-white hover:bg-white/10 disabled:opacity-20 cursor-pointer"
-                                  title="Subir prioridad"
-                                >
-                                  <ArrowUp className="h-2.5 w-2.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={i === blocks.length - 1}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleMoveBlock(d.key, i, "down");
-                                  }}
-                                  className="rounded p-0.5 hover:text-white hover:bg-white/10 disabled:opacity-20 cursor-pointer"
-                                  title="Bajar prioridad"
-                                >
-                                  <ArrowDown className="h-2.5 w-2.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleAdjustDuration(d.key, i, 15);
-                                  }}
-                                  className="rounded px-1 py-0.5 text-[8px] font-mono hover:text-cyan-300 hover:bg-white/10 cursor-pointer"
-                                  title="+15 minutos"
-                                >
-                                  +15m
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleAdjustDuration(d.key, i, -15);
-                                  }}
-                                  className="rounded px-1 py-0.5 text-[8px] font-mono hover:text-rose-300 hover:bg-white/10 cursor-pointer"
-                                  title="-15 minutos"
-                                >
-                                  -15m
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
+                        {/* Interactive Scheduled Blocks List */}
+                        <div className="mt-2 space-y-1.5">
+                          {blocks.map((item, i) => {
+                            const isNow = isBlockNow(d.key, item.timeRange);
+                            const todayStr = new Date().toISOString().slice(0, 10);
+                            const completionKey = `${d.key}-${i}-${item.label}-${todayStr}`;
+                            const isCompleted = !!completedCalendarBlocks[completionKey];
+
+                            const domainIcon =
+                              item.domain === "rubik"
+                                ? "🧊"
+                                : item.domain === "reading"
+                                ? "📖"
+                                : item.domain === "knitting"
+                                ? "🧶"
+                                : item.domain === "study"
+                                ? "🎓"
+                                : item.domain === "work"
+                                ? "💼"
+                                : item.domain === "sports"
+                                ? "🏃"
+                                : item.domain === "gardening"
+                                ? "🌱"
+                                : item.domain === "drawing"
+                                ? "🎨"
+                                : item.domain === "ceramics"
+                                ? "🏺"
+                                : item.domain === "hiking"
+                                ? "🥾"
+                                : item.domain === "cooking"
+                                ? "🍳"
+                                : item.domain === "journaling"
+                                ? "✍️"
+                                : "⚡";
+
+                            return (
+                              <div
+                                key={i}
+                                draggable
+                                onDragStart={() => setDraggedBlock({ dayKey: d.key, index: i })}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  handleDropBlock(d.key, i);
+                                }}
+                                className={`group relative rounded-xl border p-2 transition-all cursor-move ${
+                                  isNow
+                                    ? "border-emerald-400 bg-emerald-950/40 ring-1 ring-emerald-400/60 shadow-lg shadow-emerald-500/20"
+                                    : isCompleted
+                                    ? "border-emerald-500/30 bg-emerald-950/15 opacity-80"
+                                    : "border-white/[0.08] bg-slate-950/70 hover:border-slate-600 hover:bg-slate-900/90"
+                                }`}
+                              >
+                                {/* Card Top: Time, Domain & Status Badges */}
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <div className="flex items-center gap-1 font-mono font-bold text-cyan-300 truncate">
+                                    <GripVertical className="h-3 w-3 text-slate-500 shrink-0 opacity-40 group-hover:opacity-100" />
+                                    <span>{domainIcon}</span>
+                                    <span className="truncate">{item.timeRange}</span>
+                                  </div>
+                                  {isNow ? (
+                                    <span className="rounded bg-emerald-500/25 px-1 py-0.2 font-mono text-[8px] font-black text-emerald-300 animate-pulse ring-1 ring-emerald-400/40">
+                                      🔴 AHORA
+                                    </span>
+                                  ) : isCompleted ? (
+                                    <span className="rounded bg-emerald-500/20 px-1 py-0.2 font-mono text-[8px] font-bold text-emerald-300">
+                                      ✓ HECHO
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                {/* Card Title (Click to inline edit) */}
+                                <div
+                                  onClick={() =>
                                     setEditingBlock({
                                       dayKey: d.key,
                                       index: i,
@@ -3584,48 +4125,167 @@ export function RPGLifeEngineDashboard({
                                       timeRange: item.timeRange,
                                       minutes: item.minutes || 30,
                                       domain: item.domain || "study",
-                                    });
-                                  }}
-                                  className="rounded p-0.5 hover:text-amber-300 hover:bg-white/10 cursor-pointer"
-                                  title="Editar actividad"
+                                    })
+                                  }
+                                  className={`mt-1 font-semibold text-slate-200 hover:text-white cursor-pointer truncate ${
+                                    isCompleted ? "line-through text-slate-500" : ""
+                                  }`}
+                                  title="Haz clic para editar franja horaria o nombre"
                                 >
-                                  <Edit3 className="h-2.5 w-2.5" />
-                                </button>
+                                  {item.label}
+                                </div>
+
+                                {/* Progress bar if active now */}
+                                {isNow && (
+                                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800">
+                                    <div
+                                      className="h-full bg-emerald-400 transition-all duration-1000"
+                                      style={{ width: `${getBlockProgressNow(item.timeRange)}%` }}
+                                    />
+                                  </div>
+                                )}
+
+                                {/* Quick Action Buttons Row */}
+                                <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-1.5 text-[10px]">
+                                  {/* Complete & Session Buttons */}
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleCompleteCalendarBlock(d.key, item, i);
+                                      }}
+                                      className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 font-bold transition cursor-pointer ${
+                                        isCompleted
+                                          ? "bg-emerald-500/30 text-emerald-300 hover:bg-emerald-500/40"
+                                          : "bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-300"
+                                      }`}
+                                      title={isCompleted ? "Desmarcar completado" : "Completar sesión y sumar XP/GP"}
+                                    >
+                                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                                      <span>{isCompleted ? "Listo" : "✓"}</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenSessionModal(
+                                          item.domain || "study",
+                                          item.label,
+                                          item.minutes || 30
+                                        );
+                                      }}
+                                      className="rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 text-[9px] font-bold border border-indigo-500/30 cursor-pointer"
+                                      title="Abrir Ventana de Sesión Activa con Pomodoro y Bloc de Notas"
+                                    >
+                                      ▶ Enfoque
+                                    </button>
+                                  </div>
+
+                                  {/* Reorder and Adjust Controls */}
+                                  <div className="flex items-center gap-0.5 text-slate-400">
+                                    <button
+                                      type="button"
+                                      disabled={i === 0}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleMoveBlock(d.key, i, "up");
+                                      }}
+                                      className="rounded p-0.5 hover:text-white hover:bg-white/10 disabled:opacity-20 cursor-pointer"
+                                      title="Subir prioridad"
+                                    >
+                                      <ArrowUp className="h-2.5 w-2.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={i === blocks.length - 1}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleMoveBlock(d.key, i, "down");
+                                      }}
+                                      className="rounded p-0.5 hover:text-white hover:bg-white/10 disabled:opacity-20 cursor-pointer"
+                                      title="Bajar prioridad"
+                                    >
+                                      <ArrowDown className="h-2.5 w-2.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleAdjustDuration(d.key, i, 15);
+                                      }}
+                                      className="rounded px-1 py-0.5 text-[8px] font-mono hover:text-cyan-300 hover:bg-white/10 cursor-pointer"
+                                      title="+15 minutos"
+                                    >
+                                      +15m
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleAdjustDuration(d.key, i, -15);
+                                      }}
+                                      className="rounded px-1 py-0.5 text-[8px] font-mono hover:text-rose-300 hover:bg-white/10 cursor-pointer"
+                                      title="-15 minutos"
+                                    >
+                                      -15m
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingBlock({
+                                          dayKey: d.key,
+                                          index: i,
+                                          label: item.label,
+                                          timeRange: item.timeRange,
+                                          minutes: item.minutes || 30,
+                                          domain: item.domain || "study",
+                                        });
+                                      }}
+                                      className="rounded p-0.5 hover:text-amber-300 hover:bg-white/10 cursor-pointer"
+                                      title="Editar actividad"
+                                    >
+                                      <Edit3 className="h-2.5 w-2.5" />
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                            );
+                          })}
+                        </div>
 
-                    {/* Immovable / Daily Baseline Timeline Slots */}
-                    <div className="mt-2.5 space-y-0.5 border-t border-white/[0.06] pt-1.5 text-[9px] text-slate-400">
-                      {d.timeline
-                        .filter((slot) => slot.kind !== "skill")
-                        .map((slot, sIdx) => (
-                          <div
-                            key={sIdx}
-                            className="flex items-center justify-between truncate"
-                          >
-                            <span className="truncate pr-1 text-slate-400">{slot.title}</span>
-                            <span className="font-mono text-slate-500 shrink-0">
-                              {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                        {/* Immovable / Daily Baseline Timeline Slots */}
+                        <div className="mt-2 space-y-0.5 border-t border-white/[0.06] pt-1 text-[9px] text-slate-400">
+                          {d.timeline
+                            .filter((slot) => slot.kind !== "skill")
+                            .map((slot, sIdx) => (
+                              <div
+                                key={sIdx}
+                                className="flex items-center justify-between truncate"
+                              >
+                                <span className="truncate pr-1 text-slate-400">{slot.title}</span>
+                                <span className="font-mono text-slate-500 shrink-0">
+                                  {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
 
-                  {/* Day Footer with Projected GP */}
-                  <div className="mt-2.5 border-t border-white/[0.08] pt-1.5 flex items-center justify-between text-[10px] font-mono">
-                    <span className="text-slate-400">Potencial:</span>
-                    <strong className="text-amber-300 font-bold">
-                      +{d.gpUnlocked.toLocaleString("es-CO")} GP
-                    </strong>
-                  </div>
-                </div>
-              );
-            })}
+                      {/* Day Footer with Projected GP */}
+                      <div className="mt-2.5 border-t border-white/[0.08] pt-1.5 flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-slate-400">Potencial:</span>
+                        <strong className="text-amber-300 font-bold">
+                          +{d.gpUnlocked.toLocaleString("es-CO")} GP
+                        </strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {/* =====================================================================
@@ -3779,129 +4439,36 @@ export function RPGLifeEngineDashboard({
 
           {/* TABS SELECTOR DE DISCIPLINAS ELEGIDAS POR EL USUARIO */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-1.5 rounded-xl border border-slate-800 bg-slate-950 p-1.5">
-            <button
-              type="button"
-              onClick={() => setActiveSkillTab("journaling")}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                activeSkillTab === "journaling"
-                  ? "bg-emerald-600 text-white shadow"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              ✍️ Journaling & Reflexión
-            </button>
-            {state.skill_summaries.some((s) => s.domain === "rubik") && (
-              <button
-                type="button"
-                onClick={() => setActiveSkillTab("rubik")}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  activeSkillTab === "rubik"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Box className="h-3.5 w-3.5" />
-                Cubos de Rubik
-              </button>
-            )}
-            {state.skill_summaries.some((s) => s.domain === "reading") && (
-              <button
-                type="button"
-                onClick={() => setActiveSkillTab("reading")}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  activeSkillTab === "reading"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <BookOpen className="h-3.5 w-3.5" />
-                Lectura
-              </button>
-            )}
-            {state.skill_summaries.some((s) => s.domain === "knitting") && (
-              <button
-                type="button"
-                onClick={() => setActiveSkillTab("knitting")}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  activeSkillTab === "knitting"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Scissors className="h-3.5 w-3.5" />
-                Tejido
-              </button>
-            )}
-            {state.skill_summaries.some((s) => s.domain === "study") && (
-              <button
-                type="button"
-                onClick={() => setActiveSkillTab("study")}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  activeSkillTab === "study"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <GraduationCap className="h-3.5 w-3.5" />
-                Estudio
-              </button>
-            )}
-            {state.skill_summaries.some((s) => s.domain === "work") && (
-              <button
-                type="button"
-                onClick={() => setActiveSkillTab("work")}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  activeSkillTab === "work"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Briefcase className="h-3.5 w-3.5" />
-                Trabajo
-              </button>
-            )}
-            {state.skill_summaries.some((s) => s.domain === "gaming") && (
-              <button
-                type="button"
-                onClick={() => setActiveSkillTab("gaming")}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  activeSkillTab === "gaming"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                🎮 Videojuegos / eSports
-              </button>
-            )}
-            {state.skill_summaries.some((s) => s.domain === "sports") && (
-              <button
-                type="button"
-                onClick={() => setActiveSkillTab("sports")}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  activeSkillTab === "sports"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                🏅 Deporte & Competencia
-              </button>
-            )}
-            {state.skill_summaries.some((s) => s.domain === "general") && (
-              <button
-                type="button"
-                onClick={() => setActiveSkillTab("general")}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  activeSkillTab === "general"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                💡{" "}
-                {state.skill_summaries.find((s) => s.domain === "general")
-                  ?.label || "Habilidad Personalizada"}
-              </button>
-            )}
+            <div className="flex flex-wrap gap-1.5 rounded-xl border border-slate-800 bg-slate-950 p-1.5 overflow-x-auto max-w-full">
+              {[
+                { domain: "journaling" as SkillDomain, label: "✍️ Journaling" },
+                { domain: "rubik" as SkillDomain, label: "🧊 Cubos WCA" },
+                { domain: "reading" as SkillDomain, label: "📖 Lectura" },
+                { domain: "knitting" as SkillDomain, label: "🧶 Tejido" },
+                { domain: "gardening" as SkillDomain, label: "🌱 Jardinería" },
+                { domain: "drawing" as SkillDomain, label: "🎨 Dibujo" },
+                { domain: "ceramics" as SkillDomain, label: "🏺 Cerámica" },
+                { domain: "hiking" as SkillDomain, label: "🥾 Senderismo" },
+                { domain: "cooking" as SkillDomain, label: "🍳 Cocina" },
+                { domain: "study" as SkillDomain, label: "🎓 Estudio" },
+                { domain: "work" as SkillDomain, label: "💼 Trabajo" },
+                { domain: "gaming" as SkillDomain, label: "🎮 eSports" },
+                { domain: "sports" as SkillDomain, label: "🏅 Deporte" },
+              ].map((item) => (
+                <button
+                  key={item.domain}
+                  type="button"
+                  onClick={() => setActiveSkillTab(item.domain)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                    activeSkillTab === item.domain
+                      ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/40 ring-1 ring-emerald-400/50"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
           {!dedicatedSkillDomain && (
             <Link
@@ -3913,7 +4480,6 @@ export function RPGLifeEngineDashboard({
             </Link>
           )}
         </div>
-      </div>
 
       {/* BANNER SANTUARIO LIBRE DE CULPA */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 text-xs text-emerald-200 backdrop-blur">
@@ -3922,7 +4488,7 @@ export function RPGLifeEngineDashboard({
           <div>
             <span className="font-bold text-white">Santuario Libre de Culpa:</span>{" "}
             <span>
-              El <strong>Journaling</strong>, el <strong>Tejido/Crochet</strong>, los <strong>Cubos de Rubik</strong> y la <strong>Lectura Profunda</strong> funcionan como bonificación voluntaria. Practicarlos forja bonificaciones de XP y GP, pero <strong>NUNCA restan racha ni activan castigos ni DoT</strong> si descansas días sin practicarlos.
+              El <strong>Journaling</strong>, el <strong>Tejido/Crochet</strong>, los <strong>Cubos de Rubik</strong>, la <strong>Lectura Profunda</strong>, la <strong>Jardinería</strong>, el <strong>Dibujo</strong>, la <strong>Cerámica</strong>, el <strong>Senderismo Urbano</strong> y la <strong>Cocina Experimental</strong> funcionan como bonificación voluntaria y desconexión sin culpa. Practicarlos forja bonificaciones de XP y GP, pero <strong>NUNCA restan racha ni activan castigos ni DoT</strong> si descansas días sin practicarlos.
             </span>
           </div>
         </div>
@@ -3930,6 +4496,21 @@ export function RPGLifeEngineDashboard({
           0% Culpa • 100% Bonificación
         </span>
       </div>
+
+      {/* AUDIO HUB (SPOTIFY INTEGRATION - AUDIOLIBROS & PODCASTS CERO CULPA) */}
+      <SpotifyAudioHub
+        onOpenSessionNotes={(title, artist) => {
+          handleOpenSessionModal("reading", `Audio Hub: ${title} (${artist})`, 30);
+        }}
+        onLogAudioSession={async (title, minutes) => {
+          await submitSkillSession({
+            domain: "reading",
+            duration_minutes: minutes,
+            title: `Spotify Audio Hub: ${title}`,
+            notes: `Escucha y aprendizaje activo: ${title}`,
+          });
+        }}
+      />
 
       {/* TARJETAS RESUMEN DE NIVEL POR HABILIDAD */}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -8273,6 +8854,147 @@ export function RPGLifeEngineDashboard({
             </div>
           </div>
         )}
+
+        {/* =====================================================================
+            DISCIPLINAS DEL SANTUARIO DE ARTE, BIENESTAR & DESCONEXIÓN CERO CULPA
+            (Jardinería, Dibujo, Cerámica, Senderismo, Cocina)
+           ===================================================================== */}
+        {(activeSkillTab === "gardening" ||
+          activeSkillTab === "drawing" ||
+          activeSkillTab === "ceramics" ||
+          activeSkillTab === "hiking" ||
+          activeSkillTab === "cooking") && (
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+            <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/80 p-6 shadow-xl lg:col-span-7">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">
+                    {ALL_SKILL_DOMAINS_PORTAL.find((p) => p.domain === activeSkillTab)?.badge || "🌿"}
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      {ALL_SKILL_DOMAINS_PORTAL.find((p) => p.domain === activeSkillTab)?.label} (Refugio Libre de Culpa)
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      {ALL_SKILL_DOMAINS_PORTAL.find((p) => p.domain === activeSkillTab)?.desc}
+                    </p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-500/30">
+                  +95 XP • +500 GP
+                </span>
+              </div>
+
+              {/* SESIÓN RÁPIDA & NOTAS */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Edit3 className="h-3.5 w-3.5 text-emerald-400" />
+                    Bloc de Notas por Sesión (Técnicas, Materiales, Recetas, Apuntes)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleOpenSessionModal(
+                        activeSkillTab,
+                        ALL_SKILL_DOMAINS_PORTAL.find((p) => p.domain === activeSkillTab)?.label || "Sesión Creativa",
+                        30
+                      )
+                    }
+                    className="flex items-center gap-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 px-2.5 py-1 text-[11px] font-bold text-indigo-200 transition cursor-pointer"
+                  >
+                    <Timer className="h-3 w-3" />
+                    <span>Lanzar Modo Pomodoro Activo</span>
+                  </button>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={sessionNotesText}
+                  onChange={(e) => {
+                    setSessionNotesText(e.target.value);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem(`rpg_session_notes_${activeSkillTab}`, e.target.value);
+                    }
+                  }}
+                  placeholder={`Escribe apuntes, materiales usados o reflexiones para tu sesión de ${activeSkillTab}...`}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tempSession: SessionIntelligenceData = {
+                        id: `santuario-${Date.now()}`,
+                        domain: activeSkillTab,
+                        title: ALL_SKILL_DOMAINS_PORTAL.find((p) => p.domain === activeSkillTab)?.label || "Santuario",
+                        durationMinutes: 30,
+                        xpEarned: 95,
+                        gpEarned: 500,
+                        sessionNotes: sessionNotesText,
+                        timestamp: new Date().toISOString(),
+                      };
+                      handleSyncToNotion(tempSession);
+                    }}
+                    className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition cursor-pointer"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Copiar Bitácora para Notion</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await submitSkillSession({
+                        domain: activeSkillTab,
+                        duration_minutes: 30,
+                        title: `Sesión de ${ALL_SKILL_DOMAINS_PORTAL.find((p) => p.domain === activeSkillTab)?.label}`,
+                        notes: sessionNotesText.trim(),
+                      });
+                      triggerHaptic("success");
+                      setJournalToastMsg(`✨ ¡Sesión de ${activeSkillTab} registrada sin culpa! +95 XP y +500 GP.`);
+                      setTimeout(() => setJournalToastMsg(null), 4000);
+                      setSessionNotesText("");
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-extrabold text-white shadow-lg cursor-pointer transition"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Registrar Sesión Libre de Culpa</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* LATERAL: FILOSOFÍA DE CERO CULPA & RESUMEN */}
+            <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/80 p-6 shadow-xl lg:col-span-5 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🕊️</span>
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Filosofía del Santuario Cero Culpa
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Esta disciplina existe exclusivamente para tu disfrute, calma y balance mental. No hay cuotas mínimas obligatorias, no hay penalizaciones por descanso y no interrumpe tu racha de hábitos.
+                </p>
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3 space-y-1 text-xs">
+                  <span className="font-bold text-emerald-300 block">✨ Beneficios Automáticos:</span>
+                  <ul className="text-slate-400 space-y-0.5 text-[11px] list-disc list-inside">
+                    <li>Suma de XP y avance en el nivel de habilidad personal.</li>
+                    <li>Generación de GP para tu billetera de bienestar.</li>
+                    <li>Registro persistente en el mapa de calor de analítica.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
+                <span>Estado de Culpa:</span>
+                <span className="font-bold text-emerald-400">0% Culpa • 100% Gozo</span>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
       )}
 
@@ -9444,7 +10166,13 @@ export function RPGLifeEngineDashboard({
                 type="text"
                 value={commandBarSearch}
                 onChange={(e) => setCommandBarSearch(e.target.value)}
-                placeholder="Escribe para buscar acción o módulo (ej. cubo, libro, sprint, gasto, gm)..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && parsedNaturalCommand) {
+                    e.preventDefault();
+                    parsedNaturalCommand.execute();
+                  }
+                }}
+                placeholder="Escribe comando natural (ej. '+25 min lectura', 'gasto 15000 almuerzo', 'cubo 18.2', 'modo santuario')..."
                 autoFocus
                 className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none font-medium"
               />
@@ -9465,6 +10193,27 @@ export function RPGLifeEngineDashboard({
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {/* Smart Natural Language Command Chip */}
+            {parsedNaturalCommand && (
+              <div className="mx-3 my-2 rounded-xl border border-emerald-500/50 bg-emerald-950/70 p-2.5 flex items-center justify-between shadow-lg">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 font-bold shrink-0">⚡</span>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Atajo Natural Detectado</span>
+                    <p className="text-xs font-bold text-white">{parsedNaturalCommand.label}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => parsedNaturalCommand.execute()}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-3 py-1.5 text-xs transition cursor-pointer shadow-md shrink-0 ml-2"
+                >
+                  <span>Ejecutar</span>
+                  <kbd className="rounded bg-emerald-700/60 text-white px-1 py-0.2 text-[9px] font-mono">↵ Enter</kbd>
+                </button>
+              </div>
+            )}
 
             {/* Filtered Actions List */}
             <div className="overflow-y-auto p-3 space-y-1 text-xs divide-y divide-white/[0.04]">
@@ -9702,6 +10451,238 @@ export function RPGLifeEngineDashboard({
                 Presiona <kbd className="rounded bg-slate-800 px-1 py-0.5 text-[9px] text-slate-300">Esc</kbd> para salir
               </span>
               <span>RPG Life-Engine v3.0</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          VENTANA DE SESIÓN ACTIVA (SESSION INTELLIGENCE & NOTION SYNC MODAL)
+         ===================================================================== */}
+      {activeSessionModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in"
+          onClick={handleCloseSessionModal}
+        >
+          <div
+            className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950 p-6 shadow-2xl overflow-y-auto max-h-[90vh] space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">
+                  {ALL_SKILL_DOMAINS_PORTAL.find((p) => p.domain === activeSessionModal.domain)?.badge || "🎯"}
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-white">
+                      Ventana de Sesión Activa: {activeSessionModal.title}
+                    </h3>
+                    <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                      Session Intelligence
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Registra tiempo exacto, notas al vuelo, resultados clave y sincroniza con tu archivo de Notion.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseSessionModal}
+                className="rounded-full p-1.5 text-slate-400 hover:text-white hover:bg-white/10 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* NOTION TOAST */}
+            {sessionNotionToast && (
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/80 p-3 text-xs font-bold text-emerald-200 flex items-center justify-between animate-in fade-in">
+                <span>{sessionNotionToast}</span>
+                <button onClick={() => setSessionNotionToast(null)} className="text-emerald-400">✕</button>
+              </div>
+            )}
+
+            {/* SECTION 1: TEMPORIZADOR DE ENFOQUE / POMODORO */}
+            <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Timer className="h-4 w-4 text-cyan-400" />
+                  <span className="font-bold text-xs text-white">Temporizador de Enfoque Pomodoro</span>
+                </div>
+                {sessionTimerSeconds >= 25 * 60 && (
+                  <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-black text-amber-300 ring-1 ring-amber-500/40 animate-pulse">
+                    ⚡ Enfoque Legendario (1.25x XP)
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="font-mono text-3xl font-black text-white">
+                  {formatMinutesToHHMM(Math.floor(sessionTimerSeconds / 60))}:
+                  {String(sessionTimerSeconds % 60).padStart(2, "0")}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {[15, 25, 45, 50].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setSessionTimerPreset(preset);
+                        setSessionTimerSeconds(0);
+                      }}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-mono font-bold transition cursor-pointer ${
+                        sessionTimerPreset === preset
+                          ? "bg-cyan-600 text-white shadow"
+                          : "bg-slate-800 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {preset}m
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {!sessionTimerActive ? (
+                    <button
+                      type="button"
+                      onClick={() => setSessionTimerActive(true)}
+                      className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-lg cursor-pointer"
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                      <span>Iniciar Enfoque</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setSessionTimerActive(false)}
+                      className="flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-lg cursor-pointer"
+                    >
+                      <Pause className="h-3.5 w-3.5" />
+                      <span>Pausar</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSessionTimerActive(false);
+                      setSessionTimerSeconds(0);
+                    }}
+                    className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-400 hover:text-white cursor-pointer"
+                    title="Reiniciar"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 2: BLOC DE NOTAS POR SESIÓN (Quick Session Notes) */}
+            <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Edit3 className="h-3.5 w-3.5 text-indigo-400" />
+                  Bloc de Notas por Sesión (Fórmulas, Citas, Bocetos, Insights al Vuelo)
+                </label>
+                <span className="text-[10px] text-slate-400 font-mono">Autoguardado local</span>
+              </div>
+              <textarea
+                rows={3}
+                value={sessionNotesText}
+                onChange={(e) => {
+                  setSessionNotesText(e.target.value);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem(`rpg_session_notes_${activeSessionModal.domain}`, e.target.value);
+                  }
+                }}
+                placeholder="Escribe notas rápidas, fragmentos, fórmulas o ideas durante tu sesión..."
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-200 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            {/* SECTION 3: MINI-CHECKLIST DE RESULTADOS & CLARIDAD */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-2">
+                <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>🧠</span> Claridad Mental / Rendimiento (1 a 10)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={sessionClarityRating}
+                    onChange={(e) => setSessionClarityRating(Number(e.target.value))}
+                    className="w-full accent-emerald-400"
+                  />
+                  <span className="font-mono font-black text-sm text-emerald-300 w-8 text-right">
+                    {sessionClarityRating}/10
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-2">
+                <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>✅</span> Métrica / Resultado Clave
+                </label>
+                <input
+                  type="text"
+                  value={sessionChecklistValues["Resultado"] || ""}
+                  onChange={(e) => setSessionChecklistValues((prev) => ({ ...prev, Resultado: e.target.value }))}
+                  placeholder="Ej. 15 páginas, 6 vueltas, Concepto dominado..."
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  const tempSession: SessionIntelligenceData = {
+                    id: `preview-${Date.now()}`,
+                    domain: activeSessionModal.domain,
+                    title: activeSessionModal.title,
+                    durationMinutes: Math.max(1, Math.round(sessionTimerSeconds / 60) || activeSessionModal.defaultMinutes || 25),
+                    xpEarned: 100,
+                    gpEarned: 500,
+                    sessionNotes: sessionNotesText,
+                    checklistResults: sessionChecklistValues,
+                    clarityRating: sessionClarityRating,
+                    focusMultiplier: sessionTimerSeconds >= 25 * 60 ? 1.25 : 1.0,
+                    timestamp: new Date().toISOString(),
+                  };
+                  handleSyncToNotion(tempSession);
+                }}
+                className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 px-4 py-2 text-xs font-bold text-indigo-300 transition cursor-pointer"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                <span>Sincronizar / Copiar a Notion</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseSessionModal}
+                  className="rounded-xl border border-slate-800 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCompleteSessionModal}
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2 text-xs font-extrabold text-white shadow-xl hover:from-emerald-500 hover:to-teal-500 cursor-pointer transition"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Completar Sesión (+XP & +GP)</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -22,7 +22,29 @@ export type SkillDomain =
   | "gaming"
   | "sports"
   | "journaling"
+  | "gardening"
+  | "drawing"
+  | "ceramics"
+  | "hiking"
+  | "cooking"
   | "general";
+
+export type FocusProfileMode = "global" | "work" | "study" | "santuario";
+
+export interface SessionIntelligenceData {
+  id: string;
+  domain: SkillDomain;
+  title: string;
+  durationMinutes: number;
+  xpEarned: number;
+  gpEarned: number;
+  sessionNotes: string;
+  checklistResults?: Record<string, string | number | boolean>;
+  clarityRating?: number; // 1-10
+  focusMultiplier?: number; // 1.0 - 1.5
+  timestamp: string;
+  syncedToNotion?: boolean;
+}
 
 export type DebtStrategy = "snowball" | "avalanche";
 

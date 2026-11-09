@@ -1322,6 +1322,12 @@ export class RPGEngineMemoryStore {
       { domain: "work", label: "Sesiones de Trabajo" },
       { domain: "gaming", label: "Videojuegos / eSports" },
       { domain: "sports", label: "Entrenamiento & Deporte" },
+      { domain: "journaling", label: "Journaling & Reflexión" },
+      { domain: "gardening", label: "Jardinería Botánica" },
+      { domain: "drawing", label: "Dibujo & Ilustración" },
+      { domain: "ceramics", label: "Cerámica & Modelado" },
+      { domain: "hiking", label: "Senderismo Urbano" },
+      { domain: "cooking", label: "Cocina Experimental" },
     ];
     const domains =
       this.userSkills && this.userSkills.length > 0
