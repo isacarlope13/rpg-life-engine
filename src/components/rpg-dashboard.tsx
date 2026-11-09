@@ -39,11 +39,18 @@ import {
   BookMarked,
   FileText,
   Settings2,
+  Settings,
+  LogOut,
   LayoutDashboard,
   Save,
   BarChart3,
   ChevronDown,
   ChevronUp,
+  Search,
+  Command,
+  ExternalLink,
+  ChevronRight,
+  X,
 } from "lucide-react";
 import {
   AgileMethodology,
@@ -372,6 +379,27 @@ export function RPGLifeEngineDashboard({
       setActiveSkillTab(dedicatedSkillDomain);
     }
   }, [dedicatedSkillDomain]);
+
+  // UI/UX Minimalista: Command Center, Palette & Paneles Colapsables
+  const [isCommandBarOpen, setIsCommandBarOpen] = useState(false);
+  const [commandBarSearch, setCommandBarSearch] = useState("");
+  const [isHeatmapExpanded, setIsHeatmapExpanded] = useState(false);
+  const [isTalentTreeExpanded, setIsTalentTreeExpanded] = useState(false);
+  const [isRecentFeedExpanded, setIsRecentFeedExpanded] = useState(true);
+
+  // Atajo de teclado global: Cmd+K / Ctrl+K abre la barra de comandos
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsCommandBarOpen((prev) => !prev);
+      } else if (e.key === "Escape" && isCommandBarOpen) {
+        setIsCommandBarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isCommandBarOpen]);
 
   // Estados para el Calendario Biológico (Hora de Levantarse a Hora de Acostarse)
   const [bioWakeUpTime, setBioWakeUpTime] = useState("06:00");
@@ -1958,277 +1986,289 @@ export function RPGLifeEngineDashboard({
         </div>
       ) : (
         <>
-          {/* HEADER BAR + BUFFS (STREAK & AEGIS SHIELDS) */}
-          <header className="mb-8 flex flex-col justify-between gap-4 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6 backdrop-blur lg:flex-row lg:items-center">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/30">
-              <Zap className="h-3.5 w-3.5" /> NIVEL {state.player_level} •{" "}
-              {state.current_xp} XP
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-300 ring-1 ring-amber-500/30">
-              <Flame className="h-3.5 w-3.5 text-amber-400" /> RACHA:{" "}
-              {state.current_streak_days} DÍAS (BUFF {state.streak_multiplier}x
-              GP)
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300 ring-1 ring-cyan-500/30">
-              <ShieldCheck className="h-3.5 w-3.5 text-cyan-400" /> ESCUDOS
-              AEGIS: {state.aegis_shields}
-            </span>
-            {state.user?.character_class && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30">
-                ⚔️ {state.user.display_name || "Aventurero"} •{" "}
-                {state.user.character_class}
-              </span>
-            )}
-            <a
-              href="/"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:border-amber-500/50 hover:text-amber-300 transition"
-              title="Ir a la portada pública y guía explicativa"
-            >
-              🏠 Portada / Landing
-            </a>
-            <a
-              href="/privacidad"
-              target="_blank"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300 transition"
-              title="Política de Tratamiento de Datos Personales (Habeas Data)"
-            >
-              🛡️ Privacidad & Datos
-            </a>
-            <a
-              href="/onboarding"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300"
-            >
-              ⚙️ Personalizar Variables
-            </a>
-            <a
-              href="/quick"
-              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300 hover:bg-emerald-500/25"
-            >
-              📲 Modo Celular 5s & Atajos iOS
-            </a>
-            <button
-              type="button"
-              onClick={jumpToRegisterCube}
-              className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-500/15 px-3 py-1 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25 cursor-pointer"
-            >
-              ➕🧩 Registrar Cubo + IA
-            </button>
-            <button
-              type="button"
-              onClick={jumpToRegisterBook}
-              className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-200 hover:bg-amber-500/25 cursor-pointer"
-            >
-              ➕📚 Registrar Libro + Galería IA
-            </button>
-            <button
-              type="button"
-              onClick={jumpToRegisterProject}
-              className="inline-flex items-center gap-1.5 rounded-full border border-purple-500/40 bg-purple-500/15 px-3 py-1 text-xs font-bold text-purple-200 hover:bg-purple-500/25 cursor-pointer"
-            >
-              ➕💼 Registrar Proyecto + IA
-            </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/40 bg-rose-500/15 px-3 py-1 text-xs font-bold text-rose-300 hover:bg-rose-500/25 cursor-pointer"
-              title="Cerrar sesión segura y volver a Login"
-            >
-              🚪 Cerrar Sesión
-            </button>
-          </div>
-          <h1 className="mt-2.5 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            RPG Productivity & Personal Finance Life-Engine{" "}
-            <span className="text-sm font-semibold text-emerald-400">v3.0</span>
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            {state.main_goal
-              ? `🎯 Misión Principal: ${state.main_goal}${
-                  state.goal_deadline ? ` (Meta: ${state.goal_deadline})` : ""
-                }`
-              : "Santuario de Habilidades • Simulador Avalancha vs Bola de Nieve • iOS Shortcuts."}
-          </p>
-        </div>
+          {/* MINIMALIST COMMAND CENTER HEADER (Linear / Notion Inspired) */}
+          <header className="mb-6 rounded-2xl border border-white/[0.08] bg-slate-950/80 p-4 shadow-xl backdrop-blur-xl">
+            {/* Top Row: Brand, Character Info & Actions */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="font-mono text-xs font-black tracking-wider text-white">
+                    RPG LIFE-ENGINE
+                  </span>
+                  <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-500/30">
+                    v3.0
+                  </span>
+                </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:flex">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2.5">
-            <span className="text-xs text-slate-400">
-              Variables Operativos ({state.currency || "COP"})
-            </span>
-            <p className="text-sm font-bold text-slate-100">
-              {`$${(state.variable_ops_spent_cop ?? 0).toLocaleString("es-CO")} / $${(state.variable_ops_budget_cop ?? 0).toLocaleString("es-CO")}`}
-            </p>
-            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-              <div
-                className={`h-full ${
-                  state.variable_ops_spent_cop > state.variable_ops_budget_cop
-                    ? "bg-rose-500"
-                    : "bg-emerald-500"
-                }`}
-                style={{ width: `${variableOpsPct}%` }}
-              />
+                <div className="hidden sm:block h-3.5 w-px bg-white/10" />
+
+                <div className="flex items-center gap-1.5 text-xs text-slate-300">
+                  <span className="font-semibold text-white">
+                    {state.user?.display_name || "Comandante"}
+                  </span>
+                  <span className="text-slate-500">•</span>
+                  <span className="text-indigo-300 font-medium">
+                    {state.user?.character_class || "Estratega"}
+                  </span>
+                  <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 font-mono text-[10px] font-bold text-indigo-400 ring-1 ring-indigo-500/20">
+                    NVL {state.player_level}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons & Command Trigger */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setIsCommandBarOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 font-bold text-emerald-300 hover:bg-emerald-500/25 transition cursor-pointer shadow-sm"
+                  title="Abrir Paleta de Comandos (⌘K / Ctrl+K)"
+                >
+                  <Command className="h-3.5 w-3.5" />
+                  <span>Acciones</span>
+                  <kbd className="hidden sm:inline-block rounded bg-emerald-950/60 px-1 py-0.2 text-[9px] font-mono text-emerald-400">⌘K</kbd>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={summonGameMaster}
+                  disabled={submitting}
+                  className="flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition cursor-pointer disabled:opacity-50"
+                  title="Generar Briefing Táctico con IA"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span className="hidden md:inline">IA Briefing</span>
+                </button>
+
+                <a
+                  href="/quick"
+                  className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-700 transition"
+                  title="Modo Celular 5s & Atajos iOS"
+                >
+                  <Smartphone className="h-3.5 w-3.5 text-cyan-400" />
+                  <span className="hidden md:inline">Móvil 5s</span>
+                </a>
+
+                <a
+                  href="/onboarding"
+                  className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-700 transition"
+                  title="Configurar Variables y Reglas"
+                >
+                  <Settings className="h-3.5 w-3.5 text-slate-400" />
+                </a>
+
+                <a
+                  href="/privacidad"
+                  target="_blank"
+                  className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-700 transition"
+                  title="Política de Tratamiento de Datos Personales"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                </a>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex items-center gap-1 rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-500/20 transition cursor-pointer"
+                  title="Cerrar sesión"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2.5">
-            <span className="text-xs text-slate-400">Poder Bola de Nieve</span>
-            <p className="text-base font-bold text-cyan-400">
-              ${freeCashflowCop.toLocaleString("es-CO")}/mes
-            </p>
-            <span className="text-[10px] text-slate-400">
-              Fijos: ${(state.fixed_costs_budget_cop ?? 0).toLocaleString("es-CO")}{" "}
-              {state.currency || "COP"}
-            </span>
-          </div>
-        </div>
-      </header>
 
-      {offlineSyncMsg && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-cyan-500/50 bg-cyan-950/80 p-3 text-xs font-bold text-cyan-200 shadow-lg animate-pulse">
-          <span>{offlineSyncMsg}</span>
-          <button onClick={() => setOfflineSyncMsg(null)} className="text-cyan-400 hover:text-white cursor-pointer">✕</button>
-        </div>
-      )}
-      {perkSuccessMsg && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-amber-500/50 bg-amber-950/80 p-3 text-xs font-bold text-amber-200 shadow-lg">
-          <span>{perkSuccessMsg}</span>
-          <button onClick={() => setPerkSuccessMsg(null)} className="text-amber-400 hover:text-white cursor-pointer">✕</button>
-        </div>
-      )}
-      {backupRestoreMsg && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-500/50 bg-emerald-950/80 p-3 text-xs font-bold text-emerald-200 shadow-lg">
-          <span>{backupRestoreMsg}</span>
-          <button onClick={() => setBackupRestoreMsg(null)} className="text-emerald-400 hover:text-white cursor-pointer">✕</button>
-        </div>
-      )}
+            {/* Bottom Row: Ultra-Compact Scannable HUD */}
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              {/* Metric 1: Billetera GP */}
+              <div className={`rounded-xl border p-2.5 ${
+                state.wallet_gp < 0
+                  ? "border-rose-500/40 bg-rose-950/20"
+                  : "border-white/[0.06] bg-slate-900/40"
+              }`}>
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Billetera GP</span>
+                  <Wallet className="h-3.5 w-3.5 text-emerald-400" />
+                </div>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className={`font-mono text-lg font-black tracking-tight ${
+                    state.wallet_gp < 0 ? "text-rose-400" : "text-white"
+                  }`}>
+                    {(state.wallet_gp ?? 0).toLocaleString("es-CO")}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold">GP</span>
+                </div>
+                <div className="mt-0.5 text-[10px] text-slate-400">
+                  {state.wallet_gp < 0 ? (
+                    <span className="text-rose-400 font-bold">⚠️ Overdrawn</span>
+                  ) : (
+                    <span>🛡️ {state.aegis_shields} Aegis</span>
+                  )}
+                </div>
+              </div>
 
-      {/* CORE ECONOMY CARDS: VAULT VS WALLET VS GAME MASTER */}
-      <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-        {/* BÓVEDA MENSUAL */}
-        <div className="relative overflow-hidden rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-900 p-6">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-indigo-300">
-              Bóveda Mensual (Bloqueada)
-            </span>
-            <Vault className="h-5 w-5 text-indigo-400" />
-          </div>
-          <p className="mt-3 text-3xl font-extrabold text-white">
-            {(state.vault_remaining_gp ?? 0).toLocaleString("es-CO")}{" "}
-            <span className="text-base font-medium text-indigo-300">GP</span>
-          </p>
-          <p className="mt-1 text-xs text-slate-400">
-            Tope mensual: {state.vault_cap_gp.toLocaleString("es-CO")} GP (
-            {state.currency || "COP"})
-          </p>
-          <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-800">
-            <div
-              className="h-full bg-indigo-500 transition-all duration-500"
-              style={{ width: `${Math.max(0, 100 - vaultUnlockedPct)}%` }}
-            />
-          </div>
-          <div className="mt-3 flex items-center justify-between">
-            <p className="text-xs text-indigo-300">
-              Liberado: {vaultUnlockedPct}% ({state.streak_multiplier}x)
-            </p>
-            <button
-              disabled={submitting}
-              onClick={() => {
-                if (state.vault_remaining_gp < 10000) {
-                  alert(
-                    "Requiere al menos 10,000 GP en tu Bóveda Mensual para ejecutar un Limit Break. ¡Registra sesiones de hábitos o habilidades para acumular GP!"
-                  );
-                  return;
-                }
-                triggerLimitBreak(50000);
-              }}
-              className="rounded-lg bg-indigo-500/20 px-2.5 py-1 text-[11px] font-semibold text-indigo-200 ring-1 ring-indigo-500/40 hover:bg-indigo-500/30 disabled:opacity-40 cursor-pointer"
-              title="Sacrifica 50,000 GP de tu Bóveda para atacar directamente a un Debt Boss y ganar +250 XP"
-            >
-              ⚡ Limit Break (-50k GP a Deuda)
-            </button>
-          </div>
-        </div>
+              {/* Metric 2: Bóveda Mensual */}
+              <div className="rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Bóveda Mensual</span>
+                  <Vault className="h-3.5 w-3.5 text-indigo-400" />
+                </div>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className="font-mono text-lg font-black tracking-tight text-indigo-200">
+                    {(state.vault_remaining_gp ?? 0).toLocaleString("es-CO")}
+                  </span>
+                  <span className="text-[10px] text-indigo-400 font-bold">GP</span>
+                </div>
+                <div className="mt-0.5 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-400">{vaultUnlockedPct}% lib.</span>
+                  <button
+                    disabled={submitting}
+                    onClick={() => {
+                      if (state.vault_remaining_gp < 10000) {
+                        alert("Requiere al menos 10,000 GP en tu Bóveda.");
+                        return;
+                      }
+                      triggerLimitBreak(50000);
+                    }}
+                    className="text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
+                    title="Limit Break (-50k GP a Deuda)"
+                  >
+                    ⚡ Limit Break
+                  </button>
+                </div>
+              </div>
 
-        {/* BILLETERA ACTIVA */}
-        <div
-          className={`relative overflow-hidden rounded-2xl border p-6 ${
-            state.wallet_gp < 0
-              ? "border-rose-500/50 bg-gradient-to-br from-rose-950/50 via-slate-900 to-slate-900"
-              : "border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span
-              className={`text-xs font-semibold uppercase tracking-wider ${
-                state.wallet_gp < 0 ? "text-rose-300" : "text-emerald-300"
-              }`}
-            >
-              Billetera Disponible (Liberada)
-            </span>
-            <Wallet
-              className={`h-5 w-5 ${
-                state.wallet_gp < 0 ? "text-rose-400" : "text-emerald-400"
-              }`}
-            />
-          </div>
-          <p className="mt-3 text-3xl font-extrabold text-white">
-            {state.wallet_gp.toLocaleString("es-CO")}{" "}
-            <span
-              className={`text-base font-medium ${
-                state.wallet_gp < 0 ? "text-rose-300" : "text-emerald-300"
-              }`}
-            >
-              GP
-            </span>
-          </p>
-          <p className="mt-1 text-xs text-slate-400">
-            {state.wallet_gp < 0
-              ? "⚠️ ESTADO: OVERDRAWN_CURSE (Completa sesiones para recuperar)"
-              : `Tienes ${state.aegis_shields} Escudo(s) Aegis para bloquear multas 0.2x`}
-          </p>
-          {totalActiveDot > 0 && (
-            <div className="mt-3 flex items-center justify-between rounded-lg bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-300 ring-1 ring-rose-500/30">
-              <span className="flex items-center gap-1.5">
-                <Flame className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
-                Sangrado DoT Pasivo:
-              </span>
-              <span className="font-mono text-rose-200">
-                -{totalActiveDot.toLocaleString("es-CO")} GP/día
-              </span>
+              {/* Metric 3: Racha de Hábitos */}
+              <div className="rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Racha Hábitos</span>
+                  <Flame className="h-3.5 w-3.5 text-amber-400" />
+                </div>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className="font-mono text-lg font-black tracking-tight text-amber-300">
+                    {state.current_streak_days}
+                  </span>
+                  <span className="text-[10px] text-amber-400 font-bold">días</span>
+                </div>
+                <div className="mt-0.5 text-[10px] text-amber-400/90 font-semibold">
+                  Buff {state.streak_multiplier}x GP
+                </div>
+              </div>
+
+              {/* Metric 4: Flujo Libre Bola de Nieve */}
+              <div className="rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Poder Nieve</span>
+                  <span className="text-cyan-400 text-xs">❄️</span>
+                </div>
+                <div className="mt-1 flex items-baseline gap-1 truncate">
+                  <span className="font-mono text-sm font-black text-cyan-300 truncate">
+                    ${freeCashflowCop.toLocaleString("es-CO")}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[10px] text-slate-400 truncate">
+                  Fijos: ${(state.fixed_costs_budget_cop ?? 0).toLocaleString("es-CO")}
+                </div>
+              </div>
+
+              {/* Metric 5: Variables Operativos */}
+              <div className="rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Presupuesto Ops</span>
+                  <span className="text-slate-500 text-[10px]">{variableOpsPct}%</span>
+                </div>
+                <div className="mt-1 flex items-baseline gap-1 truncate">
+                  <span className="font-mono text-sm font-bold text-slate-200 truncate">
+                    ${(state.variable_ops_spent_cop ?? 0).toLocaleString("es-CO")}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className={`h-full ${
+                      state.variable_ops_spent_cop > state.variable_ops_budget_cop
+                        ? "bg-rose-500"
+                        : "bg-emerald-500"
+                    }`}
+                    style={{ width: `${variableOpsPct}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Metric 6: Sangrado DoT o XP Progresión */}
+              <div className={`rounded-xl border p-2.5 ${
+                totalActiveDot > 0
+                  ? "border-rose-500/30 bg-rose-950/20"
+                  : "border-white/[0.06] bg-slate-900/40"
+              }`}>
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>{totalActiveDot > 0 ? "DoT Pasivo" : "Progreso XP"}</span>
+                  <Zap className={`h-3.5 w-3.5 ${totalActiveDot > 0 ? "text-rose-400 animate-pulse" : "text-emerald-400"}`} />
+                </div>
+                {totalActiveDot > 0 ? (
+                  <>
+                    <div className="mt-1 flex items-baseline gap-1">
+                      <span className="font-mono text-base font-black text-rose-400">
+                        -{totalActiveDot.toLocaleString("es-CO")}
+                      </span>
+                      <span className="text-[10px] text-rose-400">GP/d</span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-rose-300 font-semibold truncate">
+                      Castigo deudor activo
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-1 flex items-baseline gap-1">
+                      <span className="font-mono text-base font-black text-emerald-300">
+                        {state.current_xp}
+                      </span>
+                      <span className="text-[10px] text-slate-400">XP</span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-emerald-400 font-semibold truncate">
+                      Nivel {state.player_level} en curso
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* GM Briefing Banner (renders if briefing has been generated) */}
+            {gmBriefing && (
+              <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-slate-200">
+                <Bot className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="font-bold text-amber-300">Briefing Táctico del Game Master: </span>
+                  <span>{gmBriefing}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGmBriefing("")}
+                  className="text-slate-400 hover:text-white cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </header>
+
+          {offlineSyncMsg && (
+            <div className="mb-4 flex items-center justify-between rounded-xl border border-cyan-500/50 bg-cyan-950/80 p-3 text-xs font-bold text-cyan-200 shadow-lg animate-pulse">
+              <span>{offlineSyncMsg}</span>
+              <button onClick={() => setOfflineSyncMsg(null)} className="text-cyan-400 hover:text-white cursor-pointer">✕</button>
             </div>
           )}
-          <div className="mt-4 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">
-            <span className="text-slate-400">Castigos 1.2x acumulados:</span>
-            <span className="font-semibold text-rose-400">
-              -{state.total_penalty_gp.toLocaleString("es-CO")} GP
-            </span>
-          </div>
-        </div>
-
-        {/* ORÁCULO GAME MASTER & RADAR TTK */}
-        <div className="flex flex-col justify-between rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-900 p-6">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-amber-300">
-                Game Master IA (Briefing Táctico)
-              </span>
-              <Bot className="h-5 w-5 text-amber-400" />
+          {perkSuccessMsg && (
+            <div className="mb-4 flex items-center justify-between rounded-xl border border-amber-500/50 bg-amber-950/80 p-3 text-xs font-bold text-amber-200 shadow-lg">
+              <span>{perkSuccessMsg}</span>
+              <button onClick={() => setPerkSuccessMsg(null)} className="text-amber-400 hover:text-white cursor-pointer">✕</button>
             </div>
-            <p className="mt-2.5 text-xs leading-relaxed text-slate-300">
-              {gmBriefing ||
-                "Invoca al Game Master para analizar tus sesiones (Rubik PB/Ao5, Lectura, Tejido, Estudio, Trabajo) y el ahorro en intereses de tus deudas."}
-            </p>
-          </div>
-          <button
-            onClick={summonGameMaster}
-            disabled={submitting}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-300 ring-1 ring-amber-500/40 hover:bg-amber-500/30 cursor-pointer"
-          >
-            <Sparkles className="h-4 w-4" />
-            Generar Briefing Táctico con Gemini
-          </button>
-        </div>
-      </div>
+          )}
+          {backupRestoreMsg && (
+            <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-500/50 bg-emerald-950/80 p-3 text-xs font-bold text-emerald-200 shadow-lg">
+              <span>{backupRestoreMsg}</span>
+              <button onClick={() => setBackupRestoreMsg(null)} className="text-emerald-400 hover:text-white cursor-pointer">✕</button>
+            </div>
+          )}
         </>
       )}
 
@@ -2329,20 +2369,20 @@ export function RPGLifeEngineDashboard({
          ===================================================================== */}
       {!dedicatedSkillDomain && homeActiveTab === "hub" && (
         <div className="space-y-8 mb-8">
-          {/* 1. PORTALES A PÁGINAS DEDICADAS */}
-          <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-b from-slate-900/90 to-slate-950/90 p-6 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
+          {/* 1. PORTALES DE HABILIDADES COMPACTOS & MINIMALISTAS */}
+          <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-4 shadow-lg backdrop-blur">
+            <div className="mb-3 flex items-center justify-between">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-                  🚀 Portales de Habilidades (Cada habilidad abre en su propia página completa)
+                  🚀 Portales de Habilidades & Cabinas Inmersivas
                 </span>
                 <p className="text-xs text-slate-400">
-                  Selecciona una disciplina para entrar a su cabina inmersiva sin distracciones.
+                  Haz click para entrar a su santuario o usa el acceso directo flotante para pantalla completa.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
               {ALL_SKILL_DOMAINS_PORTAL.map((dom) => {
                 const summary = state.skill_summaries.find(
                   (s) => s.domain === dom.domain
@@ -2355,52 +2395,42 @@ export function RPGLifeEngineDashboard({
                 return (
                   <div
                     key={dom.domain}
-                    className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 transition hover:border-emerald-500/50 hover:bg-slate-900/60 shadow-lg"
+                    onClick={() => {
+                      setHomeActiveTab("skills");
+                      setActiveSkillTab(dom.domain);
+                    }}
+                    className="group relative flex flex-col justify-between rounded-xl border border-white/[0.07] bg-slate-900/40 p-3 transition-all hover:border-emerald-500/40 hover:bg-slate-900/80 shadow-sm cursor-pointer"
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-300">
-                          {dom.badge}
-                        </span>
-                        <span className="font-mono text-xs font-bold text-slate-300">
-                          LVL {lvl}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm">{dom.badge}</span>
+                          <span className="font-semibold text-xs text-white group-hover:text-emerald-300 transition">
+                            {dom.label}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="rounded-md bg-slate-800/80 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-300">
+                            LVL {lvl}
+                          </span>
+                          <Link
+                            href={`/skills/${dom.domain}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="rounded p-1 text-slate-400 hover:text-emerald-300 hover:bg-white/5 transition"
+                            title="Abrir página completa independiente"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        </div>
                       </div>
-                      <h3 className="mt-2 text-sm font-bold text-white">
-                        {dom.label}
-                      </h3>
-                      <p className="mt-1 text-xs text-slate-400 line-clamp-2">
+                      <p className="mt-1 text-[11px] text-slate-400 line-clamp-1">
                         {dom.desc}
                       </p>
-                      <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 pt-2">
-                        <span>
-                          {sessions} sesiones ({minutes}m)
-                        </span>
-                        <strong className="text-amber-300">
-                          +{gp.toLocaleString("es-CO")} GP
-                        </strong>
-                      </div>
                     </div>
 
-                    <div className="mt-3 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHomeActiveTab("skills");
-                          setActiveSkillTab(dom.domain);
-                        }}
-                        className="flex-1 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 px-2 py-2 text-xs font-semibold text-slate-200 transition cursor-pointer text-center"
-                        title="Ver dentro de la pestaña Santuario"
-                      >
-                        En Santuario
-                      </button>
-                      <Link
-                        href={`/skills/${dom.domain}`}
-                        className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 px-2 py-2 text-xs font-bold text-white transition shadow text-center cursor-pointer"
-                        title="Abrir a pantalla completa sin distracciones"
-                      >
-                        Página Completa ➔
-                      </Link>
+                    <div className="mt-2.5 flex items-center justify-between border-t border-white/[0.05] pt-2 text-[10px] font-mono text-slate-400">
+                      <span>{sessions} ses • {minutes}m</span>
+                      <strong className="text-amber-300">+{gp.toLocaleString("es-CO")} GP</strong>
                     </div>
                   </div>
                 );
@@ -2548,62 +2578,123 @@ export function RPGLifeEngineDashboard({
             </button>
           </div>
 
-          {/* 3. BITÁCORA RECIENTE (FEED COMPACTO) */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          {/* 3. BITÁCORA RECIENTE (FEED COLAPSABLE) */}
+          <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 overflow-hidden shadow-lg backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setIsRecentFeedExpanded(!isRecentFeedExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-white/[0.02] transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-slate-400" />
-                Bitácora de Sesiones & Transacciones Recientes
-              </h3>
-              <span className="text-xs text-slate-500">Últimos registros</span>
-            </div>
-            <div className="space-y-2">
-              {state.logs.slice(0, 5).map((log) => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-xs"
-                >
-                  <div className="truncate pr-3">
-                    <p className="font-semibold text-white truncate">{log.title}</p>
-                    <p className="text-[11px] text-slate-400 truncate">{log.subtitle}</p>
+                <h3 className="text-sm font-bold text-white">
+                  Bitácora de Sesiones & Transacciones Recientes
+                </h3>
+                <span className="text-xs text-slate-500 font-mono">
+                  ({state.logs?.length || 0} registros)
+                </span>
+              </div>
+              <span className="text-xs font-mono text-slate-400">
+                {isRecentFeedExpanded ? "Ocultar ▾" : "Expandir ▸"}
+              </span>
+            </button>
+            {isRecentFeedExpanded && (
+              <div className="p-4 pt-0 border-t border-white/[0.05] space-y-2 mt-3">
+                {state.logs.slice(0, 5).map((log) => (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-slate-900/60 p-3 text-xs"
+                  >
+                    <div className="truncate pr-3">
+                      <p className="font-semibold text-white truncate">{log.title}</p>
+                      <p className="text-[11px] text-slate-400 truncate">{log.subtitle}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span
+                        className={`font-mono font-bold ${
+                          log.gp_delta > 0
+                            ? "text-emerald-400"
+                            : log.gp_delta < 0
+                            ? "text-rose-400"
+                            : "text-slate-400"
+                        }`}
+                      >
+                        {log.gp_delta > 0 ? `+${log.gp_delta.toLocaleString("es-CO")} GP` : log.gp_delta < 0 ? `${log.gp_delta.toLocaleString("es-CO")} GP` : "0 GP"}
+                      </span>
+                      <p className="text-[10px] text-slate-500">
+                        {new Date(log.timestamp).toLocaleTimeString("es-CO", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span
-                      className={`font-mono font-bold ${
-                        log.gp_delta > 0
-                          ? "text-emerald-400"
-                          : log.gp_delta < 0
-                          ? "text-rose-400"
-                          : "text-slate-400"
-                      }`}
-                    >
-                      {log.gp_delta > 0 ? `+${log.gp_delta.toLocaleString("es-CO")} GP` : log.gp_delta < 0 ? `${log.gp_delta.toLocaleString("es-CO")} GP` : "0 GP"}
-                    </span>
-                    <p className="text-[10px] text-slate-500">
-                      {new Date(log.timestamp).toLocaleTimeString("es-CO", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* 4. MAPA DE CALOR DE PRODUCTIVIDAD ANUAL DE 365 DÍAS */}
-          <AnnualProductivityHeatmap
-            logs={state.logs || []}
-            currentStreak={state.current_streak_days}
-          />
+          {/* 4. MAPA DE CALOR DE PRODUCTIVIDAD ANUAL DE 365 DÍAS (COLAPSABLE) */}
+          <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 overflow-hidden shadow-lg backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setIsHeatmapExpanded(!isHeatmapExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-white/[0.02] transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-emerald-400" />
+                <h3 className="text-sm font-bold text-white">
+                  Mapa de Constancia Anual (365 días • Estilo GitHub)
+                </h3>
+                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                  Racha: {state.current_streak_days}d
+                </span>
+              </div>
+              <span className="text-xs font-mono text-slate-400">
+                {isHeatmapExpanded ? "Ocultar ▾" : "Expandir ▸"}
+              </span>
+            </button>
+            {isHeatmapExpanded && (
+              <div className="p-4 pt-0 border-t border-white/[0.05] mt-3">
+                <AnnualProductivityHeatmap
+                  logs={state.logs || []}
+                  currentStreak={state.current_streak_days}
+                />
+              </div>
+            )}
+          </div>
 
-          {/* 5. ÁRBOL DE TALENTOS PASIVOS (PERKS RPG POR NIVEL) */}
-          <RpgTalentTreeSection
-            playerLevel={state.player_level}
-            talentPerks={state.talent_perks || []}
-            unlockedPerks={state.unlocked_perks || []}
-            onUnlockPerk={handleUnlockTalentPerk}
-          />
+          {/* 5. ÁRBOL DE TALENTOS PASIVOS (PERKS RPG POR NIVEL - COLAPSABLE) */}
+          <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 overflow-hidden shadow-lg backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setIsTalentTreeExpanded(!isTalentTreeExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-white/[0.02] transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-indigo-400" />
+                <h3 className="text-sm font-bold text-white">
+                  Árbol de Talentos Pasivos RPG (Perks por Nivel)
+                </h3>
+                <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold text-indigo-400">
+                  Nivel {state.player_level}
+                </span>
+              </div>
+              <span className="text-xs font-mono text-slate-400">
+                {isTalentTreeExpanded ? "Ocultar ▾" : "Expandir ▸"}
+              </span>
+            </button>
+            {isTalentTreeExpanded && (
+              <div className="p-4 pt-0 border-t border-white/[0.05] mt-3">
+                <RpgTalentTreeSection
+                  playerLevel={state.player_level}
+                  talentPerks={state.talent_perks || []}
+                  unlockedPerks={state.unlocked_perks || []}
+                  onUnlockPerk={handleUnlockTalentPerk}
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -8179,6 +8270,298 @@ export function RPGLifeEngineDashboard({
       </section>
     </div>
   )}
+
+      {/* =====================================================================
+          FLOATING COMMAND ACTION BAR TRIGGER (⌘K)
+         ===================================================================== */}
+      <div className="fixed bottom-5 right-5 z-40 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setIsCommandBarOpen(true)}
+          className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-slate-950/90 px-4 py-2.5 text-xs font-bold text-emerald-300 shadow-2xl backdrop-blur-md hover:bg-slate-900 hover:border-emerald-400 hover:scale-105 active:scale-95 transition-all cursor-pointer ring-1 ring-white/10"
+          title="Abrir Paleta de Comandos Rápidos (⌘K / Ctrl+K)"
+        >
+          <Command className="h-4 w-4 text-emerald-400" />
+          <span>Acciones Rápidas</span>
+          <kbd className="hidden sm:inline-block rounded bg-emerald-950/60 px-1.5 py-0.5 text-[10px] font-mono text-emerald-400">
+            ⌘K
+          </kbd>
+        </button>
+      </div>
+
+      {/* =====================================================================
+          COMMAND PALETTE DIALOG MODAL (⌘K / CTRL+K)
+         ===================================================================== */}
+      {isCommandBarOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 sm:pt-24 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setIsCommandBarOpen(false)}
+        >
+          <div
+            className="w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Input Header */}
+            <div className="flex items-center border-b border-white/10 px-4 py-3 bg-slate-900/70">
+              <Search className="h-4 w-4 text-emerald-400 mr-2.5 shrink-0" />
+              <input
+                type="text"
+                value={commandBarSearch}
+                onChange={(e) => setCommandBarSearch(e.target.value)}
+                placeholder="Escribe para buscar acción o módulo (ej. cubo, libro, sprint, gasto, gm)..."
+                autoFocus
+                className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none font-medium"
+              />
+              {commandBarSearch && (
+                <button
+                  type="button"
+                  onClick={() => setCommandBarSearch("")}
+                  className="p-1 text-slate-400 hover:text-white mr-1 text-xs"
+                >
+                  Limpiar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsCommandBarOpen(false)}
+                className="rounded p-1 text-slate-400 hover:text-white hover:bg-white/5 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Filtered Actions List */}
+            <div className="overflow-y-auto p-3 space-y-1 text-xs divide-y divide-white/[0.04]">
+              {/* ACCIONES DE HABILIDADES */}
+              <div className="pt-1 pb-1">
+                <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Habilidades & Práctica
+                </span>
+                <div className="mt-1 space-y-0.5">
+                  {[
+                    {
+                      label: "Registrar Solves de Cubo Rubik + IA Specs",
+                      icon: "🧩",
+                      tags: "cubo rubik speedcubing wca solve cronometro tiempo",
+                      action: () => {
+                        jumpToRegisterCube();
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Registrar Lectura de Libro + Galería IA",
+                      icon: "📚",
+                      tags: "libro lectura paginas quotes citas galeria isbn",
+                      action: () => {
+                        jumpToRegisterBook();
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Registrar Proyecto de Trabajo + Metodología Ágil",
+                      icon: "💼",
+                      tags: "proyecto trabajo scrum kanban lean sprints backlog",
+                      action: () => {
+                        jumpToRegisterProject();
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Santuario de Habilidades (Tejido, Estudio, Deporte, Gaming)",
+                      icon: "⚡",
+                      tags: "santuario tejido crochet estudio pomodoro cronometro",
+                      action: () => {
+                        setHomeActiveTab("skills");
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                  ]
+                    .filter(
+                      (item) =>
+                        !commandBarSearch.trim() ||
+                        item.label.toLowerCase().includes(commandBarSearch.toLowerCase()) ||
+                        item.tags.toLowerCase().includes(commandBarSearch.toLowerCase())
+                    )
+                    .map((item, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={item.action}
+                        className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-emerald-500/10 hover:border-emerald-500/30 border border-transparent transition cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">{item.icon}</span>
+                          <span className="font-medium text-slate-200 group-hover:text-emerald-300">
+                            {item.label}
+                          </span>
+                        </div>
+                        <ChevronRight className="h-3.5 w-3.5 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              {/* ACCIONES DE FINANZAS & ECONOMÍA */}
+              <div className="pt-2 pb-1">
+                <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Finanzas & Wishlist
+                </span>
+                <div className="mt-1 space-y-0.5">
+                  {[
+                    {
+                      label: "Limit Break: Reducir Deuda (-50,000 GP de Bóveda)",
+                      icon: "⚡",
+                      tags: "limit break deuda boveda sacrificio reducir interes boss",
+                      action: () => {
+                        if (state.vault_remaining_gp < 10000) {
+                          alert("Requiere al menos 10,000 GP en tu Bóveda Mensual.");
+                          return;
+                        }
+                        triggerLimitBreak(50000);
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Ver Cámara Financiera & Wishlist con Restricción",
+                      icon: "🏦",
+                      tags: "finanzas deudas wishlist tienda recompensas compras",
+                      action: () => {
+                        setHomeActiveTab("debts");
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Simulador Avalancha vs Bola de Nieve",
+                      icon: "❄️",
+                      tags: "simulador bola de nieve avalancha intereses ahorro",
+                      action: () => {
+                        setHomeActiveTab("debts");
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                  ]
+                    .filter(
+                      (item) =>
+                        !commandBarSearch.trim() ||
+                        item.label.toLowerCase().includes(commandBarSearch.toLowerCase()) ||
+                        item.tags.toLowerCase().includes(commandBarSearch.toLowerCase())
+                    )
+                    .map((item, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={item.action}
+                        className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-indigo-500/10 hover:border-indigo-500/30 border border-transparent transition cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">{item.icon}</span>
+                          <span className="font-medium text-slate-200 group-hover:text-indigo-300">
+                            {item.label}
+                          </span>
+                        </div>
+                        <ChevronRight className="h-3.5 w-3.5 text-slate-500 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              {/* INTELIGENCIA & NAVEGACIÓN */}
+              <div className="pt-2 pb-1">
+                <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Inteligencia & Utilidades
+                </span>
+                <div className="mt-1 space-y-0.5">
+                  {[
+                    {
+                      label: "Invocar Briefing Táctico del Game Master (Gemini IA)",
+                      icon: "🤖",
+                      tags: "game master briefing gemini ia oraculo consejo",
+                      action: () => {
+                        summonGameMaster();
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Analítica Personal & Heatmaps de 365 Días",
+                      icon: "📊",
+                      tags: "analitica metricas graficos mapa de calor constancia",
+                      action: () => {
+                        setHomeActiveTab("analytics");
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Ritmo Circadiano & Cronograma Biológico",
+                      icon: "📅",
+                      tags: "calendario ritmo circadiano cronograma sueno horas",
+                      action: () => {
+                        setHomeActiveTab("calendar");
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Modo Celular 5 Segundos & Atajos de iOS",
+                      icon: "📲",
+                      tags: "movil celular atajos ios quick 5 segundos",
+                      action: () => {
+                        window.location.href = "/quick";
+                      },
+                    },
+                    {
+                      label: "Personalizar Variables & Presupuestos",
+                      icon: "⚙️",
+                      tags: "configuracion variables onboarding reglas presupuesto",
+                      action: () => {
+                        window.location.href = "/onboarding";
+                      },
+                    },
+                    {
+                      label: "Política de Privacidad & Habeas Data",
+                      icon: "🛡️",
+                      tags: "privacidad habeas data datos legales seguridad",
+                      action: () => {
+                        window.open("/privacidad", "_blank");
+                      },
+                    },
+                  ]
+                    .filter(
+                      (item) =>
+                        !commandBarSearch.trim() ||
+                        item.label.toLowerCase().includes(commandBarSearch.toLowerCase()) ||
+                        item.tags.toLowerCase().includes(commandBarSearch.toLowerCase())
+                    )
+                    .map((item, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={item.action}
+                        className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-amber-500/10 hover:border-amber-500/30 border border-transparent transition cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">{item.icon}</span>
+                          <span className="font-medium text-slate-200 group-hover:text-amber-300">
+                            {item.label}
+                          </span>
+                        </div>
+                        <ChevronRight className="h-3.5 w-3.5 text-slate-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between border-t border-white/[0.06] bg-slate-900/60 px-4 py-2 text-[11px] text-slate-400">
+              <span className="flex items-center gap-1">
+                Presiona <kbd className="rounded bg-slate-800 px-1 py-0.5 text-[9px] text-slate-300">Esc</kbd> para salir
+              </span>
+              <span>RPG Life-Engine v3.0</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
