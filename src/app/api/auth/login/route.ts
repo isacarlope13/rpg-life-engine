@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   DEFAULT_DEMO_EMAIL,
   DEFAULT_DEMO_PASSWORD,
+  DEFAULT_DEMO_PIN,
   authenticateLocalUser,
   buildAuthSetCookieHeaders,
   registerLocalUser,
@@ -32,15 +33,24 @@ export async function POST(req: Request) {
     display_name?: string;
   };
   const email = (body.email || "").trim().toLowerCase();
-  const password = body.password || "";
+  const rawPassword = body.password || "";
   const action = body.action === "signup" ? "signup" : "login";
 
-  if (!email || !password) {
+  if (!email || !rawPassword) {
     return NextResponse.json(
-      { error: "Correo y contraseña son obligatorios." },
+      { error: "Correo y PIN de acceso son obligatorios." },
       { status: 400 }
     );
   }
+
+  // Si es la cuenta maestra y usa el PIN por defecto, normalizar a la clave maestra
+  const isMasterAccount =
+    email === DEFAULT_DEMO_EMAIL &&
+    (rawPassword === DEFAULT_DEMO_PASSWORD ||
+      rawPassword === DEFAULT_DEMO_PIN ||
+      rawPassword === "123456");
+
+  const password = isMasterAccount ? DEFAULT_DEMO_PASSWORD : rawPassword;
 
   const dataPrivacyAccepted = (body as Record<string, unknown>).data_privacy_accepted === true;
   if (action === "signup" && !dataPrivacyAccepted) {
