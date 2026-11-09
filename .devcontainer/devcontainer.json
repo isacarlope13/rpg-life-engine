@@ -1,0 +1,21 @@
+{
+  "name": "RPG Life-Engine Remote Workspace",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22-bookworm",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": true
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "biomejs.biome"
+      ]
+    }
+  },
+  "forwardPorts": [3000],
+  "postCreateCommand": "npm install && npm test",
+  "remoteUser": "node"
+}
