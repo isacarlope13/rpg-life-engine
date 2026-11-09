@@ -114,6 +114,7 @@ import {
 } from "@/components/rpg-advanced-widgets";
 import { LookerStudioFinanceDashboard } from "@/components/looker-studio-finance-dashboard";
 import { SpotifyAudioHub } from "@/components/spotify-audio-hub";
+import { AICommandCenter } from "@/components/ai-command-center";
 import { INITIAL_FINANCIAL_MOVEMENTS } from "@/lib/initial-financial-movements";
 import {
   registerServiceWorker,
@@ -445,7 +446,7 @@ export function RPGLifeEngineDashboard({
 
   // Pestaña activa del Dashboard Principal (enfoque en Sistema & Datos)
   const [homeActiveTab, setHomeActiveTab] = useState<
-    "hub" | "skills" | "analytics" | "calendar" | "debts" | "lab"
+    "hub" | "skills" | "analytics" | "calendar" | "debts" | "lab" | "ai_command_center"
   >("hub");
 
   // Control secundario/opcional de la Arena de Deudas
@@ -3277,6 +3278,21 @@ export function RPGLifeEngineDashboard({
             >
               <Smartphone className="h-4 w-4" />
               Laboratorio & Bitácora
+            </button>
+            <button
+              type="button"
+              onClick={() => setHomeActiveTab("ai_command_center")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                homeActiveTab === "ai_command_center"
+                  ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-emerald-600 text-white shadow-lg ring-1 ring-purple-400/50"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              }`}
+            >
+              <Bot className="h-4 w-4 text-purple-400" />
+              AI Command Center
+              <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 text-[9px] font-mono font-bold text-emerald-300">
+                11 Agentes
+              </span>
             </button>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-400 px-2">
@@ -10047,6 +10063,22 @@ export function RPGLifeEngineDashboard({
   )}
 
       {/* =====================================================================
+          TAB 6: AI COMMAND CENTER (SISTEMA AUTÓNOMO MULTIAGENTE & HITL)
+         ===================================================================== */}
+      {!dedicatedSkillDomain && homeActiveTab === "ai_command_center" && (
+        <section className="mb-8">
+          <AICommandCenter
+            userId={state.user?.id || "usr_pilot_master"}
+            currentStreak={state.current_streak_days}
+            wakeUpTime={state.daily_schedule?.wake_up_time || "06:00"}
+            sleepTime={state.daily_schedule?.sleep_time || "22:30"}
+            workStartHour={state.daily_schedule?.work_start_hour || "08:00"}
+            workEndHour={state.daily_schedule?.work_end_hour || "17:30"}
+          />
+        </section>
+      )}
+
+      {/* =====================================================================
           FLOATING ACTION BAR (ACCIONES RÁPIDAS 5s & ⌘K)
          ===================================================================== */}
       <div className="fixed bottom-5 right-5 z-40 flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/90 p-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
@@ -10382,6 +10414,15 @@ export function RPGLifeEngineDashboard({
                       tags: "analitica metricas graficos mapa de calor constancia",
                       action: () => {
                         setHomeActiveTab("analytics");
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "AI Command Center • Sistema Autónomo Multiagente (11 Agentes)",
+                      icon: "🤖",
+                      tags: "ai command center agentes hitl aprobaciones automatizacion firewall orquestador",
+                      action: () => {
+                        setHomeActiveTab("ai_command_center");
                         setIsCommandBarOpen(false);
                       },
                     },
