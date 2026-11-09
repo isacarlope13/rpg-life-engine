@@ -21,6 +21,7 @@ export type SkillDomain =
   | "work"
   | "gaming"
   | "sports"
+  | "journaling"
   | "general";
 
 export type DebtStrategy = "snowball" | "avalanche";

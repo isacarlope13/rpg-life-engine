@@ -1926,6 +1926,13 @@ Reglas:
       xp: 115,
       mult: 1.15,
     },
+    journaling: {
+      code: "QUEST_JOURNALING_REFLECTION",
+      title: "Journaling Libre de Culpa: Reflexión guiada y balance mental",
+      difficulty: "easy",
+      xp: 100,
+      mult: 1.0,
+    },
     general: {
       code: "QUEST_GENERAL_HABIT",
       title: "Auditoría Financiera & Cero Gastos Hormiga del Día",

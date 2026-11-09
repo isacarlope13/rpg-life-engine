@@ -361,6 +361,13 @@ export const ALL_SKILL_DOMAINS_PORTAL: Array<{
     desc: "Running, gimnasio, fútbol, ciclismo, natación, seguimiento de intensidad y marcas.",
     badge: "🏅 Deporte",
   },
+  {
+    domain: "journaling",
+    label: "Journaling & Reflexión",
+    tag: "Reflexión Libre de Culpa",
+    desc: "Portal guiado de balance mental, victorias del tablero, introspección e insights tácticos para mañana.",
+    badge: "✍️ Journaling",
+  },
 ];
 
 export function RPGLifeEngineDashboard({
@@ -809,6 +816,109 @@ export function RPGLifeEngineDashboard({
       isNew: true,
     });
   };
+
+  // =========================================================================
+  // ESTADOS Y HANDLERS PARA JOURNALING LIBRE DE CULPA & REFLEXIÓN GUIADA
+  // =========================================================================
+  const [journalMood, setJournalMood] = useState<string>("enfocado");
+  const [journalEnergyRating, setJournalEnergyRating] = useState<number>(4);
+  const [journalBoardState, setJournalBoardState] = useState<string>("");
+  const [journalMentalBalance, setJournalMentalBalance] = useState<string>("");
+  const [journalInsights, setJournalInsights] = useState<string>("");
+  const [journalActionPlan, setJournalActionPlan] = useState<string>("");
+  const [journalToastMsg, setJournalToastMsg] = useState<string | null>(null);
+  const [journalHistory, setJournalHistory] = useState<
+    Array<{
+      id: string;
+      timestamp: string;
+      mood: string;
+      energy: number;
+      boardState: string;
+      mentalBalance: string;
+      insights: string;
+      actionPlan: string;
+      xpEarned: number;
+      gpEarned: number;
+    }>
+  >(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("rpg_journal_history");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {
+        console.error("Error reading rpg_journal_history:", e);
+      }
+    }
+    return [
+      {
+        id: "journal-sample-1",
+        timestamp: new Date(Date.now() - 86400000).toISOString(),
+        mood: "sereno",
+        energy: 4,
+        boardState: "Avance significativo en proyectos y sesión de lectura fluida.",
+        mentalBalance: "Mente en calma, sin presión por tareas pendientes.",
+        insights: "Los bloques de 45 minutos me permiten entrar en zona sin agotarme.",
+        actionPlan: "1. Terminar revisión de código; 2. Práctica de Rubik sin cronómetro para disfrutar giros.",
+        xpEarned: 100,
+        gpEarned: 600,
+      },
+    ];
+  });
+
+  const handleSaveJournalReflection = async () => {
+    if (
+      !journalBoardState.trim() &&
+      !journalMentalBalance.trim() &&
+      !journalInsights.trim() &&
+      !journalActionPlan.trim()
+    ) {
+      alert("Por favor completa al menos una de las preguntas de reflexión guiada.");
+      return;
+    }
+    const xpBonus = 100;
+    const gpBonus = 600;
+    const newEntry = {
+      id: `journal-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      mood: journalMood,
+      energy: journalEnergyRating,
+      boardState: journalBoardState.trim(),
+      mentalBalance: journalMentalBalance.trim(),
+      insights: journalInsights.trim(),
+      actionPlan: journalActionPlan.trim(),
+      xpEarned: xpBonus,
+      gpEarned: gpBonus,
+    };
+    const updatedHistory = [newEntry, ...journalHistory].slice(0, 30);
+    setJournalHistory(updatedHistory);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rpg_journal_history", JSON.stringify(updatedHistory));
+    }
+
+    triggerHaptic("success");
+    setJournalToastMsg(
+      "🕊️ ¡Reflexión registrada en tu Santuario Libre de Culpa! +100 XP y +600 GP forjados."
+    );
+    setTimeout(() => setJournalToastMsg(null), 4500);
+
+    try {
+      await submitSkillSession({
+        domain: "journaling",
+        minutes: 20,
+        title: `Journaling (${journalMood}): ${
+          journalBoardState.slice(0, 35) || "Reflexión Personal"
+        }`,
+        notes: `Estado: ${journalBoardState} | Balance: ${journalMentalBalance} | Insights: ${journalInsights} | Plan: ${journalActionPlan}`,
+      });
+      setJournalBoardState("");
+      setJournalMentalBalance("");
+      setJournalInsights("");
+      setJournalActionPlan("");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const [customSessionTitle, setCustomSessionTitle] = useState(
     "Sesión de Entrenamiento / Práctica Consciente"
   );
@@ -2518,15 +2628,15 @@ export function RPGLifeEngineDashboard({
                 </div>
               </div>
 
-              {/* Metric 6: Sangrado DoT o XP Progresión */}
+              {/* Metric 6: Estado de los Debt Bosses & DoT Pasivo */}
               <div className={`rounded-xl border p-2.5 ${
                 totalActiveDot > 0
                   ? "border-rose-500/30 bg-rose-950/20"
                   : "border-white/[0.06] bg-slate-900/40"
               }`}>
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
-                  <span>{totalActiveDot > 0 ? "DoT Pasivo" : "Progreso XP"}</span>
-                  <Zap className={`h-3.5 w-3.5 ${totalActiveDot > 0 ? "text-rose-400 animate-pulse" : "text-emerald-400"}`} />
+                  <span>Debt Bosses & DoT</span>
+                  <Skull className={`h-3.5 w-3.5 ${totalActiveDot > 0 ? "text-rose-400 animate-pulse" : "text-emerald-400"}`} />
                 </div>
                 {totalActiveDot > 0 ? (
                   <>
@@ -2534,22 +2644,22 @@ export function RPGLifeEngineDashboard({
                       <span className="font-mono text-base font-black text-rose-400">
                         -{totalActiveDot.toLocaleString("es-CO")}
                       </span>
-                      <span className="text-[10px] text-rose-400">GP/d</span>
+                      <span className="text-[10px] text-rose-400 font-bold">GP/d</span>
                     </div>
                     <div className="mt-0.5 text-[10px] text-rose-300 font-semibold truncate">
-                      Castigo deudor activo
+                      {(state.bosses || []).filter((b) => b.current_hp > 0 && !b.is_purified).length} Boss(es) en combate
                     </div>
                   </>
                 ) : (
                   <>
                     <div className="mt-1 flex items-baseline gap-1">
                       <span className="font-mono text-base font-black text-emerald-300">
-                        {state.current_xp}
+                        0 DoT
                       </span>
-                      <span className="text-[10px] text-slate-400">XP</span>
+                      <span className="text-[10px] text-emerald-400 font-bold">En Paz</span>
                     </div>
-                    <div className="mt-0.5 text-[10px] text-emerald-400 font-semibold truncate">
-                      Nivel {state.player_level} en curso
+                    <div className="mt-0.5 text-[10px] text-slate-400 font-semibold truncate">
+                      {(state.bosses || []).filter((b) => b.is_purified || b.current_hp <= 0).length} Purificados • Sin sangrado
                     </div>
                   </>
                 )}
@@ -3659,19 +3769,28 @@ export function RPGLifeEngineDashboard({
             <div className="flex items-center gap-2">
               <Trophy className="h-5 w-5 text-emerald-400" />
               <h2 className="text-lg font-bold text-white">
-                Santuario de Habilidades & Sesiones (Generador de GP / XP)
+                Santuario de Habilidades & Journaling (Refugio Libre de Culpa)
               </h2>
             </div>
             <p className="mt-0.5 text-xs text-slate-400">
-              Cada sesión registrada en Cubos de Rubik, Lectura, Tejido, Estudio
-              o Trabajo incrementa tu racha y desbloquea GP de la Bóveda a tu
-              Billetera.
+              Espacio de desarrollo y balance personal. Cubos de Rubik, Lectura, Tejido y Journaling son 100% libres de culpa: forjan XP y GP al practicarse, sin penalizar ni restar racha si decides pausar.
             </p>
           </div>
 
           {/* TABS SELECTOR DE DISCIPLINAS ELEGIDAS POR EL USUARIO */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex flex-wrap gap-1.5 rounded-xl border border-slate-800 bg-slate-950 p-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveSkillTab("journaling")}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                activeSkillTab === "journaling"
+                  ? "bg-emerald-600 text-white shadow"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              ✍️ Journaling & Reflexión
+            </button>
             {state.skill_summaries.some((s) => s.domain === "rubik") && (
               <button
                 type="button"
@@ -3794,6 +3913,22 @@ export function RPGLifeEngineDashboard({
             </Link>
           )}
         </div>
+      </div>
+
+      {/* BANNER SANTUARIO LIBRE DE CULPA */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 text-xs text-emerald-200 backdrop-blur">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">🕊️</span>
+          <div>
+            <span className="font-bold text-white">Santuario Libre de Culpa:</span>{" "}
+            <span>
+              El <strong>Journaling</strong>, el <strong>Tejido/Crochet</strong>, los <strong>Cubos de Rubik</strong> y la <strong>Lectura Profunda</strong> funcionan como bonificación voluntaria. Practicarlos forja bonificaciones de XP y GP, pero <strong>NUNCA restan racha ni activan castigos ni DoT</strong> si descansas días sin practicarlos.
+            </span>
+          </div>
+        </div>
+        <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[10px] font-mono font-bold text-emerald-300 ring-1 ring-emerald-500/40 shrink-0">
+          0% Culpa • 100% Bonificación
+        </span>
       </div>
 
       {/* TARJETAS RESUMEN DE NIVEL POR HABILIDAD */}
@@ -7906,6 +8041,238 @@ export function RPGLifeEngineDashboard({
             </div>
           </div>
         )}
+
+        {/* =====================================================================
+            DISCIPLINA: JOURNALING & REFLEXIÓN GUIADA (SANTUARIO LIBRE DE CULPA)
+           ===================================================================== */}
+        {activeSkillTab === "journaling" && (
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+            {/* PORTAL DE REFLEXIÓN INTERACTIVO GUIADO */}
+            <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/80 p-6 shadow-xl lg:col-span-7">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">✍️</span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      Portal de Reflexión Guiada (Santuario Libre de Culpa)
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Preguntas para ordenar tu mente y cosechar victorias. Es voluntario y 100% libre de culpa.
+                    </p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-500/30">
+                  +100 XP • +600 GP
+                </span>
+              </div>
+
+              {journalToastMsg && (
+                <div className="flex items-center justify-between rounded-xl border border-emerald-500/40 bg-emerald-950/80 p-3 text-xs font-bold text-emerald-200 animate-in fade-in">
+                  <span>{journalToastMsg}</span>
+                  <button onClick={() => setJournalToastMsg(null)} className="text-emerald-400 hover:text-white cursor-pointer">✕</button>
+                </div>
+              )}
+
+              {/* Selector de Ánimo & Nivel de Energía */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 rounded-xl border border-white/[0.06] bg-slate-900/40 p-3">
+                <div>
+                  <label className="block text-[11px] text-slate-300 font-semibold mb-1">
+                    Estado de Ánimo / Mood:
+                  </label>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { id: "enfocado", label: "⚡ Enfocado" },
+                      { id: "sereno", label: "🧘 Sereno" },
+                      { id: "motivado", label: "🔥 Motivado" },
+                      { id: "descanso", label: "🔋 En Pausa" },
+                      { id: "reflexivo", label: "🧠 Reflexivo" },
+                    ].map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setJournalMood(m.id)}
+                        className={`rounded-lg px-2 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                          journalMood === m.id
+                            ? "bg-emerald-600 text-white shadow"
+                            : "bg-slate-950/70 text-slate-400 hover:text-white hover:bg-slate-800"
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-slate-300 font-semibold mb-1">
+                    Nivel de Energía Cognitiva:
+                  </label>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    {[1, 2, 3, 4, 5].map((lvl) => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => setJournalEnergyRating(lvl)}
+                        className={`h-7 w-7 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center ${
+                          journalEnergyRating >= lvl
+                            ? "bg-amber-500/25 text-amber-300 border border-amber-500/40"
+                            : "bg-slate-950/60 text-slate-500 border border-slate-800"
+                        }`}
+                      >
+                        ⚡
+                      </button>
+                    ))}
+                    <span className="text-[11px] font-mono text-slate-400 ml-1.5">
+                      {journalEnergyRating}/5 ({journalEnergyRating >= 4 ? "Óptimo" : journalEnergyRating >= 3 ? "Moderado" : "Batería Baja"})
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preguntas Guiadas */}
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+                    <span className="text-emerald-400 font-bold">1.</span> Estado del Tablero & Victorias de Hoy:
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={journalBoardState}
+                    onChange={(e) => setJournalBoardState(e.target.value)}
+                    placeholder="¿Qué metas, tareas o micro-victorias conquistaste hoy en tus proyectos o habilidades?"
+                    className="w-full rounded-xl border border-white/10 bg-slate-900/60 p-2.5 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+                    <span className="text-cyan-400 font-bold">2.</span> Balance Mental & Claridad Emocional:
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={journalMentalBalance}
+                    onChange={(e) => setJournalMentalBalance(e.target.value)}
+                    placeholder="¿Cómo estuvo tu diálogo interno y tu enfoque? ¿Hubo ruido, prisa o calma?"
+                    className="w-full rounded-xl border border-white/10 bg-slate-900/60 p-2.5 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+                    <span className="text-amber-400 font-bold">3.</span> Insights & Aprendizajes:
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={journalInsights}
+                    onChange={(e) => setJournalInsights(e.target.value)}
+                    placeholder="¿Qué lección te dejó el día? ¿Qué ajuste o eureka descubriste sobre tu ritmo?"
+                    className="w-full rounded-xl border border-white/10 bg-slate-900/60 p-2.5 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+                    <span className="text-indigo-400 font-bold">4.</span> Plan Táctico para Mañana:
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={journalActionPlan}
+                    onChange={(e) => setJournalActionPlan(e.target.value)}
+                    placeholder="¿Cuáles son tus 1 a 3 prioridades clave para mañana al levantarte?"
+                    className="w-full rounded-xl border border-white/10 bg-slate-900/60 p-2.5 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Botón de Guardado */}
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleSaveJournalReflection}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 p-3 text-xs font-bold text-white shadow-xl hover:brightness-110 active:scale-98 transition disabled:opacity-50 cursor-pointer"
+              >
+                <Save className="h-4 w-4" />
+                <span>Registrar Reflexión en Santuario (+100 XP • +600 GP)</span>
+              </button>
+            </div>
+
+            {/* HISTORIAL & BITÁCORA PRIVADA */}
+            <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/80 p-6 shadow-xl lg:col-span-5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-emerald-400" />
+                    <h3 className="text-sm font-bold text-white">
+                      Bitácora de Reflexiones
+                    </h3>
+                  </div>
+                  <span className="text-xs text-slate-500 font-mono">
+                    {journalHistory.length} entrada(s)
+                  </span>
+                </div>
+
+                <div className="my-3 rounded-xl border border-white/[0.06] bg-slate-900/50 p-3 text-xs italic text-slate-300">
+                  &ldquo;El progreso no es una línea rígida; es un santuario al que vuelves voluntariamente para calibrar tu mente.&rdquo;
+                </div>
+
+                <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                  {journalHistory.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-500">
+                      Aún no has registrado reflexiones en esta partida.
+                    </div>
+                  ) : (
+                    journalHistory.map((item) => (
+                      <div
+                        key={item.id}
+                        className="rounded-xl border border-white/[0.06] bg-slate-900/50 p-3 text-xs space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 uppercase">
+                            {item.mood}
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {new Date(item.timestamp).toLocaleDateString("es-CO", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+
+                        {item.boardState && (
+                          <p className="text-slate-200">
+                            <strong className="text-emerald-400">Victorias:</strong> {item.boardState}
+                          </p>
+                        )}
+                        {item.mentalBalance && (
+                          <p className="text-slate-300">
+                            <strong className="text-cyan-400">Balance:</strong> {item.mentalBalance}
+                          </p>
+                        )}
+                        {item.insights && (
+                          <p className="text-slate-300">
+                            <strong className="text-amber-400">Insight:</strong> {item.insights}
+                          </p>
+                        )}
+                        {item.actionPlan && (
+                          <p className="text-slate-300">
+                            <strong className="text-indigo-400">Plan:</strong> {item.actionPlan}
+                          </p>
+                        )}
+
+                        <div className="pt-1 border-t border-white/[0.05] flex items-center justify-between text-[10px] font-mono text-slate-400">
+                          <span>Energía: {item.energy}/5</span>
+                          <span className="font-bold text-emerald-400">+{item.gpEarned} GP • +{item.xpEarned} XP</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
       )}
 
@@ -9141,6 +9508,16 @@ export function RPGLifeEngineDashboard({
                       tags: "santuario tejido crochet estudio pomodoro cronometro",
                       action: () => {
                         setHomeActiveTab("skills");
+                        setIsCommandBarOpen(false);
+                      },
+                    },
+                    {
+                      label: "Journaling Libre de Culpa: Reflexión Guiada",
+                      icon: "✍️",
+                      tags: "journaling diario reflexion balance mental introspeccion libre de culpa",
+                      action: () => {
+                        setHomeActiveTab("skills");
+                        setActiveSkillTab("journaling");
                         setIsCommandBarOpen(false);
                       },
                     },
