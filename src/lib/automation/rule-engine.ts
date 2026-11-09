@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { computeSha256Hex } from "../crypto-hash.ts";
 import type {
   ApprovalRequest,
   ApprovalStatus,
@@ -178,7 +178,7 @@ export class SystemAuditLogger {
 
     // Generar hash SHA-256 para garantizar no repudio y trazabilidad
     const rawPayload = `${id}|${entry.userId}|${entry.actorId}|${entry.actionName}|${createdAt}`;
-    const securityHash = createHash("sha256").update(rawPayload).digest("hex");
+    const securityHash = computeSha256Hex(rawPayload);
 
     const fullLog: SystemAuditLogEntry = {
       ...entry,

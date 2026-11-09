@@ -3,6 +3,7 @@ import { AI_SKILLS_REGISTRY } from "@/lib/ai-skills-prompts";
 import { getCostShieldStats } from "@/lib/ai-cache-and-ratelimit";
 import { resolveAuthenticatedUser } from "@/lib/auth";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { SYSTEM_VERSION } from "@/lib/version";
 
 export async function GET(req: Request) {
   const session = await resolveAuthenticatedUser(req);
@@ -15,7 +16,9 @@ export async function GET(req: Request) {
   if (!session) {
     return NextResponse.json({
       status: "ok",
-      version: "3.3.0-scale-ready",
+      version: SYSTEM_VERSION.version,
+      apiVersion: SYSTEM_VERSION.apiVersion,
+      releaseTag: SYSTEM_VERSION.releaseTag,
       security: "rls_and_auth_enforced",
       timestamp: new Date().toISOString(),
     });
@@ -23,7 +26,10 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     status: "ok",
-    version: "3.3.0-scale-ready",
+    version: SYSTEM_VERSION.version,
+    apiVersion: SYSTEM_VERSION.apiVersion,
+    releaseTag: SYSTEM_VERSION.releaseTag,
+    buildDate: SYSTEM_VERSION.buildDate,
     timestamp: new Date().toISOString(),
     persistence: {
       supabase_connected: isSupabaseConfigured,

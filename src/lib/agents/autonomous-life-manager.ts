@@ -51,6 +51,13 @@ export class AutonomousLifeManager {
    */
   private registerEventRouting(): void {
     const routingMap: Record<SystemEventType, AgentRoleCode[]> = {
+      // Eventos canónicos Sprint Estabilización
+      ACTIVITY_CREATED: ["life_analyst"],
+      HABIT_COMPLETED: ["reward_optimizer", "life_analyst"],
+      EXPENSE_REGISTERED: ["smart_expense", "economic_intelligence"],
+      PROJECT_TASK_COMPLETED: ["daily_planner", "life_analyst"],
+      STREAK_BROKEN: ["daily_planner", "life_analyst"],
+      // Eventos de dominio RPG Life-Engine
       EXPENSE_RECORDED: ["smart_expense", "life_analyst"],
       SKILL_SESSION_COMPLETED: ["skill_evolution", "reward_optimizer"],
       CIRCADIAN_PHASE_CHANGED: ["daily_planner"],

@@ -48,6 +48,7 @@ import {
   generateIosShortcutFile,
 } from "@/lib/exporter";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { getAppBaseUrl } from "@/lib/app-url";
 
 // ============================================================================
 // 1. HEATMAP DE PRODUCTIVIDAD ANUAL DE 365 DÍAS (ESTILO GITHUB)
@@ -803,7 +804,7 @@ export function ExportAndNotionHub({
   fixedCosts = [],
   solves = [],
   fullState = null,
-  apiKey = "mi-token-secreto-rpg-2026",
+  apiKey = "",
   onImportBackup,
 }: {
   books: ReadingBook[];
@@ -815,7 +816,7 @@ export function ExportAndNotionHub({
   onImportBackup: (file: File) => Promise<void>;
 }) {
   const origin =
-    typeof window !== "undefined" ? window.location.origin : "https://rpg-life-engine.local";
+    typeof window !== "undefined" ? window.location.origin : getAppBaseUrl();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -910,6 +911,10 @@ export function ExportAndNotionHub({
         <button
           type="button"
           onClick={() => {
+            if (!apiKey) {
+              alert("Configura tu token personal en Perfil antes de descargar el atajo de iOS.");
+              return;
+            }
             triggerHaptic("success");
             generateIosShortcutFile(apiKey, origin);
           }}
@@ -918,7 +923,7 @@ export function ExportAndNotionHub({
           <span className="text-2xl">📲</span>
           <div>
             <h4 className="text-xs font-bold text-amber-300">Descargar Atajo iOS</h4>
-            <span className="text-[10px] text-slate-400">Archivo con API Key pre-configurada</span>
+            <span className="text-[10px] text-slate-400">{apiKey ? "Archivo con API Key pre-configurada" : "Requiere Token en Perfil"}</span>
           </div>
         </button>
 

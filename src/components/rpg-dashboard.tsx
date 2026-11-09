@@ -122,6 +122,7 @@ import {
   triggerHaptic,
   queueOfflineAction,
 } from "@/lib/offline-sync";
+import { SYSTEM_VERSION } from "@/lib/version";
 
 interface Boss {
   id: string;
@@ -2758,10 +2759,10 @@ export function RPGLifeEngineDashboard({
 
   if (loading || !state) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#090d16] text-slate-300">
-        <div className="flex items-center gap-3 text-lg">
-          <Sparkles className="h-6 w-6 animate-spin text-emerald-400" />
-          Cargando RPG Financial & Skill Life-Engine v3.0...
+      <div className="flex min-h-screen items-center justify-center bg-[#0B0F19] text-slate-300">
+        <div className="flex items-center gap-3 text-sm font-mono text-slate-100">
+          <Sparkles className="h-5 w-5 animate-spin text-emerald-400" />
+          Cargando RPG Life-Engine {SYSTEM_VERSION.version}...
         </div>
       </div>
     );
@@ -2857,17 +2858,17 @@ export function RPGLifeEngineDashboard({
       ) : (
         <>
           {/* MINIMALIST COMMAND CENTER HEADER (Linear / Notion Inspired) */}
-          <header className="mb-6 rounded-2xl border border-white/[0.08] bg-slate-950/80 p-4 shadow-xl backdrop-blur-xl">
+          <header className="sticky top-2 z-40 mb-5 rounded-2xl border border-white/5 bg-[#131B2E]/75 p-3 sm:p-4 shadow-xl backdrop-blur-md">
             {/* Top Row: Brand, Character Info & Actions */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-white/5 pb-3">
               <div className="flex flex-wrap items-center gap-2.5">
                 <div className="flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="font-mono text-xs font-black tracking-wider text-white">
+                  <span className="font-mono text-xs font-black tracking-wider text-slate-100">
                     RPG LIFE-ENGINE
                   </span>
                   <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-500/30">
-                    v3.0
+                    v{SYSTEM_VERSION.version}
                   </span>
                 </div>
 
@@ -3005,10 +3006,10 @@ export function RPGLifeEngineDashboard({
             {/* Bottom Row: Ultra-Compact Scannable HUD */}
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {/* Metric 1: Billetera GP */}
-              <div className={`rounded-xl border p-2.5 ${
+              <div className={`rounded-xl border p-2.5 backdrop-blur-sm shadow-sm transition ${
                 state.wallet_gp < 0
-                  ? "border-rose-500/40 bg-rose-950/20"
-                  : "border-white/[0.06] bg-slate-900/40"
+                  ? "border-rose-500/30 bg-rose-950/20"
+                  : "border-white/5 bg-[#0B0F19]/60 hover:border-white/10"
               }`}>
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Billetera GP</span>
@@ -3016,7 +3017,7 @@ export function RPGLifeEngineDashboard({
                 </div>
                 <div className="mt-1 flex items-baseline gap-1">
                   <span className={`font-mono text-lg font-black tracking-tight ${
-                    state.wallet_gp < 0 ? "text-rose-400" : "text-white"
+                    state.wallet_gp < 0 ? "text-rose-400" : "text-slate-100"
                   }`}>
                     {(state.wallet_gp ?? 0).toLocaleString("es-CO")}
                   </span>
@@ -3026,13 +3027,13 @@ export function RPGLifeEngineDashboard({
                   {state.wallet_gp < 0 ? (
                     <span className="text-rose-400 font-bold">⚠️ Overdrawn</span>
                   ) : (
-                    <span>🛡️ {state.aegis_shields} Aegis</span>
+                    <span className="text-emerald-400/90 font-medium">🛡️ {state.aegis_shields} Aegis</span>
                   )}
                 </div>
               </div>
 
               {/* Metric 2: Bóveda Mensual */}
-              <div className="rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5">
+              <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-2.5 backdrop-blur-sm shadow-sm transition hover:border-white/10">
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Bóveda Mensual</span>
                   <Vault className="h-3.5 w-3.5 text-indigo-400" />
@@ -3063,7 +3064,7 @@ export function RPGLifeEngineDashboard({
               </div>
 
               {/* Metric 3: Racha de Hábitos */}
-              <div className="rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5">
+              <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-2.5 backdrop-blur-sm shadow-sm transition hover:border-white/10">
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Racha Hábitos</span>
                   <Flame className="h-3.5 w-3.5 text-amber-400" />
@@ -3080,7 +3081,7 @@ export function RPGLifeEngineDashboard({
               </div>
 
               {/* Metric 4: Flujo Libre Bola de Nieve */}
-              <div className="rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5">
+              <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-2.5 backdrop-blur-sm shadow-sm transition hover:border-white/10">
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Poder Nieve</span>
                   <span className="text-cyan-400 text-xs">❄️</span>
@@ -3096,13 +3097,13 @@ export function RPGLifeEngineDashboard({
               </div>
 
               {/* Metric 5: Variables Operativos */}
-              <div className="rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5">
+              <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-2.5 backdrop-blur-sm shadow-sm transition hover:border-white/10">
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Presupuesto Ops</span>
-                  <span className="text-slate-500 text-[10px]">{variableOpsPct}%</span>
+                  <span className="text-slate-400 text-[10px]">{variableOpsPct}%</span>
                 </div>
                 <div className="mt-1 flex items-baseline gap-1 truncate">
-                  <span className="font-mono text-sm font-bold text-slate-200 truncate">
+                  <span className="font-mono text-sm font-bold text-slate-100 truncate">
                     ${(state.variable_ops_spent_cop ?? 0).toLocaleString("es-CO")}
                   </span>
                 </div>
@@ -3119,10 +3120,10 @@ export function RPGLifeEngineDashboard({
               </div>
 
               {/* Metric 6: Estado de los Debt Bosses & DoT Pasivo */}
-              <div className={`rounded-xl border p-2.5 ${
+              <div className={`rounded-xl border p-2.5 backdrop-blur-sm shadow-sm transition ${
                 totalActiveDot > 0
                   ? "border-rose-500/30 bg-rose-950/20"
-                  : "border-white/[0.06] bg-slate-900/40"
+                  : "border-white/5 bg-[#0B0F19]/60 hover:border-white/10"
               }`}>
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Debt Bosses & DoT</span>
@@ -3200,7 +3201,7 @@ export function RPGLifeEngineDashboard({
           NAVEGACIÓN EXECUTIVE TABS (DESATURACIÓN DE LA PÁGINA PRINCIPAL)
          ===================================================================== */}
       {!dedicatedSkillDomain && (
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/90 p-2 backdrop-blur shadow-2xl sticky top-2 z-30">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/5 bg-[#131B2E]/60 p-2 backdrop-blur-md shadow-xl">
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
@@ -3308,20 +3309,20 @@ export function RPGLifeEngineDashboard({
          ===================================================================== */}
       {!dedicatedSkillDomain && homeActiveTab === "hub" && (
         <div className="space-y-8 mb-8">
-          {/* 1. PORTALES DE HABILIDADES COMPACTOS & MINIMALISTAS */}
-          <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-4 shadow-lg backdrop-blur">
-            <div className="mb-3 flex items-center justify-between">
+          {/* 1. PORTALES DE HABILIDADES COMPACTOS & MINIMALISTAS (Responsive Grid Glassmorphism) */}
+          <div className="rounded-2xl border border-white/5 bg-[#131B2E]/60 p-5 shadow-xl backdrop-blur-md">
+            <div className="mb-3.5 flex items-center justify-between">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-                  🚀 Portales de Habilidades & Cabinas Inmersivas
+                  🚀 Portales de Habilidades & Sesiones Activas
                 </span>
                 <p className="text-xs text-slate-400">
-                  Haz click para entrar a su santuario o usa el acceso directo flotante para pantalla completa.
+                  Haz clic en cualquier portal para abrir la Ventana de Sesión Activa con Pomodoro y Notas, o navega a su Santuario dedicado.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {ALL_SKILL_DOMAINS_PORTAL.map((dom) => {
                 const summary = state.skill_summaries.find(
                   (s) => s.domain === dom.domain
@@ -3334,22 +3335,20 @@ export function RPGLifeEngineDashboard({
                 return (
                   <div
                     key={dom.domain}
-                    onClick={() => {
-                      setHomeActiveTab("skills");
-                      setActiveSkillTab(dom.domain);
-                    }}
-                    className="group relative flex flex-col justify-between rounded-xl border border-white/[0.07] bg-slate-900/40 p-3 transition-all hover:border-emerald-500/40 hover:bg-slate-900/80 shadow-sm cursor-pointer"
+                    onClick={() => handleOpenSessionModal(dom.domain, dom.label)}
+                    className="group relative flex flex-col justify-between rounded-xl border border-white/5 bg-[#0B0F19]/60 p-3.5 transition-all hover:border-emerald-500/30 hover:bg-[#0B0F19]/90 shadow-sm cursor-pointer"
+                    title={`Abrir Sesión Activa de ${dom.label}`}
                   >
                     <div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm">{dom.badge}</span>
-                          <span className="font-semibold text-xs text-white group-hover:text-emerald-300 transition">
+                          <span className="font-semibold text-xs text-slate-100 group-hover:text-emerald-300 transition">
                             {dom.label}
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="rounded-md bg-slate-800/80 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-300">
+                          <span className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-300">
                             LVL {lvl}
                           </span>
                           <Link
@@ -3367,9 +3366,9 @@ export function RPGLifeEngineDashboard({
                       </p>
                     </div>
 
-                    <div className="mt-2.5 flex items-center justify-between border-t border-white/[0.05] pt-2 text-[10px] font-mono text-slate-400">
+                    <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-2 text-[10px] font-mono text-slate-400">
                       <span>{sessions} ses • {minutes}m</span>
-                      <strong className="text-amber-300">+{gp.toLocaleString("es-CO")} GP</strong>
+                      <strong className="text-amber-400">+{gp.toLocaleString("es-CO")} GP</strong>
                     </div>
                   </div>
                 );
@@ -3377,49 +3376,49 @@ export function RPGLifeEngineDashboard({
             </div>
           </div>
 
-          {/* 2. TRES WIDGETS TÁCTICOS EJECUTIVOS */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* 2. TRES WIDGETS TÁCTICOS EJECUTIVOS (Glassmorphism Minimalista) */}
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             {/* WIDGET 1: RENDIMIENTO & CONSTANCIA CUANTITATIVA */}
-            <div className="flex flex-col justify-between rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/20 via-slate-900 to-slate-950 p-5 shadow-lg">
+            <div className="flex flex-col justify-between rounded-2xl border border-white/5 bg-[#131B2E]/60 p-5 shadow-xl backdrop-blur-md">
               <div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <BarChart3 className="h-4 w-4 text-indigo-400" />
-                    <h3 className="font-bold text-white text-sm">Rendimiento & Constancia</h3>
+                    <h3 className="font-bold text-slate-100 text-sm">Rendimiento & Constancia</h3>
                   </div>
-                  <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
+                  <span className="rounded-full bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
                     NVL {state.player_level}
                   </span>
                 </div>
                 <div className="mt-3">
                   <span className="text-xs text-slate-400">Racha de Hábitos Activa:</span>
-                  <p className="text-xl font-extrabold text-white font-mono flex items-center gap-2">
+                  <p className="text-xl font-extrabold text-slate-100 font-mono flex items-center gap-2">
                     🔥 {state.current_streak_days} días
                     <span className="text-xs font-semibold text-emerald-400">
                       ({state.streak_multiplier}x GP)
                     </span>
                   </p>
                 </div>
-                <p className="mt-1 text-xs text-slate-300">
+                <p className="mt-1 text-xs text-slate-400">
                   ⚡ {state.logs?.length || 0} sesiones y eventos de vida sistematizados.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setHomeActiveTab("analytics")}
-                className="mt-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 cursor-pointer text-center flex items-center justify-center gap-1.5 transition"
+                className="mt-4 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 px-3 py-2 text-xs font-bold text-indigo-300 cursor-pointer text-center flex items-center justify-center gap-1.5 transition"
               >
                 <BarChart3 className="h-3.5 w-3.5" /> Ver Analítica & Heatmap ➔
               </button>
             </div>
 
             {/* WIDGET MISIONES RÁPIDAS */}
-            <div className="flex flex-col justify-between rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/20 via-slate-900 to-slate-950 p-5 shadow-lg">
+            <div className="flex flex-col justify-between rounded-2xl border border-white/5 bg-[#131B2E]/60 p-5 shadow-xl backdrop-blur-md">
               <div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Flame className="h-4 w-4 text-emerald-400" />
-                    <h3 className="font-bold text-white text-sm">Misiones Diarias Activas</h3>
+                    <h3 className="font-bold text-slate-100 text-sm">Misiones Diarias Activas</h3>
                   </div>
                   <span className="text-xs text-emerald-400 font-bold">
                     {state.streak_multiplier}x GP Buff
@@ -3429,13 +3428,13 @@ export function RPGLifeEngineDashboard({
                   {state.quests.slice(0, 2).map((q) => (
                     <div
                       key={q.code}
-                      className="flex items-center justify-between rounded-lg bg-slate-950/60 p-2 text-xs border border-slate-800"
+                      className="flex items-center justify-between rounded-xl bg-[#0B0F19]/60 p-2.5 text-xs border border-white/5"
                     >
                       <span className="text-slate-200 truncate pr-2 font-medium">{q.title}</span>
                       <button
                         type="button"
                         onClick={() => triggerHabitShortcut(q.code)}
-                        className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-emerald-500 cursor-pointer shrink-0"
+                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-500 cursor-pointer shrink-0 transition"
                       >
                         +{Math.round(q.reward_gp * state.streak_multiplier).toLocaleString("es-CO")} GP
                       </button>
@@ -3446,32 +3445,32 @@ export function RPGLifeEngineDashboard({
               <button
                 type="button"
                 onClick={() => setHomeActiveTab("skills")}
-                className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 cursor-pointer text-center"
+                className="mt-4 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 px-3 py-2 text-xs font-bold text-emerald-300 cursor-pointer text-center transition"
               >
                 Ir a Santuario de Habilidades ➔
               </button>
             </div>
 
             {/* WIDGET CALENDARIO HOY */}
-            <div className="flex flex-col justify-between rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/20 via-slate-900 to-slate-950 p-5 shadow-lg">
+            <div className="flex flex-col justify-between rounded-2xl border border-white/5 bg-[#131B2E]/60 p-5 shadow-xl backdrop-blur-md">
               <div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CalendarClock className="h-4 w-4 text-cyan-400" />
-                    <h3 className="font-bold text-white text-sm">Ritmo Circadiano Hoy</h3>
+                    <h3 className="font-bold text-slate-100 text-sm">Ritmo Circadiano Hoy</h3>
                   </div>
-                  <span className="rounded bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
+                  <span className="rounded-full bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
                     {bioCalendarPlan.sleepHealthStatus.label}
                   </span>
                 </div>
                 <div className="mt-3 text-xs text-slate-300 space-y-1">
                   <div>
                     <span className="text-slate-400">Horario Biológico:</span>{" "}
-                    <strong className="text-white">{bioWakeUpTime} – {bioSleepTime}</strong>
+                    <strong className="text-slate-100">{bioWakeUpTime} – {bioSleepTime}</strong>
                   </div>
                   <div>
                     <span className="text-slate-400">Ventana Libre:</span>{" "}
-                    <strong className="text-emerald-300">
+                    <strong className="text-emerald-400">
                       {bioCalendarPlan.morningWindowMinsWeekday + bioCalendarPlan.eveningWindowMinsWeekday} min/día
                     </strong>
                   </div>
@@ -3484,7 +3483,7 @@ export function RPGLifeEngineDashboard({
               <button
                 type="button"
                 onClick={() => setHomeActiveTab("calendar")}
-                className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 cursor-pointer text-center"
+                className="mt-4 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 px-3 py-2 text-xs font-bold text-cyan-300 cursor-pointer text-center transition"
               >
                 Planificar Horas y Cronograma ➔
               </button>
@@ -3492,13 +3491,13 @@ export function RPGLifeEngineDashboard({
           </div>
 
           {/* BANNER FINANCIERO COMPLEMENTARIO (OPCIONAL) */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="rounded-2xl border border-white/5 bg-[#131B2E]/60 p-4 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs shadow-xl">
             <div className="flex items-center gap-2.5">
               <span className="text-base">💼</span>
               <div>
-                <span className="font-bold text-slate-200">Cámara Financiera & Wishlist:</span>
+                <span className="font-bold text-slate-100">Cámara Financiera & Wishlist:</span>
                 <span className="text-slate-400 ml-2">
-                  Billetera: <strong className="text-amber-300">{state.wallet_gp.toLocaleString("es-CO")} GP</strong> • 
+                  Billetera: <strong className="text-amber-400">{state.wallet_gp.toLocaleString("es-CO")} GP</strong> • 
                   Bóveda: <strong className="text-slate-300">{state.vault_remaining_gp.toLocaleString("es-CO")} GP</strong>
                   {totalActiveDot > 0 && (
                     <span className="text-rose-400 ml-2">
@@ -3511,7 +3510,7 @@ export function RPGLifeEngineDashboard({
             <button
               type="button"
               onClick={() => setHomeActiveTab("debts")}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:text-white hover:border-slate-600 transition cursor-pointer"
+              className="rounded-xl border border-white/5 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
             >
               Abrir Finanzas & Wishlist ➔
             </button>
@@ -9527,7 +9526,7 @@ export function RPGLifeEngineDashboard({
         fixedCosts={state.fixed_costs || []}
         solves={state.rubik_stats?.recent_solves || []}
         fullState={state}
-        apiKey={state.user?.shortcut_api_key || "mi-token-secreto-rpg-2026"}
+        apiKey={state.user?.shortcut_api_key || ""}
         onImportBackup={handleImportBackup}
       />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -10504,22 +10503,22 @@ export function RPGLifeEngineDashboard({
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#0B0F19]/80 backdrop-blur-md animate-in fade-in"
           onClick={handleCloseSessionModal}
         >
           <div
-            className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950 p-6 shadow-2xl overflow-y-auto max-h-[90vh] space-y-5"
+            className="w-full max-w-2xl rounded-2xl border border-white/5 bg-[#131B2E]/95 p-5 sm:p-6 shadow-2xl backdrop-blur-xl overflow-y-auto max-h-[92vh] space-y-4 text-slate-100"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3.5">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">
                   {ALL_SKILL_DOMAINS_PORTAL.find((p) => p.domain === activeSessionModal.domain)?.badge || "🎯"}
                 </span>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-extrabold text-white">
+                    <h3 className="text-sm sm:text-base font-bold text-slate-100">
                       Ventana de Sesión Activa: {activeSessionModal.title}
                     </h3>
                     <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
@@ -10527,14 +10526,15 @@ export function RPGLifeEngineDashboard({
                     </span>
                   </div>
                   <p className="text-xs text-slate-400">
-                    Registra tiempo exacto, notas al vuelo, resultados clave y sincroniza con tu archivo de Notion.
+                    Cronometra tu bloque de enfoque, toma notas al vuelo y consolida tus resultados clave.
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleCloseSessionModal}
-                className="rounded-full p-1.5 text-slate-400 hover:text-white hover:bg-white/10 transition"
+                className="rounded-lg p-1.5 text-slate-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
+                title="Cerrar ventana"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -10542,33 +10542,33 @@ export function RPGLifeEngineDashboard({
 
             {/* NOTION TOAST */}
             {sessionNotionToast && (
-              <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/80 p-3 text-xs font-bold text-emerald-200 flex items-center justify-between animate-in fade-in">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/60 p-3 text-xs font-semibold text-emerald-200 flex items-center justify-between animate-in fade-in">
                 <span>{sessionNotionToast}</span>
-                <button onClick={() => setSessionNotionToast(null)} className="text-emerald-400">✕</button>
+                <button onClick={() => setSessionNotionToast(null)} className="text-emerald-400 hover:text-emerald-200">✕</button>
               </div>
             )}
 
             {/* SECTION 1: TEMPORIZADOR DE ENFOQUE / POMODORO */}
-            <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-3">
+            <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Timer className="h-4 w-4 text-cyan-400" />
-                  <span className="font-bold text-xs text-white">Temporizador de Enfoque Pomodoro</span>
+                  <span className="font-semibold text-xs text-slate-200">Temporizador de Enfoque Pomodoro</span>
                 </div>
                 {sessionTimerSeconds >= 25 * 60 && (
-                  <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-black text-amber-300 ring-1 ring-amber-500/40 animate-pulse">
+                  <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300 animate-pulse">
                     ⚡ Enfoque Legendario (1.25x XP)
                   </span>
                 )}
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="font-mono text-3xl font-black text-white">
+                <div className="font-mono text-3xl font-extrabold text-slate-100 tracking-tight">
                   {formatMinutesToHHMM(Math.floor(sessionTimerSeconds / 60))}:
                   {String(sessionTimerSeconds % 60).padStart(2, "0")}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   {[15, 25, 45, 50].map((preset) => (
                     <button
                       key={preset}
@@ -10579,8 +10579,8 @@ export function RPGLifeEngineDashboard({
                       }}
                       className={`rounded-lg px-2.5 py-1 text-xs font-mono font-bold transition cursor-pointer ${
                         sessionTimerPreset === preset
-                          ? "bg-cyan-600 text-white shadow"
-                          : "bg-slate-800 text-slate-400 hover:text-white"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10"
                       }`}
                     >
                       {preset}m
@@ -10593,7 +10593,7 @@ export function RPGLifeEngineDashboard({
                     <button
                       type="button"
                       onClick={() => setSessionTimerActive(true)}
-                      className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-lg cursor-pointer"
+                      className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition cursor-pointer"
                     >
                       <Play className="h-3.5 w-3.5" />
                       <span>Iniciar Enfoque</span>
@@ -10602,7 +10602,7 @@ export function RPGLifeEngineDashboard({
                     <button
                       type="button"
                       onClick={() => setSessionTimerActive(false)}
-                      className="flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-lg cursor-pointer"
+                      className="flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition cursor-pointer"
                     >
                       <Pause className="h-3.5 w-3.5" />
                       <span>Pausar</span>
@@ -10614,8 +10614,8 @@ export function RPGLifeEngineDashboard({
                       setSessionTimerActive(false);
                       setSessionTimerSeconds(0);
                     }}
-                    className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-400 hover:text-white cursor-pointer"
-                    title="Reiniciar"
+                    className="rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-xs text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                    title="Reiniciar temporizador"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
@@ -10624,13 +10624,13 @@ export function RPGLifeEngineDashboard({
             </div>
 
             {/* SECTION 2: BLOC DE NOTAS POR SESIÓN (Quick Session Notes) */}
-            <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-2">
+            <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-4 space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                   <Edit3 className="h-3.5 w-3.5 text-indigo-400" />
                   Bloc de Notas por Sesión (Fórmulas, Citas, Bocetos, Insights al Vuelo)
                 </label>
-                <span className="text-[10px] text-slate-400 font-mono">Autoguardado local</span>
+                <span className="text-[10px] text-slate-400 font-mono">Autoguardado persistente</span>
               </div>
               <textarea
                 rows={3}
@@ -10641,15 +10641,15 @@ export function RPGLifeEngineDashboard({
                     localStorage.setItem(`rpg_session_notes_${activeSessionModal.domain}`, e.target.value);
                   }
                 }}
-                placeholder="Escribe notas rápidas, fragmentos, fórmulas o ideas durante tu sesión..."
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-200 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                placeholder="Escribe notas rápidas, fragmentos, fórmulas, reflexiones o ideas durante tu sesión..."
+                className="w-full rounded-xl border border-white/5 bg-[#0B0F19] p-3 text-xs text-slate-100 placeholder-slate-500 focus:border-indigo-500/50 focus:outline-none transition leading-relaxed"
               />
             </div>
 
             {/* SECTION 3: MINI-CHECKLIST DE RESULTADOS & CLARIDAD */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-2">
-                <label className="text-xs font-bold text-white flex items-center gap-1.5">
+              <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-4 space-y-2">
+                <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                   <span>🧠</span> Claridad Mental / Rendimiento (1 a 10)
                 </label>
                 <div className="flex items-center gap-2">
@@ -10661,28 +10661,44 @@ export function RPGLifeEngineDashboard({
                     onChange={(e) => setSessionClarityRating(Number(e.target.value))}
                     className="w-full accent-emerald-400"
                   />
-                  <span className="font-mono font-black text-sm text-emerald-300 w-8 text-right">
+                  <span className="font-mono font-bold text-sm text-emerald-400 w-8 text-right">
                     {sessionClarityRating}/10
                   </span>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/[0.08] bg-slate-900/60 p-4 space-y-2">
-                <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>✅</span> Métrica / Resultado Clave
+              <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-4 space-y-2">
+                <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <span>✅</span> Mini-Checklist & Resultado Clave
                 </label>
-                <input
-                  type="text"
-                  value={sessionChecklistValues["Resultado"] || ""}
-                  onChange={(e) => setSessionChecklistValues((prev) => ({ ...prev, Resultado: e.target.value }))}
-                  placeholder="Ej. 15 páginas, 6 vueltas, Concepto dominado..."
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
-                />
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(sessionChecklistValues["focus_held"])}
+                      onChange={(e) =>
+                        setSessionChecklistValues((prev) => ({
+                          ...prev,
+                          focus_held: e.target.checked ? "true" : "",
+                        }))
+                      }
+                      className="rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-0"
+                    />
+                    <span>Bloque de enfoque libre de distracciones</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={sessionChecklistValues["Resultado"] || ""}
+                    onChange={(e) => setSessionChecklistValues((prev) => ({ ...prev, Resultado: e.target.value }))}
+                    placeholder="Métrica clave (ej. 15 págs, 5 solves, 2 commits)..."
+                    className="w-full rounded-lg border border-white/5 bg-[#0B0F19] px-2.5 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
 
             {/* Modal Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-3.5">
               <button
                 type="button"
                 onClick={() => {
@@ -10701,24 +10717,24 @@ export function RPGLifeEngineDashboard({
                   };
                   handleSyncToNotion(tempSession);
                 }}
-                className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 px-4 py-2 text-xs font-bold text-indigo-300 transition cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 px-3.5 py-2 text-xs font-semibold text-indigo-300 transition cursor-pointer"
               >
                 <Copy className="h-3.5 w-3.5" />
-                <span>Sincronizar / Copiar a Notion</span>
+                <span>Sincronizar a Notion</span>
               </button>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleCloseSessionModal}
-                  className="rounded-xl border border-slate-800 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                  className="rounded-xl border border-white/5 px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={handleCompleteSessionModal}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2 text-xs font-extrabold text-white shadow-xl hover:from-emerald-500 hover:to-teal-500 cursor-pointer transition"
+                  className="flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-5 py-2 text-xs font-bold text-white shadow-lg transition cursor-pointer"
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   <span>Completar Sesión (+XP & +GP)</span>

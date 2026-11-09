@@ -5,6 +5,13 @@
  */
 
 export type SystemEventType =
+  // Eventos canónicos Sprint Estabilización
+  | "ACTIVITY_CREATED"
+  | "HABIT_COMPLETED"
+  | "EXPENSE_REGISTERED"
+  | "PROJECT_TASK_COMPLETED"
+  | "STREAK_BROKEN"
+  // Eventos de dominio RPG Life-Engine
   | "LIFE_EVENT_CAPTURED"
   | "SKILL_SESSION_COMPLETED"
   | "EXPENSE_RECORDED"

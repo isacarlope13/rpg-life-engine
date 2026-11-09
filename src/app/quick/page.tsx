@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { getAppBaseUrl } from "@/lib/app-url";
 import {
   Zap,
   Mic,
@@ -304,9 +305,11 @@ export default function MobileQuickActionPage() {
   const originUrl =
     typeof window !== "undefined"
       ? window.location.origin
-      : "http://localhost:3000";
+      : getAppBaseUrl();
 
-  const apiKey = state?.user?.shortcut_api_key || "mi-token-secreto-rpg-2026";
+  const userApiKey = state?.user?.shortcut_api_key?.trim();
+  const apiKey = userApiKey || "TU_TOKEN_PERSONAL";
+  const hasConfiguredApiKey = Boolean(userApiKey);
 
   return (
     <div className="min-h-screen bg-[#070b14] px-3 py-5 text-slate-100 sm:px-6">
@@ -561,14 +564,27 @@ export default function MobileQuickActionPage() {
 
           <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/80 p-3 text-xs">
             <div className="flex items-center justify-between">
-              <p className="font-bold text-white">
-                Opción B · Atajo de iOS Automático (SMS Bancolombia/Nequi, Apple
-                Pay o &quot;Oye Siri&quot;)
-              </p>
+              <div>
+                <p className="font-bold text-white">
+                  Opción B · Atajo de iOS Automático (SMS Bancolombia/Nequi, Apple
+                  Pay o &quot;Oye Siri&quot;)
+                </p>
+                {!hasConfiguredApiKey && (
+                  <p className="text-[10px] text-amber-400">
+                    ⚠️ Token no detectado. Configura tu token personal en Perfil para máxima seguridad.
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
-                onClick={() => copyText("token", apiKey)}
-                className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/20 px-2.5 py-1 text-[11px] font-semibold text-cyan-200"
+                onClick={() => {
+                  if (!hasConfiguredApiKey) {
+                    alert("Para vincular Atajos de iOS, dirígete a tu Perfil en el Dashboard y genera o copia tu token personal secreto.");
+                    return;
+                  }
+                  copyText("token", apiKey);
+                }}
+                className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/20 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/30"
               >
                 {copiedKey === "token" ? (
                   <>
@@ -576,7 +592,7 @@ export default function MobileQuickActionPage() {
                   </>
                 ) : (
                   <>
-                    <Copy className="h-3.5 w-3.5" /> Copiar Token Personal
+                    <Copy className="h-3.5 w-3.5" /> {hasConfiguredApiKey ? "Copiar Token Personal" : "Configurar Token"}
                   </>
                 )}
               </button>
@@ -595,7 +611,7 @@ export default function MobileQuickActionPage() {
               <li>
                 Método: <strong>POST</strong> · Encabezado:{" "}
                 <code className="rounded bg-slate-900 px-1 text-amber-300">
-                  x-api-key: {apiKey}
+                  x-api-key: {hasConfiguredApiKey ? apiKey : "TU_TOKEN_PERSONAL_DEL_PERFIL"}
                 </code>{" "}
                 · Cuerpo JSON:{" "}
                 <code className="rounded bg-slate-900 px-1 text-emerald-300">
