@@ -17,9 +17,15 @@ export default function DedicatedSkillPage() {
     "knitting",
     "study",
     "work",
+    "general",
+    "gardening",
+    "drawing",
+    "ceramics",
+    "hiking",
+    "cooking",
+    "journaling",
     "gaming",
     "sports",
-    "general",
   ];
 
   const domain: SkillDomain =
