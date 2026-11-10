@@ -2976,6 +2976,15 @@ export function RPGLifeEngineDashboard({
                 </a>
 
                 <a
+                  href="/cozy"
+                  className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition"
+                  title="Tablero Cozy RPG (Estética Animal Crossing & Fantasía Cálida)"
+                >
+                  <span>🌾</span>
+                  <span className="hidden md:inline">Modo Cozy RPG</span>
+                </a>
+
+                <a
                   href="/onboarding"
                   className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-700 transition"
                   title="Configurar Variables y Reglas"
