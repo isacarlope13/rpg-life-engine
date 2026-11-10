@@ -424,6 +424,46 @@ export function getBuildingTrophies(
           flavorText: "Cristal puro que refracta la luz cuando la mente alcanza la calma imperturbable.",
         },
       ];
+    case "pabellon_gardening":
+    case "gardening":
+      return [
+        {
+          id: "gar_watering_can",
+          name: "Regadera de Cobre Forjado",
+          category: "furniture",
+          icon: "🪴",
+          unlocked: sessions >= 1,
+          requirement: "1+ sesión botánica o de riego",
+          flavorText: "Regadera artesanal que distribuye gotas finas sin maltratar las plántulas tiernas.",
+        },
+        {
+          id: "gar_terrarium",
+          name: "Terrario de Musgo y Cuarzo",
+          category: "furniture",
+          icon: "🌿",
+          unlocked: sessions >= 3 || level >= 2,
+          requirement: "3+ sesiones o Nivel 2+",
+          flavorText: "Microecosistema sellado donde florece el equilibrio paciente de la flora.",
+        },
+        {
+          id: "gar_bonsai",
+          name: "Bonsái Centenario de Roble",
+          category: "trophy",
+          icon: "🌳",
+          unlocked: sessions >= 6 || level >= 3,
+          requirement: "6+ sesiones botánicas o Nivel 3+",
+          flavorText: "Árbol miniatura podado con esmero que simboliza la paciencia y el ritmo orgánico.",
+        },
+        {
+          id: "gar_golden_orchid",
+          name: "Orquídea Solar de Oakhaven",
+          category: "relic",
+          icon: "🌸",
+          unlocked: sessions >= 10 || level >= 4,
+          requirement: "10+ sesiones o Nivel 4+",
+          flavorText: "Especie botánica legendaria que florece únicamente bajo cuidados diarios constantes.",
+        },
+      ];
     default:
       return [
         {

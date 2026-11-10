@@ -57,6 +57,7 @@ import { LibreriaBuilding } from "@/components/sanctuary/libreria-building";
 import { BibliotecaBuilding } from "@/components/sanctuary/biblioteca-building";
 import { ClubPuzzlesBuilding } from "@/components/sanctuary/club-puzzles-building";
 import { ObservatorioBuilding } from "@/components/sanctuary/observatorio-building";
+import { BotanicalGardenBuilding } from "@/components/sanctuary/botanical-garden-building";
 import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
 import { queueOfflineAction, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
 import {
@@ -965,20 +966,15 @@ export function CozyRpgDashboard() {
               )}
 
               {activeBuildingModal === "pabellon_gardening" && (
-                <div className="p-8 text-center space-y-4">
-                  <span className="text-5xl">🌿</span>
-                  <h3 className="text-xl font-bold text-white">Invernadero Botánico</h3>
-                  <p className="text-xs text-slate-300 max-w-md mx-auto">
-                    El refugio verde de Oakhaven está en calma. Riega tus plantas, anota esquejes y registra tu sesión consciente.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setActiveBuildingModal(null)}
-                    className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
-                  >
-                    Cerrar Invernadero
-                  </button>
-                </div>
+                <BotanicalGardenBuilding
+                  playerLevel={playerLevel}
+                  skillLevel={state?.skill_summaries?.find((s) => s.domain === "gardening")?.level || 1}
+                  totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "gardening")?.total_gp_earned || 0}
+                  isCozyActive={true}
+                  quests={quests}
+                  onRefreshState={fetchState}
+                  onSubmitDirectSkillSession={handleSubmitSkillSession}
+                />
               )}
 
               {activeBuildingModal === "pabellon_hiking" && (
