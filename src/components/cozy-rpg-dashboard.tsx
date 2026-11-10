@@ -66,6 +66,7 @@ import { CozySkeletonLoader } from "@/components/cozy/cozy-skeleton-loader";
 import { CozySidebar } from "@/components/cozy/cozy-sidebar";
 import { CozyHeader } from "@/components/cozy/cozy-header";
 import { BentoDailyDashboard } from "@/components/cozy/bento-daily-dashboard";
+import { ResidentModal } from "@/components/cozy/resident-modal";
 import { queueOfflineAction, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
 import {
   COZY_VILLAGE_RESIDENTS,
@@ -540,100 +541,19 @@ export function CozyRpgDashboard() {
         </div>
       )}
 
-      {/* DIÁLOGO MODAL DE RESIDENTE */}
-      {selectedResident && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3A2E2B]/70 backdrop-blur-sm animate-in fade-in"
-          onClick={() => setSelectedResident(null)}
-        >
-          <div
-            className="w-full max-w-lg rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_8px_0_#3A2E2B] space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
-              <div className="flex items-center gap-3">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-[#3A2E2B] bg-[#E9C46A] text-2xl shadow-sm">
-                  {selectedResident.avatar}
-                </span>
-                <div>
-                  <h3 className="text-base font-black text-[#3A2E2B]">
-                    {selectedResident.name}
-                  </h3>
-                  <span className="text-xs font-bold text-[#4E6E58]">
-                    {selectedResident.title} ({selectedResident.species})
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedResident(null)}
-                className="rounded-xl border-2 border-[#3A2E2B] bg-[#E8DFCF] p-1.5 text-[#3A2E2B] hover:bg-[#E9C46A] shadow-[0_2px_0_#3A2E2B] cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-4 space-y-2">
-              <p className="text-xs italic font-medium text-[#5C4033]">
-                "{selectedResident.greetingQuote}"
-              </p>
-              <p className="text-xs font-bold text-[#3A2E2B]">
-                💬 {selectedResident.getDynamicAdvice({
-                  skillLevel: state?.skill_summaries?.find((s) => s.domain === selectedResident.domain)?.level || 1,
-                  sessionsCount: state?.skill_summaries?.find((s) => s.domain === selectedResident.domain)?.sessions_count || 0,
-                  lastSessionDetails: recentSessions.find((s) => s.domain === selectedResident.domain)?.details,
-                })}
-              </p>
-            </div>
-
-            {/* Micro-Misión de Bienestar del Residente */}
-            {selectedResident.microQuest && (
-              <div className="rounded-2xl border-2 border-[#4E6E58]/40 bg-[#4E6E58]/10 p-3.5 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase text-[#4E6E58] tracking-wider">
-                    Micro-Misión de Bienestar
-                  </span>
-                  <span className="rounded-full bg-[#E9C46A] border border-[#3A2E2B] px-2 py-0.5 text-[9px] font-black text-[#3A2E2B]">
-                    {selectedResident.microQuest.badge}
-                  </span>
-                </div>
-                <h5 className="text-xs font-black text-[#3A2E2B]">
-                  {selectedResident.microQuest.title}
-                </h5>
-                <p className="text-[11px] text-[#5C4033] font-medium">
-                  {selectedResident.microQuest.description}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveBuildingModal(selectedResident.buildingId);
-                    setSelectedResident(null);
-                  }}
-                  className="mt-2 w-full rounded-xl border-2 border-[#3A2E2B] bg-[#E9C46A] py-2 text-xs font-black text-[#3A2E2B] hover:bg-[#F4A261] shadow-[0_2px_0_#3A2E2B] cursor-pointer"
-                >
-                  Aceptar Micro-Misión e Ir al Edificio ➜
-                </button>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between text-xs text-[#795548] pt-1">
-              <span>🎁 Regalo preferido: {selectedResident.favoriteGift}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveBuildingModal(selectedResident.buildingId);
-                  setSelectedResident(null);
-                }}
-                className="rounded-xl border-2 border-[#3A2E2B] bg-[#4E6E58] px-3.5 py-1.5 text-xs font-black text-[#FFFDF8] shadow-[0_2px_0_#3A2E2B] hover:bg-[#3B5443] cursor-pointer"
-              >
-                Ir a su Edificio ➜
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* DIÁLOGO MODAL DE RESIDENTE (MODULAR CON MICRO-MISIÓN REAL) */}
+      <ResidentModal
+        resident={selectedResident}
+        onClose={() => setSelectedResident(null)}
+        onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
+        onSubmitSkillSession={handleSubmitSkillSession}
+        domainSummary={
+          selectedResident
+            ? state?.skill_summaries?.find((s) => s.domain === selectedResident.domain)
+            : undefined
+        }
+        recentSessions={recentSessions}
+      />
 
       {/* ÁLBUM DE RECUERDOS Y POSTALES */}
       <VillageScrapbookModal
