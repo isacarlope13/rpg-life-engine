@@ -20,6 +20,13 @@ export interface VillageResident {
   domain: SkillDomain;
   favoriteGift: string;
   greetingQuote: string;
+  microQuest: {
+    title: string;
+    description: string;
+    targetAction: string;
+    estimatedMinutes: number;
+    badge: string;
+  };
   getDynamicAdvice: (data: {
     skillLevel: number;
     sessionsCount: number;
@@ -88,6 +95,13 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
     domain: "knitting",
     favoriteGift: "Madejas de Lana Merino & Té de Manzanilla",
     greetingQuote: "El ritmo de las agujas aquieta la mente. Cada punto cuenta una historia.",
+    microQuest: {
+      title: "Tejido Consciente (3 filas)",
+      description: "Avanza 3 filas en tu proyecto activo o practica un punto nuevo.",
+      targetAction: "knitting_session",
+      estimatedMinutes: 15,
+      badge: "🧶 +15 min bienestar",
+    },
     getDynamicAdvice: ({ sessionsCount, lastSessionDetails }) => {
       if (sessionsCount === 0) {
         return "¡Bienvenido al Atelier! Montemos los primeros puntos de tu proyecto artesanal.";
@@ -107,6 +121,13 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
     domain: "reading",
     favoriteGift: "Marcadores de Cuero Grabado & Café de Bellota",
     greetingQuote: "Un buen libro no se devora con prisa; se saborea página tras página.",
+    microQuest: {
+      title: "Lectura Serena (5 páginas)",
+      description: "Lee 5 páginas de tu libro en curso y anota tu cita favorita.",
+      targetAction: "reading_session",
+      estimatedMinutes: 15,
+      badge: "📚 +15 min lectura",
+    },
     getDynamicAdvice: ({ sessionsCount }) => {
       if (sessionsCount === 0) {
         return "Los estantes de la Librería esperan tu primer libro. ¿Qué historia comenzamos hoy?";
@@ -124,6 +145,13 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
     domain: "study",
     favoriteGift: "Tinta Índigo & Pergaminos Iluminados",
     greetingQuote: "El conocimiento retenido en la memoria espaciada florece sin esfuerzo.",
+    microQuest: {
+      title: "Duelo de Memoria SM-2",
+      description: "Repasa 3 tarjetas de memoria espaciada en el atril de estudio.",
+      targetAction: "study_review",
+      estimatedMinutes: 10,
+      badge: "🏛️ +10 min memoria",
+    },
     getDynamicAdvice: ({ skillLevel }) => {
       return `Tu intelecto alcanza el Grado ${skillLevel}. Las tarjetas de memoria SM-2 te esperan en el atril.`;
     },
@@ -138,10 +166,18 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
     domain: "rubik",
     favoriteGift: "Lubricante de Silicona Veloz & Cronómetros Pro",
     greetingQuote: "¡La fluidez en el F2L supera a la fuerza bruta! Respira antes de la inspección.",
+    microQuest: {
+      title: "Práctica Fluida (3 solves)",
+      description: "Realiza 3 solves WCA con atención al lookahead y parada suave.",
+      targetAction: "rubik_practice",
+      estimatedMinutes: 10,
+      badge: "🧩 +10 min agilidad",
+    },
     getDynamicAdvice: ({ sessionsCount }) => {
-      return sessionsCount > 0
-        ? "El cronómetro WCA y los nuevos scrambles están listos. ¿Vamos por un nuevo PB?"
-        : "¡Toma un cubo de tu arsenal y hagamos el primer scramble del día!";
+      if (sessionsCount > 0) {
+        return "El cronómetro WCA y los nuevos scrambles están listos. ¿Vamos por un nuevo PB?";
+      }
+      return "¡Toma un cubo de tu arsenal y hagamos el primer scramble del día!";
     },
   },
   {
@@ -154,6 +190,13 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
     domain: "general",
     favoriteGift: "Cristales de Amatista & Infusión de Lavanda",
     greetingQuote: "Cuando acallas el ruido externo, las ideas más brillantes encuentran su cauce.",
+    microQuest: {
+      title: "Bloque de Foco Ininterrumpido",
+      description: "Silencia notificaciones y completa 20 minutos de concentración profunda.",
+      targetAction: "deep_work_focus",
+      estimatedMinutes: 20,
+      badge: "🔭 +20 min foco",
+    },
     getDynamicAdvice: () => {
       return "El domo cósmico está en calma. Activa tu bloque de Deep Work y deja las distracciones fuera.";
     },
@@ -168,6 +211,13 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
     domain: "gardening",
     favoriteGift: "Semillas Silvestres & Agua de Lluvia",
     greetingQuote: "La tierra nunca tiene prisa, y aun así todo florece en su tiempo perfecto.",
+    microQuest: {
+      title: "Cuidado Consciente de Brotes",
+      description: "Dedica 5 minutos a regar, airear la tierra o anotar el estado de tus plantas.",
+      targetAction: "gardening_session",
+      estimatedMinutes: 5,
+      badge: "🌿 +5 min calma",
+    },
     getDynamicAdvice: () => {
       return "El rocío de la mañana nutrió los brotes. Respira hondo y conecta con la calma vegetal.";
     },
@@ -182,8 +232,209 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
     domain: "hiking",
     favoriteGift: "Cantimplora de Cobre & Frutos Secos",
     greetingQuote: "Cada paso despeja la niebla del camino. Caminar es medicina para el alma.",
+    microQuest: {
+      title: "Paseo Despejador (15 min)",
+      description: "Caminata al aire libre sin pantallas para oxigenar mente y cuerpo.",
+      targetAction: "hiking_session",
+      estimatedMinutes: 15,
+      badge: "🥾 +15 min caminata",
+    },
     getDynamicAdvice: () => {
       return "El sendero hacia las colinas de Oakhaven está despejado hoy. ¿Damos un paseo consciente?";
     },
   },
 ];
+
+export interface BuildingTrophyItem {
+  id: string;
+  name: string;
+  category: "furniture" | "trophy" | "relic";
+  icon: string;
+  unlocked: boolean;
+  requirement: string;
+  flavorText: string;
+}
+
+export function getBuildingTrophies(
+  buildingId: string,
+  stats: {
+    level?: number;
+    sessionsCount?: number;
+    booksRead?: number;
+    knittingRows?: number;
+    rubikPb?: number | null;
+    focusMinutes?: number;
+  }
+): BuildingTrophyItem[] {
+  const level = stats.level || 1;
+  const sessions = stats.sessionsCount || 0;
+  const books = stats.booksRead || 0;
+  const rows = stats.knittingRows || 0;
+  const pb = stats.rubikPb;
+  const focusMins = stats.focusMinutes || 0;
+
+  switch (buildingId) {
+    case "atelier":
+      return [
+        {
+          id: "at_loom",
+          name: "Telar Rústico de Roble",
+          category: "furniture",
+          icon: "🪵",
+          unlocked: sessions >= 1 || rows >= 1,
+          requirement: "1+ sesión o fila de tejido",
+          flavorText: "Telar tradicional para montar las primeras urdimbres de proyectos cálidos.",
+        },
+        {
+          id: "at_basket",
+          name: "Cesta de Ovillos Merino",
+          category: "furniture",
+          icon: "🧺",
+          unlocked: rows >= 25 || sessions >= 3,
+          requirement: "25+ filas tejidas",
+          flavorText: "Hebras suaves teñidas a mano con extractos botánicos de la colina.",
+        },
+        {
+          id: "at_tapestry",
+          name: "Tapiz del Gran Artesano",
+          category: "trophy",
+          icon: "🏆",
+          unlocked: rows >= 80 || level >= 3,
+          requirement: "80+ filas tejidas o Nivel 3+",
+          flavorText: "Tapiz decorativo tejido con paciencia que ilumina la entrada del Atelier.",
+        },
+      ];
+    case "libreria":
+      return [
+        {
+          id: "lib_lectern",
+          name: "Atril de Roble para Lectura",
+          category: "furniture",
+          icon: "📖",
+          unlocked: books >= 1 || sessions >= 1,
+          requirement: "1+ libro en catálogo o 1+ sesión",
+          flavorText: "Soporte inclinado perfecto para sumergirse en historias sin fatiga cervical.",
+        },
+        {
+          id: "lib_lantern",
+          name: "Farol de Forja de Medianoche",
+          category: "furniture",
+          icon: "🏮",
+          unlocked: sessions >= 3,
+          requirement: "3+ sesiones de lectura",
+          flavorText: "Proyecta una luz cálida ámbar ideal para leer en las noches de lluvia.",
+        },
+        {
+          id: "lib_seal",
+          name: "Sello Dorado del Archivero",
+          category: "trophy",
+          icon: "📜",
+          unlocked: books >= 2 || level >= 3,
+          requirement: "2+ libros o Nivel 3+",
+          flavorText: "Distinción que premia la disciplina de completar lecturas de principio a fin.",
+        },
+      ];
+    case "biblioteca":
+      return [
+        {
+          id: "bib_desk",
+          name: "Pupitre de Roble con Tintero",
+          category: "furniture",
+          icon: "🖋️",
+          unlocked: sessions >= 1,
+          requirement: "1+ sesión de estudio",
+          flavorText: "Espacio despejado con tintero índigo listo para repasos de memoria activa.",
+        },
+        {
+          id: "bib_hourglass",
+          name: "Reloj de Arena Pomodoro",
+          category: "furniture",
+          icon: "⏳",
+          unlocked: sessions >= 3,
+          requirement: "3+ sesiones o repasos SM-2",
+          flavorText: "Mide intervalos de estudio y descanso con arena de cuarzo de la cantera.",
+        },
+        {
+          id: "bib_codex",
+          name: "Códice de la Sabiduría",
+          category: "trophy",
+          icon: "🏛️",
+          unlocked: level >= 3 || sessions >= 7,
+          requirement: "Nivel 3+ o 7+ sesiones de estudio",
+          flavorText: "Volumen encuadernado en cuero que atestigua conceptos dominados.",
+        },
+      ];
+    case "club_puzzles":
+      return [
+        {
+          id: "pz_mat",
+          name: "Tapete de Speedcubing WCA",
+          category: "furniture",
+          icon: "🟩",
+          unlocked: sessions >= 1,
+          requirement: "1+ solve o sesión de cubos",
+          flavorText: "Superficie de neopreno con amortiguación para paradas seguras de cronómetro.",
+        },
+        {
+          id: "pz_display",
+          name: "Marcador de Récords Digital",
+          category: "furniture",
+          icon: "⏱️",
+          unlocked: pb !== null && pb !== undefined,
+          requirement: "Primer Single PB registrado",
+          flavorText: "Pantalla con dígitos esmeralda que conmemora tu mejor solve personal.",
+        },
+        {
+          id: "pz_cup",
+          name: "Copa Dorada de Torneo",
+          category: "trophy",
+          icon: "🥇",
+          unlocked: (pb !== null && pb !== undefined && pb < 25) || level >= 3,
+          requirement: "Single PB < 25s o Nivel 3+",
+          flavorText: "Galardón de torneo que celebra la velocidad, el lookahead y la calma mental.",
+        },
+      ];
+    case "observatorio":
+      return [
+        {
+          id: "obs_cushion",
+          name: "Almohadón Zen de Meditación",
+          category: "furniture",
+          icon: "🧘",
+          unlocked: sessions >= 1,
+          requirement: "1+ sesión de foco",
+          flavorText: "Asiento de lino natural para entrar en la zona con postura alineada.",
+        },
+        {
+          id: "obs_sphere",
+          name: "Esfera Armilar de Latón",
+          category: "furniture",
+          icon: "🪐",
+          unlocked: sessions >= 3 || focusMins >= 60,
+          requirement: "3+ sesiones de Deep Work",
+          flavorText: "Modelo astronómico que gira en silencio evocando la constancia del cosmos.",
+        },
+        {
+          id: "obs_prism",
+          name: "Prisma Cósmico de Claridad",
+          category: "trophy",
+          icon: "💎",
+          unlocked: level >= 3 || focusMins >= 120,
+          requirement: "Nivel 3+ o 120+ min de foco",
+          flavorText: "Cristal puro que refracta la luz cuando la mente alcanza la calma imperturbable.",
+        },
+      ];
+    default:
+      return [
+        {
+          id: "gen_chair",
+          name: "Sillón de Descanso Rústico",
+          category: "furniture",
+          icon: "🪑",
+          unlocked: true,
+          requirement: "Disponible desde el inicio",
+          flavorText: "Mobiliario básico para tomar una pausa y disfrutar de la serenidad del pueblo.",
+        },
+      ];
+  }
+}

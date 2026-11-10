@@ -57,6 +57,8 @@ import { LibreriaBuilding } from "@/components/sanctuary/libreria-building";
 import { BibliotecaBuilding } from "@/components/sanctuary/biblioteca-building";
 import { ClubPuzzlesBuilding } from "@/components/sanctuary/club-puzzles-building";
 import { ObservatorioBuilding } from "@/components/sanctuary/observatorio-building";
+import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
+import { queueOfflineAction, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
 import {
   COZY_VILLAGE_RESIDENTS,
   type VillageResident,
@@ -148,8 +150,31 @@ export function CozyRpgDashboard() {
     fetchState();
   }, [fetchState]);
 
-  // Manejo de envío directo de sesión
+  // Listener para sincronización automática al recuperar conexión a internet
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleOnline = () => {
+      processOfflineQueue(async () => {
+        await fetchState();
+      });
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [fetchState]);
+
+  // Manejo de envío directo de sesión con resiliencia offline PWA
   const handleSubmitSkillSession = async (payload: Record<string, unknown>) => {
+    if (typeof window !== "undefined" && !navigator.onLine) {
+      queueOfflineAction({
+        url: "/api/shortcuts/skill-session",
+        method: "POST",
+        body: payload,
+        description: `Sesión offline: ${String(payload.domain || "actividad")} (${payload.duration_minutes || 15} min)`,
+      });
+      triggerHaptic("warning");
+      return true;
+    }
+
     try {
       const res = await fetch("/api/shortcuts/skill-session", {
         method: "POST",
@@ -157,11 +182,20 @@ export function CozyRpgDashboard() {
         body: JSON.stringify(payload),
       });
       if (res.ok) {
+        triggerHaptic("success");
         await fetchState();
         return true;
       }
     } catch (err) {
-      console.error("Error al registrar sesión:", err);
+      console.warn("Fallo de red, guardando en cola offline:", err);
+      queueOfflineAction({
+        url: "/api/shortcuts/skill-session",
+        method: "POST",
+        body: payload,
+        description: `Sesión offline por reintento: ${String(payload.domain || "actividad")}`,
+      });
+      triggerHaptic("warning");
+      return true;
     }
     return false;
   };
@@ -820,6 +854,48 @@ export function CozyRpgDashboard() {
               </button>
             </div>
 
+            {/* Vitrina de Mobiliario y Logros del Edificio */}
+            {activeBuildingModal && (
+              <InteriorDecorationsPanel
+                buildingId={activeBuildingModal}
+                buildingName={
+                  activeBuildingModal === "atelier"
+                    ? "El Atelier de Hilados"
+                    : activeBuildingModal === "libreria"
+                    ? "La Librería & Archivo"
+                    : activeBuildingModal === "biblioteca"
+                    ? "La Biblioteca del Erudito"
+                    : activeBuildingModal === "club_puzzles"
+                    ? "Club de Puzzles WCA"
+                    : activeBuildingModal === "observatorio"
+                    ? "El Observatorio Cósmico"
+                    : "Santuario"
+                }
+                stats={{
+                  level: state?.skill_summaries?.find((s) => s.domain === (
+                    activeBuildingModal === "atelier" ? "knitting"
+                    : activeBuildingModal === "libreria" ? "reading"
+                    : activeBuildingModal === "biblioteca" ? "study"
+                    : activeBuildingModal === "club_puzzles" ? "rubik"
+                    : activeBuildingModal === "observatorio" ? "general"
+                    : "general"
+                  ))?.level || 1,
+                  sessionsCount: state?.skill_summaries?.find((s) => s.domain === (
+                    activeBuildingModal === "atelier" ? "knitting"
+                    : activeBuildingModal === "libreria" ? "reading"
+                    : activeBuildingModal === "biblioteca" ? "study"
+                    : activeBuildingModal === "club_puzzles" ? "rubik"
+                    : activeBuildingModal === "observatorio" ? "general"
+                    : "general"
+                  ))?.sessions_count || recentSessions.length,
+                  booksRead: readingBooks.length,
+                  knittingRows: knittingProjects.reduce((acc, p) => acc + (p.completed_rows || 0), 0),
+                  rubikPb: state?.rubik_stats?.pb_seconds ?? null,
+                  focusMinutes: recentSessions.filter(s => s.domain === "general").reduce((acc, s) => acc + (s.duration_minutes || 0), 0),
+                }}
+              />
+            )}
+
             {/* Inyección del Edificio Especializado */}
             <div>
               {activeBuildingModal === "atelier" && (
@@ -973,6 +1049,36 @@ export function CozyRpgDashboard() {
                 })}
               </p>
             </div>
+
+            {/* Micro-Misión de Bienestar del Residente */}
+            {selectedResident.microQuest && (
+              <div className="rounded-2xl border-2 border-[#4E6E58]/40 bg-[#4E6E58]/10 p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-[#4E6E58] tracking-wider">
+                    Micro-Misión de Bienestar
+                  </span>
+                  <span className="rounded-full bg-[#E9C46A] border border-[#3A2E2B] px-2 py-0.5 text-[9px] font-black text-[#3A2E2B]">
+                    {selectedResident.microQuest.badge}
+                  </span>
+                </div>
+                <h5 className="text-xs font-black text-[#3A2E2B]">
+                  {selectedResident.microQuest.title}
+                </h5>
+                <p className="text-[11px] text-[#5C4033] font-medium">
+                  {selectedResident.microQuest.description}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveBuildingModal(selectedResident.buildingId);
+                    setSelectedResident(null);
+                  }}
+                  className="mt-2 w-full rounded-xl border-2 border-[#3A2E2B] bg-[#E9C46A] py-2 text-xs font-black text-[#3A2E2B] hover:bg-[#F4A261] shadow-[0_2px_0_#3A2E2B] cursor-pointer"
+                >
+                  Aceptar Micro-Misión e Ir al Edificio ➜
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-xs text-[#795548] pt-1">
               <span>🎁 Regalo preferido: {selectedResident.favoriteGift}</span>
