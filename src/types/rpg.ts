@@ -306,6 +306,17 @@ export interface SkillDomainSummary {
   total_minutes: number;
 }
 
+export interface Quest {
+  id?: string;
+  code: string;
+  title: string;
+  domain: SkillDomain;
+  difficulty: "easy" | "medium" | "hard";
+  reward_gp: number;
+  reward_xp: number;
+  status?: string;
+}
+
 export interface QuickExpenseShortcutRequest {
   idempotency_key: string;
   input_mode: "natural_language" | "bank_sms" | "manual";
