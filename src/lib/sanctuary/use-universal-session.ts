@@ -76,26 +76,30 @@ export function useUniversalSession(targetDomain?: SkillDomain, targetBuildingId
   }, [session?.status]);
 
   const startSession = useCallback(
-    (params: {
-      domain: SkillDomain;
-      buildingId: string;
+    (params?: {
+      domain?: SkillDomain;
+      buildingId?: string;
       resourceId?: string;
       resourceTitle?: string;
       objective?: string;
       initialNotes?: string;
+      notes?: string;
     }) => {
+      const activeDomain = params?.domain || targetDomain || "general";
+      const activeBuildingId = params?.buildingId || targetBuildingId || "observatorio";
+
       const newSession: UniversalSessionState = {
         sessionId: `ses-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        domain: params.domain,
-        buildingId: params.buildingId,
+        domain: activeDomain,
+        buildingId: activeBuildingId,
         status: "running",
         startedAt: new Date().toISOString(),
         elapsedSeconds: 0,
         isPaused: false,
-        associatedResourceId: params.resourceId,
-        associatedResourceTitle: params.resourceTitle,
-        sessionObjective: params.objective,
-        notes: params.initialNotes || "",
+        associatedResourceId: params?.resourceId,
+        associatedResourceTitle: params?.resourceTitle,
+        sessionObjective: params?.objective,
+        notes: params?.notes || params?.initialNotes || "",
       };
 
       setSession(newSession);
@@ -105,7 +109,7 @@ export function useUniversalSession(targetDomain?: SkillDomain, targetBuildingId
         // Ignorar
       }
     },
-    []
+    [targetDomain, targetBuildingId]
   );
 
   const pauseSession = useCallback(() => {

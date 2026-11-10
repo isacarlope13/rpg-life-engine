@@ -147,6 +147,16 @@ export interface RubikSolveEntry {
   timestamp: string;
 }
 
+export interface RubikStats {
+  cube_type: string;
+  total_solves: number;
+  pb_seconds: number | null;
+  ao5_seconds: number | null;
+  ao12_seconds: number | null;
+  mean_seconds: number | null;
+  recent_solves: RubikSolveEntry[];
+}
+
 export interface BookQuoteEntry {
   id: string;
   text: string;
