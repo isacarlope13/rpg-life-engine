@@ -1,9 +1,11 @@
 // Service Worker para RPG Life-Engine PWA (v3.4)
 // Soporta almacenamiento en caché offline, haptics y sincronización en segundo plano.
 
-const CACHE_NAME = "rpg-life-engine-v3.4";
+const CACHE_NAME = "rpg-life-engine-v3.5";
 const PRECACHE_URLS = [
   "/",
+  "/cozy",
+  "/dashboard",
   "/quick",
   "/login",
   "/manifest.json",

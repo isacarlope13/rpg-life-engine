@@ -67,7 +67,13 @@ import { CozySidebar } from "@/components/cozy/cozy-sidebar";
 import { CozyHeader } from "@/components/cozy/cozy-header";
 import { BentoDailyDashboard } from "@/components/cozy/bento-daily-dashboard";
 import { ResidentModal } from "@/components/cozy/resident-modal";
-import { queueOfflineAction, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
+import {
+  queueOfflineAction,
+  processOfflineQueue,
+  triggerHaptic,
+  getOfflineQueue,
+  registerServiceWorker,
+} from "@/lib/offline-sync";
 import {
   COZY_VILLAGE_RESIDENTS,
   type VillageResident,
@@ -123,6 +129,10 @@ export function CozyRpgDashboard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Resiliencia PWA Offline
+  const [isOffline, setIsOffline] = useState(false);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+
   // Notas de bitácora
   const [quickNote, setQuickNote] = useState("");
   const [isScrapbookOpen, setIsScrapbookOpen] = useState(false);
@@ -160,17 +170,66 @@ export function CozyRpgDashboard() {
     fetchState();
   }, [fetchState]);
 
-  // Listener para sincronización automática al recuperar conexión a internet
+  // Inicialización de Service Worker y persistencia de notas
+  useEffect(() => {
+    registerServiceWorker();
+    if (typeof window !== "undefined") {
+      setIsOffline(!navigator.onLine);
+      setOfflineQueueCount(getOfflineQueue().length);
+      try {
+        const savedNotes = localStorage.getItem("cozy_oakhaven_notes_v1");
+        if (savedNotes) {
+          const parsed = JSON.parse(savedNotes);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setNotesList(parsed);
+          }
+        }
+      } catch (e) {
+        console.warn("Error cargando notas de Oakhaven:", e);
+      }
+    }
+  }, []);
+
+  // Listener para sincronización automática y detección de conexión PWA
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const handleOnline = () => {
-      processOfflineQueue(async () => {
+
+    const handleOnline = async () => {
+      setIsOffline(false);
+      const synced = await processOfflineQueue(async () => {
         await fetchState();
       });
+      setOfflineQueueCount(getOfflineQueue().length);
+      if (synced > 0) {
+        triggerHaptic("success");
+      }
     };
+
+    const handleOffline = () => {
+      setIsOffline(true);
+      setOfflineQueueCount(getOfflineQueue().length);
+      triggerHaptic("warning");
+    };
+
     window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, [fetchState]);
+
+  // Sincronización manual bajo demanda
+  const handleManualSync = async () => {
+    if (typeof window === "undefined" || !navigator.onLine) return;
+    const synced = await processOfflineQueue(async () => {
+      await fetchState();
+    });
+    setOfflineQueueCount(getOfflineQueue().length);
+    if (synced > 0) {
+      triggerHaptic("success");
+    }
+  };
 
   // Manejo de envío directo de sesión con resiliencia offline PWA
   const handleSubmitSkillSession = async (payload: Record<string, unknown>) => {
@@ -181,6 +240,7 @@ export function CozyRpgDashboard() {
         body: payload,
         description: `Sesión offline: ${String(payload.domain || "actividad")} (${payload.duration_minutes || 15} min)`,
       });
+      setOfflineQueueCount(getOfflineQueue().length);
       triggerHaptic("warning");
       return true;
     }
@@ -204,6 +264,7 @@ export function CozyRpgDashboard() {
         body: payload,
         description: `Sesión offline por reintento: ${String(payload.domain || "actividad")}`,
       });
+      setOfflineQueueCount(getOfflineQueue().length);
       triggerHaptic("warning");
       return true;
     }
@@ -243,12 +304,33 @@ export function CozyRpgDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Agregar nota
+  // Agregar nota con persistencia
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickNote.trim()) return;
-    setNotesList((prev) => [quickNote.trim(), ...prev]);
+    const updated = [quickNote.trim(), ...notesList];
+    setNotesList(updated);
     setQuickNote("");
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("cozy_oakhaven_notes_v1", JSON.stringify(updated));
+      } catch (err) {
+        console.warn("Error guardando notas de Oakhaven:", err);
+      }
+    }
+  };
+
+  // Eliminar nota con persistencia
+  const handleDeleteNote = (idx: number) => {
+    const updated = notesList.filter((_, i) => i !== idx);
+    setNotesList(updated);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("cozy_oakhaven_notes_v1", JSON.stringify(updated));
+      } catch (err) {
+        console.warn("Error guardando notas de Oakhaven:", err);
+      }
+    }
   };
 
   const handleCopyCode = () => {
@@ -318,6 +400,9 @@ export function CozyRpgDashboard() {
               onOpenScrapbook={() => setIsScrapbookOpen(true)}
               walletGp={walletGp}
               vaultGp={vaultGp}
+              isOffline={isOffline}
+              offlineQueueCount={offlineQueueCount}
+              onSyncNow={handleManualSync}
             />
 
             {/* ===================================================================
@@ -355,7 +440,7 @@ export function CozyRpgDashboard() {
                 notesList={notesList}
                 onQuickNoteChange={setQuickNote}
                 onAddNote={handleAddNote}
-                onDeleteNote={(idx) => setNotesList((prev) => prev.filter((_, i) => i !== idx))}
+                onDeleteNote={handleDeleteNote}
                 onSwitchToVillageMap={() => setViewMode("village_map")}
                 onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
                 onSelectResident={(resident) => setSelectedResident(resident)}
