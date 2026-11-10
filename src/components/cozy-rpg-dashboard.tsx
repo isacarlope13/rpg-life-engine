@@ -564,6 +564,10 @@ export function CozyRpgDashboard() {
         knittingProjectsCount={knittingProjects.length}
         rubikSolvesCount={state?.rubik_stats?.total_solves || 0}
         sessionsCount={recentSessions.length}
+        streakDays={streakDays}
+        walletGp={walletGp}
+        vaultGp={vaultGp}
+        rubikPb={state?.rubik_stats?.pb_seconds ?? null}
       />
     </div>
   );
