@@ -66,6 +66,14 @@ Script.complete();`;
           hp_pct: 0,
           status: "defeated",
         },
+    cozy_village: {
+      town_name: "Valle de Oakhaven",
+      reading_books_count: store.readingBooks?.length || 0,
+      knitting_projects_count: store.knittingProjects?.length || 0,
+      recent_sessions_count: store.skillSessions?.length || 0,
+      community_stars: 5.0,
+      sanctuary_buildings_count: 8,
+    },
     ios_scriptable_widget_code: scriptableCode,
   });
 }

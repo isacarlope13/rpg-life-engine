@@ -243,6 +243,30 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
       return "El sendero hacia las colinas de Oakhaven está despejado hoy. ¿Damos un paseo consciente?";
     },
   },
+  {
+    id: "oliver",
+    name: "Oliver",
+    title: "Chef & Alquimista del Fuego Lento",
+    species: "Erizo Panadero",
+    avatar: "🦔",
+    buildingId: "cocina",
+    domain: "cooking",
+    favoriteGift: "Miel de Azahar & Sal Marina en Escamas",
+    greetingQuote: "El buen pan y el caldo reconfortante no admiten prisas; el tiempo y el cariño son los ingredientes secretos.",
+    microQuest: {
+      title: "Infusión o Alimento Nutritivo",
+      description: "Prepara una infusión caliente o un tentempié saludable disfrutando cada bocado con presencia.",
+      targetAction: "cooking_session",
+      estimatedMinutes: 10,
+      badge: "🍳 +10 min bienestar",
+    },
+    getDynamicAdvice: ({ sessionsCount }) => {
+      if (sessionsCount === 0) {
+        return "¡Bienvenido a la Cocina de Oakhaven! Encendamos los fogones con calma y preparemos algo reconfortante.";
+      }
+      return "El horno está tibio y el aroma a hierbas inunda el taller. ¿Qué receta nutritiva cocinamos hoy?";
+    },
+  },
 ];
 
 export interface BuildingTrophyItem {
@@ -502,6 +526,46 @@ export function getBuildingTrophies(
           unlocked: sessions >= 10 || level >= 4,
           requirement: "10+ salidas o Nivel 4+",
           flavorText: "Hito conmemorativo que celebra coronar las cumbres altas del valle.",
+        },
+      ];
+    case "cocina":
+    case "cooking":
+      return [
+        {
+          id: "cook_spoon",
+          name: "Cuchara de Olivo Tallada",
+          category: "furniture",
+          icon: "🥄",
+          unlocked: sessions >= 1,
+          requirement: "1+ receta o infusión preparada",
+          flavorText: "Utensilio tradicional tallado a mano para remover caldos y salsas a fuego suave.",
+        },
+        {
+          id: "cook_pot",
+          name: "Olla de Hierro Fundido Esmaltada",
+          category: "furniture",
+          icon: "🍲",
+          unlocked: sessions >= 3 || level >= 2,
+          requirement: "3+ preparaciones o Nivel 2+",
+          flavorText: "Conserva el calor con gentileza y distribuye la temperatura de forma homogénea.",
+        },
+        {
+          id: "cook_grinder",
+          name: "Mortero de Granito y Especias",
+          category: "trophy",
+          icon: "🥣",
+          unlocked: sessions >= 6 || level >= 3,
+          requirement: "6+ recetas conscientes o Nivel 3+",
+          flavorText: "Herramienta noble para moler semillas, pimientas y hierbas aromáticas.",
+        },
+        {
+          id: "cook_cauldron",
+          name: "Caldero Dorado del Alquimista",
+          category: "relic",
+          icon: "🍯",
+          unlocked: sessions >= 10 || level >= 4,
+          requirement: "10+ sesiones culinarias o Nivel 4+",
+          flavorText: "Distinción legendaria que reconoce la cocina como acto de amor y nutrición consciente.",
         },
       ];
     default:

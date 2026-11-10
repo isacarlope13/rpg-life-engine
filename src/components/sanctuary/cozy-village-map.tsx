@@ -133,6 +133,17 @@ const MAP_BUILDINGS: MapBuildingItem[] = [
     residentId: "tara",
   },
   {
+    id: "cocina",
+    name: "Cocina & Fogones de Oakhaven",
+    domain: "cooking",
+    district: "artes",
+    icon: "🍳",
+    accentColor: "#E76F51",
+    borderColor: "#C46A36",
+    bgGradient: "from-[#35251C] to-[#20150F]",
+    residentId: "oliver",
+  },
+  {
     id: "oficina",
     name: "Núcleo de Gestión & Proyectos",
     domain: "work",
@@ -157,8 +168,24 @@ export function CozyVillageMap({
   onSelectResident,
 }: CozyVillageMapProps) {
   const [ambientAnimEnabled, setAmbientAnimEnabled] = useState(true);
-  const [weather, setWeather] = useState<VillageWeather>("sunny");
-  const [isMuted, setIsMuted] = useState(true);
+  const [weather, setWeather] = useState<VillageWeather>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("oakhaven_weather_pref") as VillageWeather | null;
+      if (saved && ["sunny", "rain", "autumn", "night"].includes(saved)) {
+        return saved;
+      }
+    }
+    return "sunny";
+  });
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("oakhaven_sound_muted_pref");
+      if (saved !== null) {
+        return saved === "true";
+      }
+    }
+    return true;
+  });
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [selectedDistrict, setSelectedDistrict] = useState<"all" | "artes" | "saber" | "naturaleza">("all");
   const [activeResidentDialogue, setActiveResidentDialogue] = useState<VillageResident | null>(null);
@@ -173,6 +200,11 @@ export function CozyVillageMap({
   // Manejo de cambio de clima sincronizado con audio
   const handleWeatherChange = (newWeather: VillageWeather) => {
     setWeather(newWeather);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("oakhaven_weather_pref", newWeather);
+      } catch {}
+    }
     if (!isMuted) {
       const themeMap: Record<VillageWeather, SoundscapeTheme> = {
         sunny: "sunny_breeze",
@@ -188,6 +220,11 @@ export function CozyVillageMap({
   const toggleSound = () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("oakhaven_sound_muted_pref", String(nextMuted));
+      } catch {}
+    }
     cozySoundscape.setMuted(nextMuted);
     if (!nextMuted) {
       const themeMap: Record<VillageWeather, SoundscapeTheme> = {

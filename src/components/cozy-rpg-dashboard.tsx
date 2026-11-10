@@ -59,6 +59,7 @@ import { ClubPuzzlesBuilding } from "@/components/sanctuary/club-puzzles-buildin
 import { ObservatorioBuilding } from "@/components/sanctuary/observatorio-building";
 import { BotanicalGardenBuilding } from "@/components/sanctuary/botanical-garden-building";
 import { HikingOutpostBuilding } from "@/components/sanctuary/hiking-outpost-building";
+import { KitchenBuilding } from "@/components/sanctuary/kitchen-building";
 import { VillageScrapbookModal } from "@/components/sanctuary/village-scrapbook-modal";
 import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
 import { queueOfflineAction, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
@@ -993,6 +994,17 @@ export function CozyRpgDashboard() {
                   playerLevel={playerLevel}
                   skillLevel={state?.skill_summaries?.find((s) => s.domain === "hiking")?.level || 1}
                   totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "hiking")?.total_gp_earned || 0}
+                  isCozyActive={true}
+                  onRefreshState={fetchState}
+                  onSubmitDirectSkillSession={handleSubmitSkillSession}
+                />
+              )}
+
+              {activeBuildingModal === "cocina" && (
+                <KitchenBuilding
+                  playerLevel={playerLevel}
+                  skillLevel={state?.skill_summaries?.find((s) => s.domain === "cooking")?.level || 1}
+                  totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "cooking")?.total_gp_earned || 0}
                   isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
