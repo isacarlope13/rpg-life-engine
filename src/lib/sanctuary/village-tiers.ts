@@ -464,6 +464,46 @@ export function getBuildingTrophies(
           flavorText: "Especie botánica legendaria que florece únicamente bajo cuidados diarios constantes.",
         },
       ];
+    case "pabellon_hiking":
+    case "hiking":
+      return [
+        {
+          id: "hik_boots",
+          name: "Botas de Cuero Curtido",
+          category: "furniture",
+          icon: "🥾",
+          unlocked: sessions >= 1,
+          requirement: "1+ ruta o caminata registrada",
+          flavorText: "Calzado artesanal resistente adaptado a los senderos de montaña de Oakhaven.",
+        },
+        {
+          id: "hik_compass",
+          name: "Brújula de Latón Envejecido",
+          category: "furniture",
+          icon: "🧭",
+          unlocked: sessions >= 3 || level >= 2,
+          requirement: "3+ salidas o Nivel 2+",
+          flavorText: "Instrumento confiable que orienta el paso en cualquier senda boscosa.",
+        },
+        {
+          id: "hik_staff",
+          name: "Bastón de Fresno Tallado",
+          category: "trophy",
+          icon: "🦯",
+          unlocked: sessions >= 6 || level >= 3,
+          requirement: "6+ salidas de senderismo o Nivel 3+",
+          flavorText: "Apoyo tallado en madera noble que atestigua cientos de pasos de montaña.",
+        },
+        {
+          id: "hik_summit_flag",
+          name: "Estandarte del Mirador del Viento",
+          category: "relic",
+          icon: "🚩",
+          unlocked: sessions >= 10 || level >= 4,
+          requirement: "10+ salidas o Nivel 4+",
+          flavorText: "Hito conmemorativo que celebra coronar las cumbres altas del valle.",
+        },
+      ];
     default:
       return [
         {

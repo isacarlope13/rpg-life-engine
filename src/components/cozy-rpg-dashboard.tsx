@@ -58,6 +58,8 @@ import { BibliotecaBuilding } from "@/components/sanctuary/biblioteca-building";
 import { ClubPuzzlesBuilding } from "@/components/sanctuary/club-puzzles-building";
 import { ObservatorioBuilding } from "@/components/sanctuary/observatorio-building";
 import { BotanicalGardenBuilding } from "@/components/sanctuary/botanical-garden-building";
+import { HikingOutpostBuilding } from "@/components/sanctuary/hiking-outpost-building";
+import { VillageScrapbookModal } from "@/components/sanctuary/village-scrapbook-modal";
 import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
 import { queueOfflineAction, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
 import {
@@ -117,6 +119,7 @@ export function CozyRpgDashboard() {
 
   // Notas de bitácora
   const [quickNote, setQuickNote] = useState("");
+  const [isScrapbookOpen, setIsScrapbookOpen] = useState(false);
   const [notesList, setNotesList] = useState<string[]>([
     "Recoger lana de alpaca para la bufanda nórdica.",
     "Completar 20 páginas del libro de arquitectura.",
@@ -429,6 +432,14 @@ export function CozyRpgDashboard() {
                   }`}
                 >
                   <Compass className="h-3.5 w-3.5" /> Pueblo Vivo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsScrapbookOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition cursor-pointer text-[#3A2E2B] hover:bg-[#E8DFCF]"
+                  title="Abrir álbum de recuerdos y postales"
+                >
+                  📷 Álbum
                 </button>
               </div>
 
@@ -978,20 +989,14 @@ export function CozyRpgDashboard() {
               )}
 
               {activeBuildingModal === "pabellon_hiking" && (
-                <div className="p-8 text-center space-y-4">
-                  <span className="text-5xl">🥾</span>
-                  <h3 className="text-xl font-bold text-white">Puesto de Senderismo</h3>
-                  <p className="text-xs text-slate-300 max-w-md mx-auto">
-                    Ajusta las correas de tu mochila y sal a despejar la mente con una caminata por los senderos de Oakhaven.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setActiveBuildingModal(null)}
-                    className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
-                  >
-                    Cerrar Puesto
-                  </button>
-                </div>
+                <HikingOutpostBuilding
+                  playerLevel={playerLevel}
+                  skillLevel={state?.skill_summaries?.find((s) => s.domain === "hiking")?.level || 1}
+                  totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "hiking")?.total_gp_earned || 0}
+                  isCozyActive={true}
+                  onRefreshState={fetchState}
+                  onSubmitDirectSkillSession={handleSubmitSkillSession}
+                />
               )}
             </div>
           </div>
@@ -1092,6 +1097,17 @@ export function CozyRpgDashboard() {
           </div>
         </div>
       )}
+
+      {/* ÁLBUM DE RECUERDOS Y POSTALES */}
+      <VillageScrapbookModal
+        isOpen={isScrapbookOpen}
+        onClose={() => setIsScrapbookOpen(false)}
+        playerLevel={playerLevel}
+        booksCount={readingBooks.length}
+        knittingProjectsCount={knittingProjects.length}
+        rubikSolvesCount={state?.rubik_stats?.total_solves || 0}
+        sessionsCount={recentSessions.length}
+      />
     </div>
   );
 }
