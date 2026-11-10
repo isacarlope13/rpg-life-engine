@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
+import { CozyButton } from "@/components/cozy/ui";
 
 interface ObservatorioBuildingProps {
   sessions?: SkillSessionRecord[];
@@ -207,49 +208,53 @@ export function ObservatorioBuilding({
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               {!isActive ? (
-                <button
-                  type="button"
+                <CozyButton
+                  variant="lake"
+                  size="md"
+                  icon={<Play className="h-4 w-4 fill-current" />}
                   onClick={() => startSession({ notes: targetGoal })}
-                  className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-purple-600/40 hover:bg-purple-500 cursor-pointer"
                 >
-                  <Play className="h-4 w-4" /> Comenzar Sesión de Enfoque
-                </button>
+                  Comenzar Sesión de Enfoque
+                </CozyButton>
               ) : (
                 <>
                   {isPaused ? (
-                    <button
-                      type="button"
+                    <CozyButton
+                      variant="sage"
+                      size="sm"
+                      icon={<Play className="h-4 w-4 fill-current" />}
                       onClick={resumeSession}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 cursor-pointer"
                     >
-                      <Play className="h-4 w-4" /> Reanudar
-                    </button>
+                      Reanudar
+                    </CozyButton>
                   ) : (
-                    <button
-                      type="button"
+                    <CozyButton
+                      variant="sunlight"
+                      size="sm"
+                      icon={<Pause className="h-4 w-4" />}
                       onClick={pauseSession}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-amber-500 cursor-pointer"
                     >
-                      <Pause className="h-4 w-4" /> Pausar
-                    </button>
+                      Pausar
+                    </CozyButton>
                   )}
 
-                  <button
-                    type="button"
+                  <CozyButton
+                    variant="lake"
+                    size="sm"
                     disabled={isSubmitting}
+                    icon={<Square className="h-4 w-4 fill-current" />}
                     onClick={handleFinishFocusSession}
-                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-purple-500/20 hover:brightness-110 disabled:opacity-50 cursor-pointer"
                   >
-                    <Square className="h-4 w-4" /> Finalizar y Reclamar Recompensas
-                  </button>
+                    Finalizar y Reclamar Recompensas
+                  </CozyButton>
 
-                  <button
-                    type="button"
+                  <CozyButton
+                    variant="wood"
+                    size="sm"
+                    icon={<RotateCcw className="h-3.5 w-3.5" />}
                     onClick={resetSession}
-                    className="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" /> Reset
-                  </button>
+                    aria-label="Reiniciar cronómetro"
+                  />
                 </>
               )}
             </div>

@@ -9,6 +9,8 @@ export type CozyButtonVariant =
   | "clay"
   | "sunlight"
   | "sage"
+  | "lake"
+  | "cream"
   | "ghost";
 
 export type CozyButtonSize = "sm" | "md" | "lg";
@@ -33,6 +35,10 @@ const VARIANT_CLASSES: Record<CozyButtonVariant, string> = {
     "bg-[#E7D69C] text-[#3A2E2B] border-[#3A2E2B] shadow-[0_3px_0_#3A2E2B] hover:bg-[#EFE2B3]",
   sage:
     "bg-[#77936A] text-[#FFFDF8] border-[#3A2E2B] shadow-[0_3px_0_#241C1A] hover:bg-[#88A67B]",
+  lake:
+    "bg-[#A9C7C7] text-[#2C4D56] border-[#3A2E2B] shadow-[0_3px_0_#3A2E2B] hover:bg-[#BBD7D7]",
+  cream:
+    "bg-[#F4EEDC] text-[#3A2E2B] border-[#3A2E2B] shadow-[0_3px_0_#3A2E2B] hover:bg-[#FAF6EC]",
   ghost:
     "bg-transparent text-[#3A2E2B] border-transparent shadow-none hover:bg-[#3A2E2B]/10 hover:border-[#3A2E2B]/20",
 };

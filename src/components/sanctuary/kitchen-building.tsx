@@ -17,6 +17,7 @@ import {
   Heart,
 } from "lucide-react";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
+import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 
 interface KitchenBuildingProps {
   playerLevel: number;
@@ -213,11 +214,13 @@ export function KitchenBuilding({
         </div>
       </div>
 
-      {/* MENSAJE DE FEEDBACK */}
+      {/* MENSAJE DE FEEDBACK ESTANDARIZADO */}
       {feedbackMsg && (
-        <div className="rounded-2xl border-2 border-[#C46A36] bg-[#FDF0E9] p-3 text-center text-xs font-black text-[#963E26] shadow-sm animate-in fade-in">
-          🍳 {feedbackMsg}
-        </div>
+        <CozyNotification
+          variant="success"
+          message={feedbackMsg}
+          onDismiss={() => setFeedbackMsg(null)}
+        />
       )}
 
       {/* SELECTOR DE PESTAÑAS */}
@@ -412,48 +415,52 @@ export function KitchenBuilding({
           </div>
 
           {/* CONTROLES */}
-          <div className="flex justify-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             {!isRunning ? (
-              <button
-                type="button"
+              <CozyButton
+                variant="clay"
+                size="md"
+                icon={<Play className="h-4 w-4 fill-current" />}
                 onClick={() => startSession()}
-                className="inline-flex items-center gap-2 rounded-2xl border-3 border-[#C46A36] bg-[#C46A36] px-5 py-2.5 text-xs font-black text-[#F7F4EB] shadow-md hover:bg-[#A85526] transition cursor-pointer"
               >
-                <Play className="h-4 w-4" /> Iniciar Sesión de Cocina
-              </button>
+                Iniciar Sesión de Cocina
+              </CozyButton>
             ) : (
               <>
                 {isPaused ? (
-                  <button
-                    type="button"
+                  <CozyButton
+                    variant="sunlight"
+                    size="sm"
+                    icon={<Play className="h-4 w-4 fill-current" />}
                     onClick={() => resumeSession()}
-                    className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#5C4033] bg-[#E9C46A] px-4 py-2 text-xs font-black text-[#3A2E2B] cursor-pointer"
                   >
-                    <Play className="h-4 w-4" /> Reanudar
-                  </button>
+                    Reanudar
+                  </CozyButton>
                 ) : (
-                  <button
-                    type="button"
+                  <CozyButton
+                    variant="wood"
+                    size="sm"
+                    icon={<Pause className="h-4 w-4" />}
                     onClick={() => pauseSession()}
-                    className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#5C4033] bg-[#EBE5D8] px-4 py-2 text-xs font-black text-[#3A2E2B] cursor-pointer"
                   >
-                    <Pause className="h-4 w-4" /> Pausar
-                  </button>
+                    Pausar
+                  </CozyButton>
                 )}
-                <button
-                  type="button"
+                <CozyButton
+                  variant="clay"
+                  size="sm"
+                  icon={<Square className="h-4 w-4 fill-current" />}
                   onClick={handleFinishCookingSession}
-                  className="inline-flex items-center gap-1.5 rounded-2xl border-3 border-[#C46A36] bg-[#C46A36] px-4 py-2 text-xs font-black text-[#F7F4EB] shadow-md hover:bg-[#A85526] cursor-pointer"
                 >
-                  <Square className="h-4 w-4" /> Finalizar y Registrar
-                </button>
-                <button
-                  type="button"
+                  Finalizar y Registrar
+                </CozyButton>
+                <CozyButton
+                  variant="cream"
+                  size="sm"
                   onClick={() => resetSession()}
-                  className="rounded-2xl border-2 border-red-300 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 cursor-pointer"
                 >
                   Descartar
-                </button>
+                </CozyButton>
               </>
             )}
           </div>

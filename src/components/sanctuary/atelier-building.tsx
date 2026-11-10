@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { KnittingProject } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
+import { CozyButton, CozyProgress, CozyNotification } from "@/components/cozy/ui";
 
 interface AtelierBuildingProps {
   projects: KnittingProject[];
@@ -199,21 +200,13 @@ export function AtelierBuilding({
         </div>
       </div>
 
-      {/* BANNER DE ÉXITO */}
+      {/* BANNER DE ÉXITO ESTANDARIZADO */}
       {actionSuccessMsg && (
-        <div className="rounded-xl border border-[#88A98E]/50 bg-[#222B24]/90 p-3.5 text-xs font-bold text-[#D8E6DA] shadow-md flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-[#88A98E]" />
-            {actionSuccessMsg}
-          </span>
-          <button
-            type="button"
-            onClick={() => setActionSuccessMsg(null)}
-            className="text-[#88A98E] hover:text-white cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
+        <CozyNotification
+          variant="success"
+          message={actionSuccessMsg}
+          onDismiss={() => setActionSuccessMsg(null)}
+        />
       )}
 
       {/* 3. GRID CENTRAL DEL ATELIER: PROYECTOS & ÁREA DE TRABAJO */}
@@ -384,10 +377,12 @@ export function AtelierBuilding({
                   </div>
 
                   {/* Barra de progreso de la pieza */}
-                  <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#181513]">
-                    <div
-                      className="h-full bg-gradient-to-r from-[#88A98E] to-[#E9C46A] transition-all duration-500"
-                      style={{ width: `${pct}%` }}
+                  <div className="mt-3">
+                    <CozyProgress
+                      value={pct}
+                      variant="sage"
+                      size="sm"
+                      showPercentage={false}
                     />
                   </div>
                 </div>
@@ -429,54 +424,53 @@ export function AtelierBuilding({
             {/* CONTROLES DE LA SESIÓN */}
             <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
               {!isRunning && !isPaused ? (
-                <button
-                  type="button"
+                <CozyButton
+                  variant="sage"
+                  size="sm"
+                  icon={<Play className="h-4 w-4 fill-current" />}
                   onClick={handleStartSession}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#88A98E] px-4 py-2 text-xs font-bold text-[#1E1B18] hover:bg-[#97B89D] shadow cursor-pointer"
                 >
-                  <Play className="h-4 w-4 fill-current" />
-                  <span>Iniciar Sesión de Tejido</span>
-                </button>
+                  Iniciar Sesión de Tejido
+                </CozyButton>
               ) : (
                 <>
                   {isPaused ? (
-                    <button
-                      type="button"
+                    <CozyButton
+                      variant="sage"
+                      size="sm"
+                      icon={<Play className="h-3.5 w-3.5 fill-current" />}
                       onClick={resumeSession}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#88A98E] px-3.5 py-1.5 text-xs font-bold text-[#1E1B18] hover:bg-[#97B89D] cursor-pointer"
                     >
-                      <Play className="h-3.5 w-3.5 fill-current" />
-                      <span>Reanudar</span>
-                    </button>
+                      Reanudar
+                    </CozyButton>
                   ) : (
-                    <button
-                      type="button"
+                    <CozyButton
+                      variant="sunlight"
+                      size="sm"
+                      icon={<Pause className="h-3.5 w-3.5" />}
                       onClick={pauseSession}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#E9C46A]/20 border border-[#E9C46A]/40 px-3.5 py-1.5 text-xs font-bold text-[#E9C46A] hover:bg-[#E9C46A]/30 cursor-pointer"
                     >
-                      <Pause className="h-3.5 w-3.5" />
-                      <span>Pausar</span>
-                    </button>
+                      Pausar
+                    </CozyButton>
                   )}
 
-                  <button
-                    type="button"
+                  <CozyButton
+                    variant="forest"
+                    size="sm"
                     disabled={submitting}
+                    icon={<Square className="h-3.5 w-3.5 fill-current" />}
                     onClick={handleFinishAndSave}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#88A98E] to-[#4E6E58] px-4 py-1.5 text-xs font-bold text-[#F4EFE6] shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
                   >
-                    <Square className="h-3.5 w-3.5 fill-current" />
-                    <span>Finalizar ({elapsedMinutes}m)</span>
-                  </button>
+                    Finalizar ({elapsedMinutes}m)
+                  </CozyButton>
 
-                  <button
-                    type="button"
+                  <CozyButton
+                    variant="wood"
+                    size="sm"
+                    icon={<RotateCcw className="h-3 w-3" />}
                     onClick={resetSession}
-                    className="inline-flex items-center gap-1 rounded-xl border border-[#4A3C31] bg-[#241F1C] px-2.5 py-1.5 text-xs text-[#A69B8D] hover:text-[#EAE4D9] cursor-pointer"
-                    title="Reiniciar cronómetro"
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                  </button>
+                    aria-label="Reiniciar cronómetro"
+                  />
                 </>
               )}
             </div>

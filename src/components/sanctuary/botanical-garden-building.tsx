@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { Quest } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
+import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 
 interface BotanicalGardenBuildingProps {
   playerLevel: number;
@@ -273,11 +274,13 @@ export function BotanicalGardenBuilding({
         </div>
       </div>
 
-      {/* NOTIFICACIÓN FLOTANTE */}
+      {/* NOTIFICACIÓN FLOTANTE ESTANDARIZADA */}
       {feedbackMsg && (
-        <div className="rounded-2xl border-2 border-[#4E6E58] bg-[#DFF0D8] p-3 text-center text-xs font-black text-[#2B542C] shadow-sm animate-in fade-in">
-          🌿 {feedbackMsg}
-        </div>
+        <CozyNotification
+          variant="success"
+          message={feedbackMsg}
+          onDismiss={() => setFeedbackMsg(null)}
+        />
       )}
 
       {/* SELECTOR DE PESTAÑAS */}
@@ -492,48 +495,52 @@ export function BotanicalGardenBuilding({
           </div>
 
           {/* CONTROLES DEL TEMPORIZADOR */}
-          <div className="flex justify-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             {!isRunning ? (
-              <button
-                type="button"
+              <CozyButton
+                variant="forest"
+                size="md"
+                icon={<Play className="h-4 w-4 fill-current" />}
                 onClick={() => startSession()}
-                className="inline-flex items-center gap-2 rounded-2xl border-3 border-[#38523F] bg-[#4E6E58] px-5 py-2.5 text-xs font-black text-[#F7F4EB] shadow-md hover:bg-[#3D5645] transition cursor-pointer"
               >
-                <Play className="h-4 w-4" /> Iniciar Sesión de Cuidados
-              </button>
+                Iniciar Sesión de Cuidados
+              </CozyButton>
             ) : (
               <>
                 {isPaused ? (
-                  <button
-                    type="button"
+                  <CozyButton
+                    variant="sunlight"
+                    size="sm"
+                    icon={<Play className="h-4 w-4 fill-current" />}
                     onClick={() => resumeSession()}
-                    className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#5C4033] bg-[#E9C46A] px-4 py-2 text-xs font-black text-[#3A2E2B] cursor-pointer"
                   >
-                    <Play className="h-4 w-4" /> Reanudar
-                  </button>
+                    Reanudar
+                  </CozyButton>
                 ) : (
-                  <button
-                    type="button"
+                  <CozyButton
+                    variant="wood"
+                    size="sm"
+                    icon={<Pause className="h-4 w-4" />}
                     onClick={() => pauseSession()}
-                    className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#5C4033] bg-[#EBE5D8] px-4 py-2 text-xs font-black text-[#3A2E2B] cursor-pointer"
                   >
-                    <Pause className="h-4 w-4" /> Pausar
-                  </button>
+                    Pausar
+                  </CozyButton>
                 )}
-                <button
-                  type="button"
+                <CozyButton
+                  variant="forest"
+                  size="sm"
+                  icon={<Square className="h-4 w-4 fill-current" />}
                   onClick={handleFinishGardeningSession}
-                  className="inline-flex items-center gap-1.5 rounded-2xl border-3 border-[#38523F] bg-[#4E6E58] px-4 py-2 text-xs font-black text-[#F7F4EB] shadow-md hover:bg-[#3D5645] cursor-pointer"
                 >
-                  <Square className="h-4 w-4" /> Finalizar y Registrar
-                </button>
-                <button
-                  type="button"
+                  Finalizar y Registrar
+                </CozyButton>
+                <CozyButton
+                  variant="cream"
+                  size="sm"
                   onClick={() => resetSession()}
-                  className="rounded-2xl border-2 border-red-300 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 cursor-pointer"
                 >
                   Descartar
-                </button>
+                </CozyButton>
               </>
             )}
           </div>
