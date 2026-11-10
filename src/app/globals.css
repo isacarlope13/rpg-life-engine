@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+@theme {
+  --color-cozy-forest: #314C3C;
+  --color-cozy-sage: #77936A;
+  --color-cozy-meadow: #B8CCA0;
+  --color-cozy-cream: #F4EEDC;
+  --color-cozy-wood: #D8B48A;
+  --color-cozy-clay: #C88973;
+  --color-cozy-lake: #A9C7C7;
+  --color-cozy-sunlight: #E7D69C;
+  --color-cozy-bark: #3A2E2B;
+}
+
 :root {
   color-scheme: dark;
 }
@@ -8,6 +20,32 @@ body {
   background-color: #090d16;
   color: #f1f5f9;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Utilidades para renderizado nítido de sprites y bordes pixel-art */
+.pixel-art {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.pixel-border {
+  box-shadow:
+    0 -3px 0 0 var(--color-cozy-bark, #3A2E2B),
+    0 3px 0 0 var(--color-cozy-bark, #3A2E2B),
+    -3px 0 0 0 var(--color-cozy-bark, #3A2E2B),
+    3px 0 0 0 var(--color-cozy-bark, #3A2E2B);
+}
+
+.pixel-shadow {
+  box-shadow: 0 4px 0 0 var(--color-cozy-bark, #3A2E2B);
+}
+
+.pixel-shadow-sm {
+  box-shadow: 0 2px 0 0 var(--color-cozy-bark, #3A2E2B);
+}
+
+.pixel-shadow-lg {
+  box-shadow: 0 8px 0 0 var(--color-cozy-bark, #3A2E2B);
 }
 
 /* WCAG 2.1 AA — Cumplimiento de Preferencias de Movimiento Reducido */
