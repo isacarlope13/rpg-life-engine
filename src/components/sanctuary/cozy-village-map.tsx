@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Compass,
   Sparkles,
@@ -18,6 +18,9 @@ import {
   Layers,
   Clock,
   Eye,
+  CloudRain,
+  Moon,
+  Wind,
 } from "lucide-react";
 import type { SkillDomain, SkillDomainSummary, SkillSessionRecord } from "@/types/rpg";
 import {
@@ -26,6 +29,8 @@ import {
   type VillageResident,
   type BuildingVisualTier,
 } from "@/lib/sanctuary/village-tiers";
+import { cozySoundscape, type SoundscapeTheme } from "@/lib/sanctuary/cozy-soundscape";
+import { MayorsLedgerModal } from "@/components/sanctuary/mayors-ledger-modal";
 
 interface CozyVillageMapProps {
   skillSummaries?: SkillDomainSummary[];
@@ -140,6 +145,8 @@ const MAP_BUILDINGS: MapBuildingItem[] = [
   },
 ];
 
+export type VillageWeather = "sunny" | "rain" | "autumn" | "night";
+
 export function CozyVillageMap({
   skillSummaries = [],
   recentSessions = [],
@@ -150,8 +157,50 @@ export function CozyVillageMap({
   onSelectResident,
 }: CozyVillageMapProps) {
   const [ambientAnimEnabled, setAmbientAnimEnabled] = useState(true);
+  const [weather, setWeather] = useState<VillageWeather>("sunny");
+  const [isMuted, setIsMuted] = useState(true);
+  const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [selectedDistrict, setSelectedDistrict] = useState<"all" | "artes" | "saber" | "naturaleza">("all");
   const [activeResidentDialogue, setActiveResidentDialogue] = useState<VillageResident | null>(null);
+
+  // Detener audio al desmontar
+  useEffect(() => {
+    return () => {
+      cozySoundscape.stopAll();
+    };
+  }, []);
+
+  // Manejo de cambio de clima sincronizado con audio
+  const handleWeatherChange = (newWeather: VillageWeather) => {
+    setWeather(newWeather);
+    if (!isMuted) {
+      const themeMap: Record<VillageWeather, SoundscapeTheme> = {
+        sunny: "sunny_breeze",
+        rain: "gentle_rain",
+        autumn: "autumn_wind",
+        night: "night_crickets",
+      };
+      cozySoundscape.playTheme(themeMap[newWeather]);
+    }
+  };
+
+  // Alternar sonido ambiental
+  const toggleSound = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    cozySoundscape.setMuted(nextMuted);
+    if (!nextMuted) {
+      const themeMap: Record<VillageWeather, SoundscapeTheme> = {
+        sunny: "sunny_breeze",
+        rain: "gentle_rain",
+        autumn: "autumn_wind",
+        night: "night_crickets",
+      };
+      cozySoundscape.playTheme(themeMap[weather]);
+    } else {
+      cozySoundscape.stopAll();
+    }
+  };
 
   // Filtrado de edificios por distrito
   const filteredBuildings = MAP_BUILDINGS.filter(
@@ -181,47 +230,78 @@ export function CozyVillageMap({
           </div>
         </div>
 
-        {/* CONTROLES Y FILTROS DE DISTRITO */}
+        {/* CONTROLES GLOBALES DEL PUEBLO */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Botón Bitácora del Alcalde */}
+          <button
+            type="button"
+            onClick={() => setIsLedgerOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#5C4033] bg-[#E9C46A] px-3 py-1.5 text-xs font-black text-[#3A2E2B] shadow-sm hover:bg-[#F4A261] transition cursor-pointer"
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            Bitácora del Alcalde
+          </button>
+
+          {/* Selector de Clima / Atmósfera */}
           <div className="flex rounded-xl border-2 border-[#5C4033] bg-[#EBE5D8] p-1 text-xs font-bold text-[#3A2E2B]">
             <button
               type="button"
-              onClick={() => setSelectedDistrict("all")}
-              className={`rounded-lg px-2.5 py-1 transition cursor-pointer ${
-                selectedDistrict === "all" ? "bg-[#4E6E58] text-[#F7F4EB]" : "hover:text-[#4E6E58]"
+              onClick={() => handleWeatherChange("sunny")}
+              title="Día Radiante"
+              className={`rounded-lg px-2 py-1 transition cursor-pointer ${
+                weather === "sunny" ? "bg-[#E9C46A] text-[#3A2E2B] font-black shadow-sm" : "hover:text-[#4E6E58]"
               }`}
             >
-              Todo el Pueblo
+              ☀️ Día
             </button>
             <button
               type="button"
-              onClick={() => setSelectedDistrict("saber")}
-              className={`rounded-lg px-2.5 py-1 transition cursor-pointer ${
-                selectedDistrict === "saber" ? "bg-[#4E6E58] text-[#F7F4EB]" : "hover:text-[#4E6E58]"
+              onClick={() => handleWeatherChange("rain")}
+              title="Lluvia Suave"
+              className={`rounded-lg px-2 py-1 transition cursor-pointer ${
+                weather === "rain" ? "bg-[#5B8296] text-[#F7F4EB] font-black shadow-sm" : "hover:text-[#4E6E58]"
               }`}
             >
-              Distrito del Saber
+              🌧️ Lluvia
             </button>
             <button
               type="button"
-              onClick={() => setSelectedDistrict("artes")}
-              className={`rounded-lg px-2.5 py-1 transition cursor-pointer ${
-                selectedDistrict === "artes" ? "bg-[#4E6E58] text-[#F7F4EB]" : "hover:text-[#4E6E58]"
+              onClick={() => handleWeatherChange("autumn")}
+              title="Tarde Otoñal"
+              className={`rounded-lg px-2 py-1 transition cursor-pointer ${
+                weather === "autumn" ? "bg-[#C46A36] text-[#F7F4EB] font-black shadow-sm" : "hover:text-[#4E6E58]"
               }`}
             >
-              Artes & Oficios
+              🍂 Otoño
             </button>
             <button
               type="button"
-              onClick={() => setSelectedDistrict("naturaleza")}
-              className={`rounded-lg px-2.5 py-1 transition cursor-pointer ${
-                selectedDistrict === "naturaleza" ? "bg-[#4E6E58] text-[#F7F4EB]" : "hover:text-[#4E6E58]"
+              onClick={() => handleWeatherChange("night")}
+              title="Noche Estrellada"
+              className={`rounded-lg px-2 py-1 transition cursor-pointer ${
+                weather === "night" ? "bg-[#252844] text-[#F7F4EB] font-black shadow-sm" : "hover:text-[#4E6E58]"
               }`}
             >
-              Naturaleza
+              🌌 Noche
             </button>
           </div>
 
+          {/* Toggle de Audio Paisaje Sonoro */}
+          <button
+            type="button"
+            onClick={toggleSound}
+            className={`inline-flex items-center gap-1.5 rounded-xl border-2 border-[#5C4033] px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+              !isMuted
+                ? "bg-[#4E6E58] text-[#F7F4EB] shadow-inner"
+                : "bg-[#EBE5D8] text-[#7A6B62]"
+            }`}
+            title={isMuted ? "Activar paisaje sonoro relajante" : "Silenciar audio"}
+          >
+            {!isMuted ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+            {!isMuted ? "Audio Cozy" : "Silenciado"}
+          </button>
+
+          {/* Toggle de Brisa / Animación */}
           <button
             type="button"
             onClick={() => setAmbientAnimEnabled(!ambientAnimEnabled)}
@@ -233,7 +313,50 @@ export function CozyVillageMap({
             title="Alternar animaciones ambientales y brisa"
           >
             <TreePine className="h-3.5 w-3.5" />
-            {ambientAnimEnabled ? "Brisa Activa" : "Modo Quieto"}
+            {ambientAnimEnabled ? "Brisa" : "Quieto"}
+          </button>
+        </div>
+      </div>
+
+      {/* FILTROS DE DISTRITO */}
+      <div className="flex flex-wrap items-center gap-2 px-1">
+        <span className="text-xs font-black uppercase text-[#5C4033]">Distritos:</span>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setSelectedDistrict("all")}
+            className={`rounded-xl border-2 border-[#5C4033] px-3 py-1 text-xs font-bold transition cursor-pointer ${
+              selectedDistrict === "all" ? "bg-[#4E6E58] text-[#F7F4EB]" : "bg-[#EBE5D8] text-[#3A2E2B] hover:bg-[#DED7C8]"
+            }`}
+          >
+            🏡 Todo el Pueblo
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDistrict("saber")}
+            className={`rounded-xl border-2 border-[#5C4033] px-3 py-1 text-xs font-bold transition cursor-pointer ${
+              selectedDistrict === "saber" ? "bg-[#4E6E58] text-[#F7F4EB]" : "bg-[#EBE5D8] text-[#3A2E2B] hover:bg-[#DED7C8]"
+            }`}
+          >
+            🏛️ Distrito del Saber
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDistrict("artes")}
+            className={`rounded-xl border-2 border-[#5C4033] px-3 py-1 text-xs font-bold transition cursor-pointer ${
+              selectedDistrict === "artes" ? "bg-[#4E6E58] text-[#F7F4EB]" : "bg-[#EBE5D8] text-[#3A2E2B] hover:bg-[#DED7C8]"
+            }`}
+          >
+            🧶 Artes & Oficios
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDistrict("naturaleza")}
+            className={`rounded-xl border-2 border-[#5C4033] px-3 py-1 text-xs font-bold transition cursor-pointer ${
+              selectedDistrict === "naturaleza" ? "bg-[#4E6E58] text-[#F7F4EB]" : "bg-[#EBE5D8] text-[#3A2E2B] hover:bg-[#DED7C8]"
+            }`}
+          >
+            🌿 Naturaleza
           </button>
         </div>
       </div>
@@ -289,18 +412,60 @@ export function CozyVillageMap({
         </div>
       )}
 
-      {/* PLANO DEL PUEBLO (BENTO GRID CON ESTÉTICA DE MAPA COZY) */}
-      <div className="relative rounded-3xl border-3 border-[#5C4033] bg-[#EFEAD8] p-5 sm:p-7 shadow-2xl overflow-hidden">
-        {/* Decoraciones ambientales de fondo */}
+      {/* PLANO DEL PUEBLO (BENTO GRID CON ESTÉTICA DE MAPA COZY Y CLIMA DINÁMICO) */}
+      <div
+        className={`relative rounded-3xl border-3 border-[#5C4033] p-5 sm:p-7 shadow-2xl overflow-hidden transition-colors duration-700 ${
+          weather === "sunny"
+            ? "bg-[#EFEAD8]"
+            : weather === "rain"
+            ? "bg-[#DDE3E7]"
+            : weather === "autumn"
+            ? "bg-[#EBDDC8]"
+            : "bg-[#181D2D]"
+        }`}
+      >
+        {/* Decoraciones ambientales y climáticas de fondo */}
         {ambientAnimEnabled && (
-          <div className="pointer-events-none absolute inset-0 opacity-15 overflow-hidden">
-            <div className="absolute top-4 left-10 text-4xl animate-bounce duration-1000">🍃</div>
-            <div className="absolute top-20 right-20 text-2xl animate-pulse">☁️</div>
-            <div className="absolute bottom-10 left-1/3 text-3xl animate-bounce">🍂</div>
+          <div className="pointer-events-none absolute inset-0 overflow-hidden select-none">
+            {weather === "sunny" && (
+              <div className="opacity-20">
+                <div className="absolute top-4 left-10 text-4xl animate-bounce duration-1000">🍃</div>
+                <div className="absolute top-16 right-20 text-3xl animate-pulse">☀️</div>
+                <div className="absolute bottom-10 left-1/3 text-3xl animate-bounce">✨</div>
+                <div className="absolute bottom-8 right-12 text-2xl">🌿</div>
+              </div>
+            )}
+            {weather === "rain" && (
+              <div className="opacity-30">
+                <div className="absolute top-2 left-8 text-2xl animate-pulse">🌧️</div>
+                <div className="absolute top-12 left-1/4 text-xl">💧</div>
+                <div className="absolute top-24 right-16 text-3xl animate-pulse">🌧️</div>
+                <div className="absolute top-36 right-1/3 text-xl">💧</div>
+                <div className="absolute bottom-12 left-12 text-2xl">🌱</div>
+              </div>
+            )}
+            {weather === "autumn" && (
+              <div className="opacity-25">
+                <div className="absolute top-6 left-12 text-3xl animate-bounce">🍂</div>
+                <div className="absolute top-14 right-24 text-4xl">🍁</div>
+                <div className="absolute bottom-12 left-1/2 text-3xl animate-bounce">🍂</div>
+                <div className="absolute bottom-6 right-16 text-2xl">🌰</div>
+              </div>
+            )}
+            {weather === "night" && (
+              <div className="opacity-40">
+                <div className="absolute top-4 right-14 text-3xl animate-pulse">🌙</div>
+                <div className="absolute top-10 left-16 text-2xl animate-ping duration-1000">✨</div>
+                <div className="absolute top-28 left-1/3 text-xl">⭐</div>
+                <div className="absolute bottom-14 right-1/4 text-2xl">✨</div>
+                <div className="absolute bottom-8 left-20 text-xl animate-pulse">🌌</div>
+              </div>
+            )}
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {/* REJILLA DE EDIFICIOS */}
+        <div className="relative z-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {filteredBuildings.map((building) => {
             const skillSum = skillSummaries.find((s) => s.domain === building.domain);
             const resident = COZY_VILLAGE_RESIDENTS.find((r) => r.id === building.residentId);
@@ -321,22 +486,42 @@ export function CozyVillageMap({
             return (
               <div
                 key={building.id}
-                className="group relative flex flex-col justify-between rounded-3xl border-3 border-[#5C4033] bg-[#FFFBF2] p-5 shadow-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-[#3A2E2B]"
+                className={`group relative flex flex-col justify-between rounded-3xl border-3 border-[#5C4033] p-5 shadow-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
+                  weather === "night"
+                    ? "bg-[#252A3E] text-[#F7F4EB] hover:border-[#E9C46A]"
+                    : "bg-[#FFFBF2] text-[#3A2E2B] hover:border-[#3A2E2B]"
+                }`}
               >
                 <div>
                   {/* Etiqueta de Distrito y Tier Visual */}
-                  <div className="flex items-center justify-between gap-1 border-b-2 border-[#5C4033]/20 pb-2.5 mb-3">
-                    <span className="rounded-full bg-[#EBE5D8] px-2 py-0.5 text-[10px] font-extrabold uppercase text-[#5C4033]">
+                  <div
+                    className={`flex items-center justify-between gap-1 border-b-2 pb-2.5 mb-3 ${
+                      weather === "night" ? "border-amber-500/20" : "border-[#5C4033]/20"
+                    }`}
+                  >
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase ${
+                        weather === "night"
+                          ? "bg-amber-950/60 text-amber-300 border border-amber-600/30"
+                          : "bg-[#EBE5D8] text-[#5C4033]"
+                      }`}
+                    >
                       {tierInfo.badge}
                     </span>
-                    <span className="text-[10px] font-bold text-[#8C7A6B]">
+                    <span
+                      className={`text-[10px] font-bold ${
+                        weather === "night" ? "text-amber-200/70" : "text-[#8C7A6B]"
+                      }`}
+                    >
                       Nivel {skillSum?.level || 1} • {skillSum?.sessions_count || buildingSessions.length} sesiones
                     </span>
                   </div>
 
                   {/* FACHADA VISUAL DEL EDIFICIO */}
                   <div
-                    className={`relative flex flex-col items-center justify-center rounded-2xl border-2 border-[#5C4033] bg-gradient-to-b ${building.bgGradient} p-4 text-center shadow-inner`}
+                    className={`relative flex flex-col items-center justify-center rounded-2xl border-2 ${
+                      weather === "night" ? "border-amber-500/40 shadow-amber-500/10 shadow-lg" : "border-[#5C4033]"
+                    } bg-gradient-to-b ${building.bgGradient} p-4 text-center shadow-inner`}
                   >
                     <span className="text-4xl filter drop-shadow group-hover:scale-110 transition-transform duration-300">
                       {building.icon}
@@ -366,14 +551,22 @@ export function CozyVillageMap({
 
                   {/* DESCRIPCIÓN EVOLUTIVA */}
                   <div className="mt-3 space-y-1.5 text-left">
-                    <p className="text-[11px] font-medium text-[#7A6B62] line-clamp-2">
+                    <p
+                      className={`text-[11px] font-medium line-clamp-2 ${
+                        weather === "night" ? "text-gray-300" : "text-[#7A6B62]"
+                      }`}
+                    >
                       {tierInfo.facadeDescription}
                     </p>
                     <div className="flex flex-wrap gap-1 pt-1">
                       {tierInfo.decorations.slice(0, 2).map((dec, i) => (
                         <span
                           key={i}
-                          className="rounded-md bg-[#EBE5D8] px-1.5 py-0.5 text-[9px] font-bold text-[#5C4033]"
+                          className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+                            weather === "night"
+                              ? "bg-slate-800 text-amber-200/90 border border-slate-700"
+                              : "bg-[#EBE5D8] text-[#5C4033]"
+                          }`}
                         >
                           ✓ {dec}
                         </span>
@@ -383,8 +576,16 @@ export function CozyVillageMap({
                 </div>
 
                 {/* BOTÓN PARA ENTRAR A LA SESIÓN */}
-                <div className="pt-4 border-t-2 border-[#5C4033]/20 mt-4 flex items-center justify-between">
-                  <span className="text-[10px] font-extrabold text-[#4E6E58]">
+                <div
+                  className={`pt-4 border-t-2 mt-4 flex items-center justify-between ${
+                    weather === "night" ? "border-amber-500/20" : "border-[#5C4033]/20"
+                  }`}
+                >
+                  <span
+                    className={`text-[10px] font-extrabold ${
+                      weather === "night" ? "text-emerald-400" : "text-[#4E6E58]"
+                    }`}
+                  >
                     +{skillSum?.total_gp_earned ? skillSum.total_gp_earned.toLocaleString("es-CO") : "0"} GP
                   </span>
                   <button
@@ -400,6 +601,16 @@ export function CozyVillageMap({
           })}
         </div>
       </div>
+
+      {/* MODAL BITÁCORA DEL ALCALDE */}
+      <MayorsLedgerModal
+        isOpen={isLedgerOpen}
+        onClose={() => setIsLedgerOpen(false)}
+        skillSummaries={skillSummaries}
+        recentSessions={recentSessions}
+        activeBooksCount={activeBooksCount}
+        activeKnittingProjectsCount={activeKnittingProjectsCount}
+      />
     </div>
   );
 }
