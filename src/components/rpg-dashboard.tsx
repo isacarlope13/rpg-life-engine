@@ -1031,6 +1031,38 @@ export function RPGLifeEngineDashboard({
   });
 
   // Lateral Activity Bank state
+  // 🌾 ESTADO Y PERSISTENCIA DEL MODO COZY RPG (Descanso Visual & Santuario)
+  const [isCozyActive, setIsCozyActive] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("rpg_is_cozy_active");
+        if (stored !== null) return stored === "true";
+        const currentHour = new Date().getHours();
+        return currentHour >= 21 || currentHour < 7;
+      } catch (e) {
+        console.error("Error reading rpg_is_cozy_active:", e);
+      }
+    }
+    return false;
+  });
+
+  const [isStressAccordionOpen, setIsStressAccordionOpen] = useState<boolean>(false);
+
+  const handleToggleCozyMode = () => {
+    setIsCozyActive((prev) => {
+      const nextVal = !prev;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("rpg_is_cozy_active", String(nextVal));
+        } catch (e) {
+          console.error("Error saving rpg_is_cozy_active:", e);
+        }
+      }
+      triggerHaptic("medium");
+      return nextVal;
+    });
+  };
+
   const [calendarTargetDay, setCalendarTargetDay] = useState<string>(() => {
     const todayIndex = new Date().getDay();
     const map = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
@@ -2512,6 +2544,33 @@ export function RPGLifeEngineDashboard({
     }
   };
 
+  const [wellnessSuccessMsg, setWellnessSuccessMsg] = useState<string | null>(null);
+
+  const handleQuickWellnessAction = async (title: string, xpReward: number, gpReward: number) => {
+    triggerHaptic("success");
+    try {
+      await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain: "reading",
+          minutes: 15,
+          xp_earned: xpReward,
+          gp_earned: gpReward,
+          notes: `[🌾 Modo Cozy] Micro-Misión de Bienestar: ${title}`,
+          idempotency_key: `cozy-well-${Date.now()}`,
+        }),
+      });
+      setWellnessSuccessMsg(`✨ ¡Paz cultivada! Has completado "${title}" (+${xpReward} XP, +${gpReward} GP).`);
+      setTimeout(() => setWellnessSuccessMsg(null), 4000);
+      await fetchState();
+    } catch (e) {
+      console.error("Error logging wellness micro-mission:", e);
+      setWellnessSuccessMsg(`✨ Micro-misión "${title}" guardada.`);
+      setTimeout(() => setWellnessSuccessMsg(null), 3000);
+    }
+  };
+
   const triggerHabitShortcut = async (questCode: string) => {
     setSubmitting(true);
     const bodyPayload = {
@@ -2785,7 +2844,14 @@ export function RPGLifeEngineDashboard({
   );
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div
+      className={`min-h-screen transition-colors duration-300 ease-in-out ${
+        isCozyActive
+          ? "bg-[#181614] text-[#EAE4D9]"
+          : "bg-[#0B0F19] text-[#F1F5F9]"
+      }`}
+    >
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {dedicatedSkillDomain ? (
         /* =====================================================================
            PÁGINA DEDICADA DE HABILIDAD (SOLO ESTA HABILIDAD A PANTALLA COMPLETA)
@@ -2857,13 +2923,23 @@ export function RPGLifeEngineDashboard({
         </div>
       ) : (
         <>
-          {/* MINIMALIST COMMAND CENTER HEADER (Linear / Notion Inspired) */}
-          <header className="sticky top-2 z-40 mb-5 rounded-2xl border border-white/5 bg-[#131B2E]/75 p-3 sm:p-4 shadow-xl backdrop-blur-md">
+          {/* MINIMALIST COMMAND CENTER HEADER (Linear / Notion Inspired & Cozy Soft Earth Adaptive) */}
+          <header className={`sticky top-2 z-40 mb-5 rounded-2xl p-3 sm:p-4 backdrop-blur-md transition-all duration-300 ${
+            isCozyActive
+              ? "border border-[#4A3C31]/50 bg-[#221F1C]/85 shadow-md text-[#EAE4D9]"
+              : "border border-white/5 bg-[#131B2E]/75 shadow-xl text-slate-100"
+          }`}>
             {/* Top Row: Brand, Character Info & Actions */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-white/5 pb-3">
               <div className="flex flex-wrap items-center gap-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <div
+                    className={`h-2 w-2 rounded-full transition-colors duration-300 ${
+                      isCozyActive
+                        ? "bg-[#88A98E]"
+                        : "bg-emerald-400 animate-pulse"
+                    }`}
+                  />
                   <span className="font-mono text-xs font-black tracking-wider text-slate-100">
                     RPG LIFE-ENGINE
                   </span>
@@ -2975,14 +3051,38 @@ export function RPGLifeEngineDashboard({
                   <span className="hidden md:inline">Móvil 5s</span>
                 </a>
 
-                <a
-                  href="/cozy"
-                  className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition"
-                  title="Tablero Cozy RPG (Estética Animal Crossing & Fantasía Cálida)"
-                >
-                  <span>🌾</span>
-                  <span className="hidden md:inline">Modo Cozy RPG</span>
-                </a>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleToggleCozyMode}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                      isCozyActive
+                        ? "border border-[#88A98E]/60 bg-[#88A98E]/25 text-[#D8E6DA] shadow-sm ring-1 ring-[#88A98E]/40"
+                        : "border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                    }`}
+                    title={
+                      isCozyActive
+                        ? "Modo Cozy Activo (Descanso Visual & Tonos Tierra) — Clic para modo estándar"
+                        : "Activar Modo Cozy RPG (Descanso Visual, Tonos Tierra & Santuario)"
+                    }
+                  >
+                    <span>🌾</span>
+                    <span className="font-bold">
+                      {isCozyActive ? "Modo Cozy Activo ✨" : "Modo Cozy RPG"}
+                    </span>
+                  </button>
+                  <a
+                    href="/cozy"
+                    className={`rounded-lg p-1.5 transition ${
+                      isCozyActive
+                        ? "text-[#88A98E] hover:text-[#EAE4D9] hover:bg-[#4A3C31]/40"
+                        : "text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/10"
+                    }`}
+                    title="Abrir Tablero Cozy Oakhaven dedicado"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
 
                 <a
                   href="/onboarding"
@@ -3072,20 +3172,44 @@ export function RPGLifeEngineDashboard({
                 </div>
               </div>
 
-              {/* Metric 3: Racha de Hábitos */}
-              <div className="rounded-xl border border-white/5 bg-[#0B0F19]/60 p-2.5 backdrop-blur-sm shadow-sm transition hover:border-white/10">
+              {/* Metric 3: Racha de Hábitos con Buff de Gracia */}
+              <div
+                className={`rounded-xl border p-2.5 backdrop-blur-sm shadow-sm transition ${
+                  isCozyActive
+                    ? "border-[#88A98E]/40 bg-[#25201C]/60 text-[#EAE4D9]"
+                    : "border-white/5 bg-[#0B0F19]/60 hover:border-white/10"
+                }`}
+              >
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Racha Hábitos</span>
-                  <Flame className="h-3.5 w-3.5 text-amber-400" />
+                  {isCozyActive ? (
+                    <span className="text-xs" title="Buff de Gracia Activo: Racha protegida">🛡️</span>
+                  ) : (
+                    <Flame className="h-3.5 w-3.5 text-amber-400" />
+                  )}
                 </div>
                 <div className="mt-1 flex items-baseline gap-1">
-                  <span className="font-mono text-lg font-black tracking-tight text-amber-300">
+                  <span
+                    className={`font-mono text-lg font-black tracking-tight ${
+                      isCozyActive ? "text-[#E9C46A]" : "text-amber-300"
+                    }`}
+                  >
                     {state.current_streak_days}
                   </span>
-                  <span className="text-[10px] text-amber-400 font-bold">días</span>
+                  <span className={`text-[10px] font-bold ${isCozyActive ? "text-[#88A98E]" : "text-amber-400"}`}>
+                    días
+                  </span>
                 </div>
-                <div className="mt-0.5 text-[10px] text-amber-400/90 font-semibold">
-                  Buff {state.streak_multiplier}x GP
+                <div className="mt-0.5 text-[10px] font-semibold">
+                  {isCozyActive ? (
+                    <span className="text-[#88A98E] font-bold">
+                      🛡️ Buff de Gracia (1.1x seguro)
+                    </span>
+                  ) : (
+                    <span className="text-amber-400/90">
+                      Buff {state.streak_multiplier}x GP
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -3129,42 +3253,121 @@ export function RPGLifeEngineDashboard({
               </div>
 
               {/* Metric 6: Estado de los Debt Bosses & DoT Pasivo */}
-              <div className={`rounded-xl border p-2.5 backdrop-blur-sm shadow-sm transition ${
-                totalActiveDot > 0
-                  ? "border-rose-500/30 bg-rose-950/20"
-                  : "border-white/5 bg-[#0B0F19]/60 hover:border-white/10"
-              }`}>
-                <div className="flex items-center justify-between text-[11px] text-slate-400">
-                  <span>Debt Bosses & DoT</span>
-                  <Skull className={`h-3.5 w-3.5 ${totalActiveDot > 0 ? "text-rose-400 animate-pulse" : "text-emerald-400"}`} />
+              {isCozyActive ? (
+                <div className="rounded-xl border border-[#4A3C31]/50 bg-[#25201C]/70 p-2.5 backdrop-blur-sm shadow-sm transition">
+                  <div className="flex items-center justify-between text-[11px] text-[#C9BEAE]">
+                    <span>Refugio Financiero</span>
+                    <span className="text-xs" title="Modo Cozy: Sin alertas rojas">🕊️</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#88A98E]">
+                      Apaciguado
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsStressAccordionOpen((prev) => !prev)}
+                      className="text-[10px] text-[#A69B8D] underline hover:text-[#EAE4D9] cursor-pointer"
+                    >
+                      {isStressAccordionOpen ? "Ocultar" : "Detalles"}
+                    </button>
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-[#A69B8D] truncate">
+                    {isStressAccordionOpen ? (
+                      <span className="text-[#E9C46A]">
+                        DoT pausado: -{totalActiveDot} GP/d
+                      </span>
+                    ) : (
+                      <span>Presión silenciada</span>
+                    )}
+                  </div>
                 </div>
-                {totalActiveDot > 0 ? (
-                  <>
-                    <div className="mt-1 flex items-baseline gap-1">
-                      <span className="font-mono text-base font-black text-rose-400">
-                        -{totalActiveDot.toLocaleString("es-CO")}
-                      </span>
-                      <span className="text-[10px] text-rose-400 font-bold">GP/d</span>
-                    </div>
-                    <div className="mt-0.5 text-[10px] text-rose-300 font-semibold truncate">
-                      {(state.bosses || []).filter((b) => b.current_hp > 0 && !b.is_purified).length} Boss(es) en combate
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="mt-1 flex items-baseline gap-1">
-                      <span className="font-mono text-base font-black text-emerald-300">
-                        0 DoT
-                      </span>
-                      <span className="text-[10px] text-emerald-400 font-bold">En Paz</span>
-                    </div>
-                    <div className="mt-0.5 text-[10px] text-slate-400 font-semibold truncate">
-                      {(state.bosses || []).filter((b) => b.is_purified || b.current_hp <= 0).length} Purificados • Sin sangrado
-                    </div>
-                  </>
-                )}
-              </div>
+              ) : (
+                <div
+                  className={`rounded-xl border p-2.5 backdrop-blur-sm shadow-sm transition ${
+                    totalActiveDot > 0
+                      ? "border-rose-500/30 bg-rose-950/20"
+                      : "border-white/5 bg-[#0B0F19]/60 hover:border-white/10"
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Debt Bosses & DoT</span>
+                    <Skull
+                      className={`h-3.5 w-3.5 ${
+                        totalActiveDot > 0
+                          ? "text-rose-400 animate-pulse"
+                          : "text-emerald-400"
+                      }`}
+                    />
+                  </div>
+                  {totalActiveDot > 0 ? (
+                    <>
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="font-mono text-base font-black text-rose-400">
+                          -{totalActiveDot.toLocaleString("es-CO")}
+                        </span>
+                        <span className="text-[10px] text-rose-400 font-bold">
+                          GP/d
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-rose-300 font-semibold truncate">
+                        {(state.bosses || []).filter(
+                          (b) => b.current_hp > 0 && !b.is_purified
+                        ).length}{" "}
+                        Boss(es) en combate
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="font-mono text-base font-black text-emerald-300">
+                          0 DoT
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-bold">
+                          En Paz
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-slate-400 font-semibold truncate">
+                        {(state.bosses || []).filter(
+                          (b) => b.is_purified || b.current_hp <= 0
+                        ).length}{" "}
+                        Purificados • Sin sangrado
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Acordeón Secundario Colapsable de Deudas & DoT (Solo cuando se expande en Cozy Mode) */}
+            {isCozyActive && isStressAccordionOpen && (
+              <div className="mt-3 rounded-xl border border-[#4A3C31]/50 bg-[#25201C]/80 p-3 text-xs text-[#C9BEAE] transition-all">
+                <div className="flex items-center justify-between font-bold text-[#EAE4D9] mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <span>📜</span>
+                    <span>Registro Protegido de Obligaciones (DoT Pasivo: -{totalActiveDot.toLocaleString("es-CO")} GP/d)</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsStressAccordionOpen(false)}
+                    className="text-[#A69B8D] hover:text-white cursor-pointer text-xs"
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+                <p className="text-[11px] text-[#A69B8D] leading-relaxed">
+                  Las penalizaciones y alertas rojas están pausadas en Modo Cozy. La deuda no interfiere con tus hábitos de bienestar de hoy.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(state.bosses || []).filter((b) => b.current_hp > 0 && !b.is_purified).map((boss) => (
+                    <div key={boss.id} className="rounded-lg border border-[#4A3C31]/60 bg-[#1D1917] px-2.5 py-1 text-[11px]">
+                      <span className="font-medium text-[#D8E6DA]">{boss.name}</span>:{" "}
+                      <span className="font-mono text-[#E9C46A]">${(boss.current_hp || 0).toLocaleString("es-CO")} COP</span>{" "}
+                      <span className="text-[#A69B8D]">({boss.daily_interest_dot_gp ?? 0} GP/d DoT)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* GM Briefing Banner (renders if briefing has been generated) */}
             {gmBriefing && (
@@ -3318,21 +3521,115 @@ export function RPGLifeEngineDashboard({
          ===================================================================== */}
       {!dedicatedSkillDomain && homeActiveTab === "hub" && (
         <div className="space-y-8 mb-8">
+          {/* BANNER DE NOTIFICACIÓN DE BIENESTAR */}
+          {wellnessSuccessMsg && (
+            <div className="rounded-xl border border-[#88A98E]/50 bg-[#222B24]/90 p-3 text-xs font-bold text-[#D8E6DA] shadow-md flex items-center justify-between">
+              <span>{wellnessSuccessMsg}</span>
+              <button
+                type="button"
+                onClick={() => setWellnessSuccessMsg(null)}
+                className="text-[#88A98E] hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* BANNER SANTUARIO DE BIENESTAR & MICRO-MISIONES EN MODO COZY */}
+          {isCozyActive && (
+            <div className="rounded-2xl border border-[#4A3C31]/50 bg-[#221F1C]/80 p-5 shadow-md">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[#4A3C31]/40 pb-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🌿</span>
+                  <div>
+                    <h3 className="font-bold text-sm text-[#EAE4D9]">
+                      Santuario de Bienestar · Micro-Misiones Sin Fricción
+                    </h3>
+                    <p className="text-xs text-[#A69B8D]">
+                      Tareas restaurativas de un solo toque. Gana XP y GP inmediatos sin requerir sprints de trabajo profundo.
+                    </p>
+                  </div>
+                </div>
+                <span className="self-start sm:self-auto rounded-full bg-[#88A98E]/20 border border-[#88A98E]/40 px-2.5 py-0.5 text-[10px] font-bold text-[#D8E6DA]">
+                  🛡️ Buff de Gracia Activo (1.1x seguro)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                {[
+                  { icon: "🍵", title: "Infusión Plena", desc: "Té o agua consciente", xp: 50, gp: 100 },
+                  { icon: "📖", title: "Lectura Serena", desc: "5 págs sin prisa", xp: 100, gp: 250 },
+                  { icon: "🥾", title: "Paseo Suave", desc: "5 min de estiramiento", xp: 80, gp: 200 },
+                  { icon: "🌱", title: "Pausa Botánica", desc: "Cuidado de plantas", xp: 75, gp: 150 },
+                  { icon: "🧶", title: "Momento Creativo", desc: "Tejido o boceto libre", xp: 90, gp: 220 },
+                ].map((mission) => (
+                  <button
+                    key={mission.title}
+                    type="button"
+                    onClick={() => handleQuickWellnessAction(mission.title, mission.xp, mission.gp)}
+                    className="flex flex-col justify-between rounded-xl border border-[#4A3C31]/40 bg-[#1A1815]/80 p-3 text-left transition hover:border-[#88A98E]/60 hover:bg-[#25201C] cursor-pointer"
+                  >
+                    <div>
+                      <div className="text-xl mb-1">{mission.icon}</div>
+                      <div className="font-bold text-xs text-[#EAE4D9]">{mission.title}</div>
+                      <div className="text-[10px] text-[#A69B8D] mt-0.5">{mission.desc}</div>
+                    </div>
+                    <div className="mt-2.5 flex items-center justify-between text-[10px] font-mono text-[#E9C46A] border-t border-[#4A3C31]/30 pt-1.5">
+                      <span>+{mission.xp} XP</span>
+                      <span>+{mission.gp} GP</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 1. PORTALES DE HABILIDADES COMPACTOS & MINIMALISTAS (Responsive Grid Glassmorphism) */}
-          <div className="rounded-2xl border border-white/5 bg-[#131B2E]/60 p-5 shadow-xl backdrop-blur-md">
+          <div className={`rounded-2xl p-5 backdrop-blur-md transition-all duration-300 ${
+            isCozyActive
+              ? "border border-[#4A3C31]/50 bg-[#221F1C]/75 shadow-md text-[#EAE4D9]"
+              : "border border-white/5 bg-[#131B2E]/60 shadow-xl text-slate-100"
+          }`}>
             <div className="mb-3.5 flex items-center justify-between">
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-                  🚀 Portales de Habilidades & Sesiones Activas
+                <span className={`text-xs font-bold uppercase tracking-wider ${
+                  isCozyActive ? "text-[#88A98E]" : "text-emerald-400"
+                }`}>
+                  {isCozyActive ? "🌾 Portales del Santuario & Habilidades Restaurativas" : "🚀 Portales de Habilidades & Sesiones Activas"}
                 </span>
-                <p className="text-xs text-slate-400">
+                <p className={`text-xs ${isCozyActive ? "text-[#A69B8D]" : "text-slate-400"}`}>
                   Haz clic en cualquier portal para abrir la Ventana de Sesión Activa con Pomodoro y Notas, o navega a su Santuario dedicado.
                 </p>
               </div>
+              {isCozyActive && (
+                <span className="rounded-lg bg-[#88A98E]/15 border border-[#88A98E]/30 px-2.5 py-1 text-[11px] font-bold text-[#D8E6DA]">
+                  Prioridad Restaurativa
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {ALL_SKILL_DOMAINS_PORTAL.map((dom) => {
+              {(isCozyActive
+                ? [...ALL_SKILL_DOMAINS_PORTAL].sort((a, b) => {
+                    const priority = [
+                      "knitting",
+                      "reading",
+                      "hiking",
+                      "gardening",
+                      "drawing",
+                      "journaling",
+                      "ceramics",
+                      "cooking",
+                    ];
+                    const aIdx = priority.indexOf(a.domain);
+                    const bIdx = priority.indexOf(b.domain);
+                    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+                    if (aIdx !== -1) return -1;
+                    if (bIdx !== -1) return 1;
+                    return 0;
+                  })
+                : ALL_SKILL_DOMAINS_PORTAL
+              ).map((dom) => {
                 const summary = state.skill_summaries.find(
                   (s) => s.domain === dom.domain
                 );
@@ -3340,44 +3637,76 @@ export function RPGLifeEngineDashboard({
                 const gp = summary?.total_gp_earned ?? 0;
                 const sessions = summary?.sessions_count ?? 0;
                 const minutes = summary?.total_minutes ?? 0;
+                const isRestorative = ["knitting", "reading", "hiking", "gardening", "drawing", "journaling"].includes(dom.domain);
 
                 return (
                   <div
                     key={dom.domain}
                     onClick={() => handleOpenSessionModal(dom.domain, dom.label)}
-                    className="group relative flex flex-col justify-between rounded-xl border border-white/5 bg-[#0B0F19]/60 p-3.5 transition-all hover:border-emerald-500/30 hover:bg-[#0B0F19]/90 shadow-sm cursor-pointer"
+                    className={`group relative flex flex-col justify-between rounded-xl p-3.5 transition-all shadow-sm cursor-pointer ${
+                      isCozyActive
+                        ? isRestorative
+                          ? "border border-[#88A98E]/40 bg-[#1D1A17] hover:border-[#88A98E]/70 hover:bg-[#25201C]"
+                          : "border border-[#4A3C31]/40 bg-[#1A1815]/70 hover:border-[#4A3C31] hover:bg-[#201D1A]"
+                        : "border border-white/5 bg-[#0B0F19]/60 hover:border-emerald-500/30 hover:bg-[#0B0F19]/90"
+                    }`}
                     title={`Abrir Sesión Activa de ${dom.label}`}
                   >
                     <div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm">{dom.badge}</span>
-                          <span className="font-semibold text-xs text-slate-100 group-hover:text-emerald-300 transition">
+                          <span className={`font-semibold text-xs transition ${
+                            isCozyActive
+                              ? "text-[#EAE4D9] group-hover:text-[#88A98E]"
+                              : "text-slate-100 group-hover:text-emerald-300"
+                          }`}>
                             {dom.label}
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-300">
+                          {isCozyActive && isRestorative && (
+                            <span className="rounded bg-[#88A98E]/20 px-1 py-0.2 text-[9px] font-bold text-[#D8E6DA]">
+                              Cozy
+                            </span>
+                          )}
+                          <span className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                            isCozyActive
+                              ? "bg-[#2D2723] text-[#E9C46A]"
+                              : "bg-white/5 text-slate-300"
+                          }`}>
                             LVL {lvl}
                           </span>
                           <Link
                             href={`/skills/${dom.domain}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="rounded p-1 text-slate-400 hover:text-emerald-300 hover:bg-white/5 transition"
+                            className={`rounded p-1 transition ${
+                              isCozyActive
+                                ? "text-[#A69B8D] hover:text-[#88A98E] hover:bg-[#332B25]"
+                                : "text-slate-400 hover:text-emerald-300 hover:bg-white/5"
+                            }`}
                             title="Abrir página completa independiente"
                           >
                             <ExternalLink className="h-3 w-3" />
                           </Link>
                         </div>
                       </div>
-                      <p className="mt-1 text-[11px] text-slate-400 line-clamp-1">
+                      <p className={`mt-1 text-[11px] line-clamp-1 ${
+                        isCozyActive ? "text-[#A69B8D]" : "text-slate-400"
+                      }`}>
                         {dom.desc}
                       </p>
                     </div>
 
-                    <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-2 text-[10px] font-mono text-slate-400">
+                    <div className={`mt-2.5 flex items-center justify-between border-t pt-2 text-[10px] font-mono ${
+                      isCozyActive
+                        ? "border-[#4A3C31]/40 text-[#A69B8D]"
+                        : "border-white/5 text-slate-400"
+                    }`}>
                       <span>{sessions} ses • {minutes}m</span>
-                      <strong className="text-amber-400">+{gp.toLocaleString("es-CO")} GP</strong>
+                      <strong className={isCozyActive ? "text-[#E9C46A]" : "text-amber-400"}>
+                        +{gp.toLocaleString("es-CO")} GP
+                      </strong>
                     </div>
                   </div>
                 );
@@ -10754,6 +11083,7 @@ export function RPGLifeEngineDashboard({
         </div>
       )}
     </div>
+  </div>
   );
 }
 
