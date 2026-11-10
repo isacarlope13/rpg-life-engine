@@ -62,6 +62,10 @@ import { HikingOutpostBuilding } from "@/components/sanctuary/hiking-outpost-bui
 import { KitchenBuilding } from "@/components/sanctuary/kitchen-building";
 import { VillageScrapbookModal } from "@/components/sanctuary/village-scrapbook-modal";
 import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
+import { CozySkeletonLoader } from "@/components/cozy/cozy-skeleton-loader";
+import { CozySidebar } from "@/components/cozy/cozy-sidebar";
+import { CozyHeader } from "@/components/cozy/cozy-header";
+import { BentoDailyDashboard } from "@/components/cozy/bento-daily-dashboard";
 import { queueOfflineAction, processOfflineQueue, triggerHaptic } from "@/lib/offline-sync";
 import {
   COZY_VILLAGE_RESIDENTS,
@@ -268,202 +272,52 @@ export function CozyRpgDashboard() {
   const quests = state?.quests || [];
   const recentSessions = state?.skill_sessions || [];
 
+  if (loading && !state) {
+    return <CozySkeletonLoader />;
+  }
+
   return (
     <div className="min-h-screen bg-[#F7F4EB] text-[#3A2E2B] font-sans antialiased selection:bg-[#E9C46A]/40 pb-16">
       <div className="mx-auto max-w-[1550px] p-4 sm:p-6 lg:p-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
           
           {/* =====================================================================
-              1. SIDEBAR IZQUIERDO: MARCO DE MADERA & MENÚ INVENTARIO
+              1. SIDEBAR IZQUIERDO: MARCO DE MADERA & MENÚ INVENTARIO (MODULAR)
              ===================================================================== */}
-          <aside className="lg:col-span-3 xl:col-span-3 space-y-6">
-            {/* Cabecera del Reino */}
-            <div className="relative rounded-3xl border-4 border-[#3A2E2B] bg-[#E8DFCF] p-5 shadow-[0_6px_0_#3A2E2B] transition-transform hover:-translate-y-0.5">
-              <span className="absolute top-2.5 left-3 text-xs opacity-70">🔩</span>
-              <span className="absolute top-2.5 right-3 text-xs opacity-70">🔩</span>
-              <span className="absolute bottom-2.5 left-3 text-xs opacity-70">🔩</span>
-              <span className="absolute bottom-2.5 right-3 text-xs opacity-70">🔩</span>
-
-              <div className="text-center">
-                <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl border-[3px] border-[#3A2E2B] bg-[#E9C46A] shadow-[0_3px_0_#3A2E2B] mb-2 text-2xl">
-                  🏰
-                </div>
-                <span className="block text-[11px] font-extrabold tracking-wider uppercase text-[#4E6E58]">
-                  Bienvenido al Reino
-                </span>
-                <h1 className="text-xl font-black text-[#3A2E2B] tracking-tight">
-                  Valle de Oakhaven
-                </h1>
-                <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#4E6E58]/15 px-3 py-1 border-2 border-[#4E6E58]/30 text-xs font-black text-[#4E6E58]">
-                  <Sparkles className="h-3.5 w-3.5" /> Nivel {playerLevel} • {streakDays} Días Racha
-                </div>
-              </div>
-            </div>
-
-            {/* Menú de Navegación estilo Inventario */}
-            <nav className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-3 shadow-[0_6px_0_#3A2E2B]">
-              <div className="px-3 py-2 border-b-2 border-[#3A2E2B]/10 flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#795548]">
-                  Bolsa de Aventura
-                </span>
-                <span className="text-xs">🎒</span>
-              </div>
-
-              <div className="mt-2 space-y-1.5">
-                {[
-                  { id: "home", label: "Inicio (Hem)", icon: Home, badge: "Bento" },
-                  { id: "village", label: "Pueblo Vivo (By)", icon: Compass, badge: "8 Edificios" },
-                  { id: "quests", label: "Misiones (Uppgifter)", icon: Scroll, badge: `${quests.length}` },
-                  { id: "collections", label: "Colecciones (Samlingar)", icon: Archive, badge: `${readingBooks.length + knittingProjects.length}` },
-                  { id: "party", label: "Compañeros (Invånare)", icon: Users, badge: "7" },
-                  { id: "notes", label: "Bitácora (Anteckningar)", icon: FileText, badge: `${notesList.length}` },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveTab(item.id as NavItem);
-                        if (item.id === "village") setViewMode("village_map");
-                        if (item.id === "home") setViewMode("bento");
-                      }}
-                      className={`w-full group flex items-center justify-between rounded-2xl border-[3px] px-3.5 py-2.5 text-xs font-bold transition-all cursor-pointer ${
-                        isActive
-                          ? "border-[#3A2E2B] bg-[#4E6E58] text-[#FFFDF8] shadow-[0_4px_0_#3A2E2B] -translate-y-0.5"
-                          : "border-transparent bg-transparent text-[#3A2E2B] hover:border-[#3A2E2B]/30 hover:bg-[#F2ECE1] hover:-translate-y-0.5 hover:shadow-[0_2px_0_#3A2E2B]/20"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`flex h-7 w-7 items-center justify-center rounded-xl border-2 transition-transform group-hover:scale-110 ${
-                            isActive
-                              ? "border-[#FFFDF8] bg-[#3B5443] text-white"
-                              : "border-[#3A2E2B] bg-[#E8DFCF] text-[#3A2E2B]"
-                          }`}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                        </span>
-                        <span>{item.label}</span>
-                      </div>
-
-                      {item.badge && (
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-                            isActive
-                              ? "bg-[#E9C46A] text-[#3A2E2B]"
-                              : "bg-[#E8DFCF] text-[#795548]"
-                          }`}
-                        >
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </nav>
-
-            {/* Acceso Rápido al Command Center Clásico */}
-            <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-4 shadow-[0_6px_0_#3A2E2B] text-center">
-              <span className="text-xs font-bold text-[#795548] block mb-2">
-                ¿Prefieres la vista analítica?
-              </span>
-              <Link
-                href="/dashboard"
-                className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-[#3A2E2B] bg-[#3A2E2B] py-2.5 text-xs font-black text-[#F7F4EB] shadow-[0_3px_0_#5C4033] hover:bg-[#4E3834] transition"
-              >
-                <Zap className="h-3.5 w-3.5 text-amber-300" />
-                Ir a Command Center ➜
-              </Link>
-            </div>
-          </aside>
+          <CozySidebar
+            playerLevel={playerLevel}
+            streakDays={streakDays}
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              setActiveTab(tab);
+              if (tab === "village") setViewMode("village_map");
+              if (tab === "home") setViewMode("bento");
+            }}
+            questsCount={quests.length}
+            collectionsCount={readingBooks.length + knittingProjects.length}
+            residentsCount={COZY_VILLAGE_RESIDENTS.length}
+            notesCount={notesList.length}
+          />
 
           {/* =====================================================================
               2. ÁREA PRINCIPAL: HEADER DE MADERA + VISTAS (BENTO O PUEBLO VIVO)
              ===================================================================== */}
           <main className="lg:col-span-9 xl:col-span-9 space-y-6">
             
-            {/* BARRA SUPERIOR (HEADER) */}
-            <header className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-4 sm:p-5 shadow-[0_6px_0_#3A2E2B] flex flex-wrap items-center justify-between gap-4">
-              
-              {/* Izquierda: Fecha & Nombre */}
-              <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl border-[3px] border-[#3A2E2B] bg-[#4E6E58] text-[#FFFDF8] shadow-[0_3px_0_#3A2E2B] text-xl">
-                  📜
-                </span>
-                <div>
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#795548]">
-                    Bitácora de Oakhaven
-                  </span>
-                  <h2 className="text-sm sm:text-base font-black text-[#3A2E2B] capitalize">
-                    {currentDate || "Cargando fecha..."}
-                  </h2>
-                </div>
-              </div>
-
-              {/* Centro: Switcher de Vistas (Bento vs Pueblo) */}
-              <div className="flex items-center rounded-2xl border-[3px] border-[#3A2E2B] bg-[#F7F4EB] p-1 shadow-[0_3px_0_#3A2E2B]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewMode("bento");
-                    setActiveTab("home");
-                  }}
-                  className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition cursor-pointer ${
-                    viewMode === "bento"
-                      ? "bg-[#4E6E58] text-[#FFFDF8] shadow-sm"
-                      : "text-[#3A2E2B] hover:bg-[#E8DFCF]"
-                  }`}
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" /> Tablero Bento
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewMode("village_map");
-                    setActiveTab("village");
-                  }}
-                  className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition cursor-pointer ${
-                    viewMode === "village_map"
-                      ? "bg-[#4E6E58] text-[#FFFDF8] shadow-sm"
-                      : "text-[#3A2E2B] hover:bg-[#E8DFCF]"
-                  }`}
-                >
-                  <Compass className="h-3.5 w-3.5" /> Pueblo Vivo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsScrapbookOpen(true)}
-                  className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition cursor-pointer text-[#3A2E2B] hover:bg-[#E8DFCF]"
-                  title="Abrir álbum de recuerdos y postales"
-                >
-                  📷 Álbum
-                </button>
-              </div>
-
-              {/* Derecha: Monedas y Reloj en Vivo */}
-              <div className="flex items-center gap-3">
-                <div
-                  className="flex items-center gap-2 rounded-2xl border-[3px] border-[#3A2E2B] bg-[#E9C46A] px-3.5 py-2 text-[#3A2E2B] shadow-[0_3px_0_#3A2E2B]"
-                  title={`Billetera: ${walletGp.toLocaleString("es-CO")} GP • Bóveda: ${vaultGp.toLocaleString("es-CO")} GP`}
-                >
-                  <Coins className="h-4 w-4" />
-                  <span className="font-mono text-xs sm:text-sm font-black">
-                    {walletGp.toLocaleString("es-CO")} <span className="text-[10px]">GP</span>
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 rounded-2xl border-[3px] border-[#3A2E2B] bg-[#3A2E2B] px-3.5 py-2 text-[#F7F4EB] shadow-[0_3px_0_#5C4033]">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="font-mono text-xs sm:text-sm font-black tracking-wider">
-                    {currentTime || "--:--:--"}
-                  </span>
-                </div>
-              </div>
-            </header>
+            {/* BARRA SUPERIOR (HEADER MODULAR) */}
+            <CozyHeader
+              currentDate={currentDate}
+              currentTime={currentTime}
+              viewMode={viewMode}
+              onViewModeChange={(mode) => {
+                setViewMode(mode);
+                if (mode === "bento") setActiveTab("home");
+                if (mode === "village_map") setActiveTab("village");
+              }}
+              onOpenScrapbook={() => setIsScrapbookOpen(true)}
+              walletGp={walletGp}
+              vaultGp={vaultGp}
+            />
 
             {/* ===================================================================
                 VISTA 1: PUEBLO VIVO INTERACTIVO (MAPA DE EDIFICIOS & TIER VISUAL)
@@ -484,356 +338,27 @@ export function CozyRpgDashboard() {
                 VISTA 2: BENTO GRID MODULAR (COZY HOMEPAGE)
                =================================================================== */}
             {viewMode === "bento" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
-
-                {/* TARJETA 1: RESUMEN DE PROGRESO Y REINO — 7 COLS */}
-                <div className="lg:col-span-7 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] flex flex-col justify-between hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#E9C46A] shadow-[0_2px_0_#3A2E2B] text-lg">
-                          ⭐
-                        </span>
-                        <div>
-                          <h3 className="text-sm font-black text-[#3A2E2B] uppercase tracking-wide">
-                            Estado del Reino (Översikt)
-                          </h3>
-                          <span className="text-[11px] font-bold text-[#795548]">
-                            Nivel {playerLevel} • {currentXp.toLocaleString("es-CO")} XP acumulados
-                          </span>
-                        </div>
-                      </div>
-
-                      <span className="rounded-full border-2 border-[#4E6E58] bg-[#4E6E58]/15 px-3 py-1 text-xs font-black text-[#4E6E58]">
-                        Racha: {streakDays} Días
-                      </span>
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                      <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-sm">
-                        <span className="text-[10px] font-bold text-[#795548] uppercase">Billetera Activa</span>
-                        <p className="mt-1 font-mono text-base font-black text-[#3A2E2B]">
-                          {walletGp.toLocaleString("es-CO")} GP
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-sm">
-                        <span className="text-[10px] font-bold text-[#795548] uppercase">Bóveda de Reserva</span>
-                        <p className="mt-1 font-mono text-base font-black text-[#4E6E58]">
-                          {vaultGp.toLocaleString("es-CO")} GP
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t-2 border-[#3A2E2B]/10 flex flex-wrap items-center justify-between gap-3">
-                    <span className="text-xs font-bold text-[#795548]">
-                      {recentSessions.length} actividades reales forjadas
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setViewMode("village_map")}
-                      className="text-xs font-black text-[#4E6E58] hover:underline cursor-pointer"
-                    >
-                      Explorar Pueblo y Edificios ➜
-                    </button>
-                  </div>
-                </div>
-
-                {/* TARJETA 2: MINI PREVIA DEL PUEBLO — 5 COLS */}
-                <div className="lg:col-span-5 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] flex flex-col justify-between hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#4E6E58] text-[#FFFDF8] shadow-[0_2px_0_#3A2E2B] text-lg">
-                          🗺️
-                        </span>
-                        <div>
-                          <h3 className="text-sm font-black text-[#3A2E2B] uppercase tracking-wide">
-                            Pueblo de Oakhaven
-                          </h3>
-                          <span className="text-[11px] font-bold text-[#795548]">
-                            8 Edificios Especializados
-                          </span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setViewMode("village_map")}
-                        className="rounded-xl border-2 border-[#3A2E2B] bg-[#E8DFCF] p-1.5 text-[#3A2E2B] hover:bg-[#E9C46A] shadow-[0_2px_0_#3A2E2B] transition cursor-pointer"
-                        title="Abrir mapa del pueblo"
-                      >
-                        <Maximize2 className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    <div className="relative mt-3 h-36 rounded-2xl border-[3px] border-[#3A2E2B] bg-gradient-to-b from-[#80B992] to-[#609972] p-3 shadow-inner flex flex-col justify-between">
-                      <div className="flex justify-between items-center text-xs font-bold text-[#3A2E2B]">
-                        <span className="bg-[#FFFDF8] px-2 py-0.5 rounded-lg border border-[#3A2E2B]">🧶 Atelier</span>
-                        <span className="bg-[#FFFDF8] px-2 py-0.5 rounded-lg border border-[#3A2E2B]">📚 Librería</span>
-                        <span className="bg-[#FFFDF8] px-2 py-0.5 rounded-lg border border-[#3A2E2B]">🧩 Puzzles</span>
-                      </div>
-                      <div className="flex justify-around items-center text-3xl">
-                        <span>🏡</span>
-                        <span>🏰</span>
-                        <span>🔭</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs font-bold text-[#3A2E2B]">
-                        <span className="bg-[#FFFDF8] px-2 py-0.5 rounded-lg border border-[#3A2E2B]">🌿 Botánico</span>
-                        <span className="bg-[#FFFDF8] px-2 py-0.5 rounded-lg border border-[#3A2E2B]">🏛️ Biblioteca</span>
-                        <span className="bg-[#FFFDF8] px-2 py-0.5 rounded-lg border border-[#3A2E2B]">💼 Oficina</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#795548]">
-                      Coordenadas: 42°N, 71°O
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setViewMode("village_map")}
-                      className="flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#4E6E58] px-3.5 py-1.5 text-xs font-black text-[#FFFDF8] shadow-[0_3px_0_#3A2E2B] hover:-translate-y-0.5 cursor-pointer"
-                    >
-                      <Compass className="h-3.5 w-3.5" /> Entrar al Pueblo
-                    </button>
-                  </div>
-                </div>
-
-                {/* TARJETA 3: REGISTRO DE MISIONES REALES — 7 COLS */}
-                <div className="lg:col-span-7 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] flex flex-col justify-between hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#E76F51] text-white shadow-[0_2px_0_#3A2E2B] text-lg">
-                          📜
-                        </span>
-                        <div>
-                          <h3 className="text-sm font-black text-[#3A2E2B] uppercase tracking-wide">
-                            Registro de Misiones Diarias
-                          </h3>
-                          <span className="text-[11px] font-bold text-[#795548]">
-                            Tareas y hábitos con recompensa verificada
-                          </span>
-                        </div>
-                      </div>
-
-                      <span className="rounded-full bg-[#E9C46A] border-2 border-[#3A2E2B] px-3 py-0.5 text-xs font-black text-[#3A2E2B]">
-                        {quests.filter((q) => q.status === "completed").length} / {quests.length} Listas
-                      </span>
-                    </div>
-
-                    <div className="mt-3.5 space-y-2.5">
-                      {quests.length === 0 ? (
-                        <p className="text-xs text-[#7A6B62] py-4 text-center">
-                          ¡No hay misiones pendientes para hoy! Revisa tu cronograma.
-                        </p>
-                      ) : (
-                        quests.slice(0, 4).map((quest) => (
-                          <div
-                            key={quest.id}
-                            className={`rounded-2xl border-[3px] border-[#3A2E2B] p-3 shadow-[0_2px_0_#3A2E2B] flex items-center justify-between gap-3 ${
-                              quest.status === "completed"
-                                ? "bg-[#EAF3ED] opacity-75"
-                                : "bg-[#F7F4EB]"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <span className="text-xl">
-                                {quest.status === "completed" ? "✅" : "⚔️"}
-                              </span>
-                              <div>
-                                <h4 className={`text-xs font-black text-[#3A2E2B] ${quest.status === "completed" ? "line-through" : ""}`}>
-                                  {quest.title}
-                                </h4>
-                                <span className="text-[10px] font-bold text-[#795548]">
-                                  +{quest.reward_gp.toLocaleString("es-CO")} GP • {quest.domain}
-                                </span>
-                              </div>
-                            </div>
-                            <span className="rounded-lg bg-[#EBE5D8] px-2 py-0.5 font-mono text-[10px] font-bold text-[#3A2E2B]">
-                              {quest.status === "completed" ? "Completada" : "En curso"}
-                            </span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t-2 border-[#3A2E2B]/10 text-xs font-bold text-[#795548] flex justify-between">
-                    <span>Recompensas deterministas de la Bóveda</span>
-                    <span className="text-[#4E6E58]">Buff de Gracia Activo</span>
-                  </div>
-                </div>
-
-                {/* TARJETA 4: COLECCIONES REALES (LIBROS, PROYECTOS, CUBOS) — 5 COLS */}
-                <div className="lg:col-span-5 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] flex flex-col justify-between hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#E9C46A] text-[#3A2E2B] shadow-[0_2px_0_#3A2E2B] text-lg">
-                          🏺
-                        </span>
-                        <div>
-                          <h3 className="text-sm font-black text-[#3A2E2B] uppercase tracking-wide">
-                            Colecciones del Santuario
-                          </h3>
-                          <span className="text-[11px] font-bold text-[#795548]">
-                            Catálogos de recursos reales
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3.5 grid grid-cols-2 gap-3">
-                      {/* Libros */}
-                      <div
-                        onClick={() => setActiveBuildingModal("libreria")}
-                        className="rounded-2xl border-[3px] border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] hover:-translate-y-0.5 transition cursor-pointer"
-                      >
-                        <span className="text-2xl">📚</span>
-                        <h4 className="mt-1 text-xs font-black text-[#3A2E2B]">La Librería</h4>
-                        <span className="font-mono text-xs font-bold text-[#4E6E58]">
-                          {readingBooks.length} Libros
-                        </span>
-                      </div>
-
-                      {/* Tejido */}
-                      <div
-                        onClick={() => setActiveBuildingModal("atelier")}
-                        className="rounded-2xl border-[3px] border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] hover:-translate-y-0.5 transition cursor-pointer"
-                      >
-                        <span className="text-2xl">🧶</span>
-                        <h4 className="mt-1 text-xs font-black text-[#3A2E2B]">El Atelier</h4>
-                        <span className="font-mono text-xs font-bold text-[#E76F51]">
-                          {knittingProjects.length} Proyectos
-                        </span>
-                      </div>
-
-                      {/* Speedcubing */}
-                      <div
-                        onClick={() => setActiveBuildingModal("club_puzzles")}
-                        className="rounded-2xl border-[3px] border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] hover:-translate-y-0.5 transition cursor-pointer"
-                      >
-                        <span className="text-2xl">🧩</span>
-                        <h4 className="mt-1 text-xs font-black text-[#3A2E2B]">Arsenal WCA</h4>
-                        <span className="font-mono text-xs font-bold text-[#06B6D4]">
-                          {rubikCubes.length || 1} Cubos
-                        </span>
-                      </div>
-
-                      {/* Observatorio */}
-                      <div
-                        onClick={() => setActiveBuildingModal("observatorio")}
-                        className="rounded-2xl border-[3px] border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] hover:-translate-y-0.5 transition cursor-pointer"
-                      >
-                        <span className="text-2xl">🔭</span>
-                        <h4 className="mt-1 text-xs font-black text-[#3A2E2B]">Observatorio</h4>
-                        <span className="font-mono text-xs font-bold text-[#A855F7]">
-                          Deep Work
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t-2 border-[#3A2E2B]/10 text-xs font-bold text-[#795548] flex justify-between">
-                    <span>Haz clic en una colección para abrir su edificio</span>
-                  </div>
-                </div>
-
-                {/* TARJETA 5: COMPAÑEROS & RESIDENTES ASISTENTES — 12 COLS */}
-                <div className="lg:col-span-12 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] hover:-translate-y-0.5 transition-transform">
-                  <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#E9C46A] shadow-[0_2px_0_#3A2E2B] text-lg">
-                        👥
-                      </span>
-                      <div>
-                        <h3 className="text-sm font-black text-[#3A2E2B] uppercase tracking-wide">
-                          Compañeros del Pueblo (Residentes Asistentes)
-                        </h3>
-                        <span className="text-[11px] font-bold text-[#795548]">
-                          Te recuerdan tu última sesión real y preparan tus herramientas
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className="rounded-full border-2 border-[#3A2E2B] bg-[#E8DFCF] px-3 py-1 text-xs font-black text-[#3A2E2B]">
-                      {COZY_VILLAGE_RESIDENTS.length} Asistentes Activos
-                    </span>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
-                    {COZY_VILLAGE_RESIDENTS.map((resident) => (
-                      <div
-                        key={resident.id}
-                        onClick={() => setSelectedResident(resident)}
-                        className="group rounded-2xl border-[3px] border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] text-center hover:-translate-y-1 hover:shadow-[0_4px_0_#3A2E2B] transition-all cursor-pointer"
-                      >
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#3A2E2B] bg-[#FFFDF8] text-2xl group-hover:scale-110 transition-transform">
-                          {resident.avatar}
-                        </div>
-                        <h4 className="mt-1.5 text-xs font-black text-[#3A2E2B]">
-                          {resident.name}
-                        </h4>
-                        <span className="block text-[9px] font-bold text-[#795548]">
-                          {resident.title}
-                        </span>
-                        <p className="mt-1 text-[9px] italic text-[#5C4033] line-clamp-1">
-                          "{resident.greetingQuote}"
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* TARJETA 6: BITÁCORA DE NOTAS RÁPIDAS — 12 COLS */}
-                <div className="lg:col-span-12 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B]">
-                  <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">✍️</span>
-                      <h3 className="text-sm font-black text-[#3A2E2B]">
-                        Bitácora & Recordatorios de Oakhaven
-                      </h3>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleAddNote} className="mt-3 flex gap-2">
-                    <input
-                      type="text"
-                      value={quickNote}
-                      onChange={(e) => setQuickNote(e.target.value)}
-                      placeholder="Anota una idea o recordatorio rápido..."
-                      className="flex-1 rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-4 py-2 text-xs text-[#3A2E2B] focus:outline-none focus:border-[#4E6E58]"
-                    />
-                    <button
-                      type="submit"
-                      className="rounded-2xl border-2 border-[#3A2E2B] bg-[#4E6E58] px-4 py-2 text-xs font-black text-[#FFFDF8] shadow-[0_2px_0_#3A2E2B] hover:bg-[#3D5645] cursor-pointer"
-                    >
-                      Anotar
-                    </button>
-                  </form>
-
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    {notesList.map((note, idx) => (
-                      <div
-                        key={idx}
-                        className="rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2.5 text-xs text-[#3A2E2B] flex items-center justify-between gap-2"
-                      >
-                        <span className="line-clamp-2">📌 {note}</span>
-                        <button
-                          type="button"
-                          onClick={() => setNotesList((prev) => prev.filter((_, i) => i !== idx))}
-                          className="text-[10px] text-[#795548] hover:text-red-700 font-bold shrink-0"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-              </div>
+              <BentoDailyDashboard
+                playerLevel={playerLevel}
+                currentXp={currentXp}
+                streakDays={streakDays}
+                walletGp={walletGp}
+                vaultGp={vaultGp}
+                recentSessions={recentSessions}
+                quests={quests}
+                readingBooks={readingBooks}
+                knittingProjects={knittingProjects}
+                rubikCubes={rubikCubes}
+                residents={COZY_VILLAGE_RESIDENTS}
+                quickNote={quickNote}
+                notesList={notesList}
+                onQuickNoteChange={setQuickNote}
+                onAddNote={handleAddNote}
+                onDeleteNote={(idx) => setNotesList((prev) => prev.filter((_, i) => i !== idx))}
+                onSwitchToVillageMap={() => setViewMode("village_map")}
+                onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
+                onSelectResident={(resident) => setSelectedResident(resident)}
+              />
             )}
           </main>
         </div>
