@@ -34,6 +34,8 @@ import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 import { projectRubikProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
+import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
+import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 
 interface ClubPuzzlesBuildingProps {
   cubes: RubikCubeCatalogItem[];
@@ -372,149 +374,74 @@ export function ClubPuzzlesBuilding({
     }
   };
 
+  const miloResident = COZY_VILLAGE_RESIDENTS.find((r) => r.id === "milo");
+
   return (
-    <div
-      className={`space-y-6 transition-all duration-300 ${
-        isCozyActive
-          ? "rounded-3xl border border-[#5C4033]/40 bg-[#1c1815]/90 p-6 shadow-md text-amber-50"
-          : "text-slate-100"
-      }`}
+    <BuildingInteriorShell
+      buildingId="club_puzzles"
+      buildingName="Club de Puzzles & Speedcubing WCA"
+      domain="rubik"
+      districtName="Distrito del Saber"
+      icon="🧩"
+      tagline="Arsenal de hardware, cronómetro reglamentario, trimmed average Ao5/Ao12 y forja de reflejos."
+      playerLevel={playerLevel}
+      skillLevel={skillLevel}
+      totalGpEarned={totalGpEarned}
+      resident={miloResident}
+      sessionsCount={activeRubikStats.total_solves || activeRubikStats.recent_solves.length}
+      specificMetrics={[
+        {
+          label: "Single PB",
+          value: activeRubikStats.pb_seconds ? `${activeRubikStats.pb_seconds.toFixed(2)}s` : "--",
+          icon: "⚡",
+        },
+        {
+          label: "Ao5 Oficial",
+          value: activeRubikStats.ao5_seconds ? `${activeRubikStats.ao5_seconds.toFixed(2)}s` : "--",
+          icon: "🎯",
+        },
+        {
+          label: "Solves Totales",
+          value: activeRubikStats.total_solves || activeRubikStats.recent_solves.length,
+          icon: "🧩",
+        },
+        {
+          label: "Arsenal",
+          value: `${cubes.length} cubos`,
+          icon: "📦",
+        },
+      ]}
+      activeTab={rubikSubMode}
+      tabs={[
+        { id: "practice", label: "Práctica WCA", icon: <Zap className="h-4 w-4" /> },
+        { id: "study", label: "Estudio & Algoritmos", icon: <GraduationCap className="h-4 w-4" /> },
+        { id: "notes", label: "Notas & Ajustes", icon: <BookMarked className="h-4 w-4" /> },
+        { id: "arsenal", label: "Arsenal WCA", icon: <Box className="h-4 w-4" />, badge: cubes.length },
+        { id: "evolucion", label: "Evolución & Trofeos", icon: <Trophy className="h-4 w-4" />, badge: progression.tierBadge },
+      ]}
+      onTabChange={(tabId) => setRubikSubMode(tabId as typeof rubikSubMode)}
+      onClose={onClose}
     >
-      {/* CABECERA PRINCIPAL DEL EDIFICIO */}
-      <div
-        className={`flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 shadow-xl ${
-          isCozyActive
-            ? "border-cyan-900/40 bg-[#251f1c]/90"
-            : "border-cyan-500/30 bg-slate-900/90"
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-2xl shadow-inner">
-            🧩
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black tracking-tight text-white">
-                Club de Puzzles & Speedcubing WCA
-              </h2>
-              <span className="rounded-full bg-cyan-500/20 border border-cyan-500/30 px-2.5 py-0.5 text-[10px] font-bold text-cyan-300">
-                Torneo WCA • Grado {skillLevel}
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Arsenal de hardware, cronómetro reglamentario, trimmed average Ao5/Ao12 y forja de reflejos.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-300 hover:text-white hover:border-slate-500 cursor-pointer"
-            >
-              ← Volver al Pueblo
-            </button>
-          )}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-center">
-            <span className="text-[10px] uppercase font-semibold text-slate-400">Single PB</span>
-            <p className="font-mono text-xs font-black text-amber-300">
-              {activeRubikStats.pb_seconds ? `${activeRubikStats.pb_seconds.toFixed(2)}s` : "--"}
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-center">
-            <span className="text-[10px] uppercase font-semibold text-slate-400">Ao5 Oficial</span>
-            <p className="font-mono text-xs font-black text-cyan-300">
-              {activeRubikStats.ao5_seconds ? `${activeRubikStats.ao5_seconds.toFixed(2)}s` : "--"}
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-center">
-            <span className="text-[10px] uppercase font-semibold text-slate-400">Solves Registrados</span>
-            <p className="font-mono text-xs font-black text-emerald-300">
-              {activeRubikStats.total_solves || activeRubikStats.recent_solves.length}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* BARRA DE NAVEGACIÓN DE SUBMODOS DEL EDIFICIO */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-500/30 bg-slate-950 p-2.5 shadow-lg">
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setRubikSubMode("practice")}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
-              rubikSubMode === "practice"
-                ? "bg-cyan-600 text-white shadow-lg shadow-cyan-600/30"
-                : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
-            }`}
-          >
-            <Zap className="h-4 w-4" />
-            ⚡ Modo 1: Práctica WCA (Speedcubing)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRubikSubMode("study")}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
-              rubikSubMode === "study"
-                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
-            }`}
-          >
-            <GraduationCap className="h-4 w-4" />
-            🎓 Modo 2: Estudio & Nuevo Cubo
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRubikSubMode("notes")}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
-              rubikSubMode === "notes"
-                ? "bg-amber-600 text-white shadow-lg shadow-amber-600/30"
-                : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
-            }`}
-          >
-            <BookMarked className="h-4 w-4" />
-            📓 Cuaderno de Notas & Mantenimiento
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRubikSubMode("arsenal")}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
-              rubikSubMode === "arsenal"
-                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/30"
-                : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
-            }`}
-          >
-            <Box className="h-4 w-4" />
-            🧊 Arsenal WCA ({cubes.length})
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRubikSubMode("evolucion")}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
-              rubikSubMode === "evolucion"
-                ? "bg-amber-600 text-white shadow-lg shadow-amber-600/30"
-                : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
-            }`}
-          >
-            <Trophy className="h-4 w-4" />
-            🏆 Evolución & Trofeos ({progression.tierBadge})
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium text-slate-400">
-            Cubo Activo:
-          </span>
-          <strong className="text-cyan-300 text-xs">
-            {activeHardwareCube?.model_name || "3x3"}
-          </strong>
-        </div>
+      {/* SELECTOR RÁPIDO DE CUBO ACTIVO */}
+      <div className="flex items-center justify-end gap-2 pb-2">
+        <span className="text-[11px] font-bold text-[#795548]">
+          Cubo Activo:
+        </span>
+        <select
+          value={cubeType}
+          onChange={(e) => setCubeType(e.target.value as RubikCubeType)}
+          className="rounded-xl border-2 border-[#3A2E2B] bg-[#FFFDF8] px-3 py-1.5 text-xs font-bold text-[#3A2E2B]"
+        >
+          <option value="3x3">3x3x3 WCA</option>
+          <option value="4x4">4x4x4 Venganza</option>
+          <option value="2x2">2x2x2 Bolsillo</option>
+          <option value="pyraminx">Pyraminx</option>
+          <option value="megaminx">Megaminx</option>
+          <option value="one_handed">3x3 One-Handed (OH)</option>
+        </select>
+        <span className="text-xs font-bold text-[#314C3C]">
+          ({activeHardwareCube?.model_name || "3x3"})
+        </span>
       </div>
 
       {/* =================================================================
@@ -1278,6 +1205,6 @@ export function ClubPuzzlesBuilding({
           buildingName="Club de Puzzles & Speedcubing WCA"
         />
       )}
-    </div>
+    </BuildingInteriorShell>
   );
 }

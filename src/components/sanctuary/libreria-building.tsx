@@ -32,6 +32,7 @@ import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub
 import { projectLibreriaProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
+import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 
 interface LibreriaBuildingProps {
   books: ReadingBook[];
@@ -306,6 +307,15 @@ export function LibreriaBuilding({
       playerLevel={playerLevel}
       skillLevel={skillLevel}
       totalGpEarned={totalGpEarned}
+      resident={COZY_VILLAGE_RESIDENTS.find((r) => r.id === "eldrin")}
+      sessionsCount={readingSessions.length}
+      activeSessionBanner={{
+        isActive,
+        isPaused,
+        formattedTime,
+        label: activeBook ? `Leyendo "${activeBook.title}"` : "Lectura serena en curso",
+        onViewSession: () => setActiveTab("lectura"),
+      }}
       specificMetrics={[
         { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Libros Activos", value: readingBooksCount },

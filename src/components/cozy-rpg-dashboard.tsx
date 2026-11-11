@@ -58,6 +58,7 @@ import { BibliotecaBuilding } from "@/components/sanctuary/biblioteca-building";
 import { ClubPuzzlesBuilding } from "@/components/sanctuary/club-puzzles-building";
 import { ObservatorioBuilding } from "@/components/sanctuary/observatorio-building";
 import { BotanicalGardenBuilding } from "@/components/sanctuary/botanical-garden-building";
+import { CozyButton } from "@/components/cozy/ui";
 import { HikingOutpostBuilding } from "@/components/sanctuary/hiking-outpost-building";
 import { KitchenBuilding } from "@/components/sanctuary/kitchen-building";
 import { OfficeBuilding } from "@/components/sanctuary/office-building";
@@ -791,51 +792,134 @@ export function CozyRpgDashboard() {
                 />
               )}
 
-              {["ludoteca", "estudio_arte", "taller_ceramica"].includes(activeBuildingModal) && (
-                <BuildingInteriorShell
-                  buildingId={activeBuildingModal}
-                  buildingName={
-                    activeBuildingModal === "ludoteca"
-                      ? "Salón Recreativo & Ludoteca"
-                      : activeBuildingModal === "estudio_arte"
-                      ? "Estudio de Ilustración & Dibujo"
-                      : "Taller de Alfarería & Cerámica"
-                  }
-                  domain={
-                    activeBuildingModal === "ludoteca"
-                      ? "gaming"
-                      : activeBuildingModal === "estudio_arte"
-                      ? "drawing"
-                      : "ceramics"
-                  }
-                  districtName="Distrito de Artes & Oficios"
-                  icon={
-                    activeBuildingModal === "ludoteca" ? "🎮"
-                    : activeBuildingModal === "estudio_arte" ? "🎨"
-                    : "🏺"
-                  }
-                  tagline="Espacio de práctica y presencia en preparación artesanal"
-                  playerLevel={playerLevel}
-                  skillLevel={1}
-                  totalGpEarned={0}
-                  activeTab="info"
-                  tabs={[
-                    { id: "info", label: "Taller en Preparación" },
-                  ]}
-                  onTabChange={() => {}}
-                  onClose={() => setActiveBuildingModal(null)}
-                >
-                  <div className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-8 text-center space-y-3">
-                    <span className="text-4xl select-none">🛠️</span>
-                    <h3 className="text-base font-black text-[#3A2E2B]">
-                      Taller Artesanal Habilitado en el Santuario
-                    </h3>
-                    <p className="text-xs text-[#795548] max-w-md mx-auto leading-relaxed">
-                      Este edificio forma parte del catastro oficial de Oakhaven. Sus herramientas y atril se encuentran dispuestos para futuras ampliaciones de módulos específicos, mientras que su hito y presencia están plenamente integrados en el pueblo.
-                    </p>
-                  </div>
-                </BuildingInteriorShell>
-              )}
+              {["ludoteca", "estudio_arte", "taller_ceramica"].includes(activeBuildingModal) && (() => {
+                const domainKey =
+                  activeBuildingModal === "ludoteca"
+                    ? "gaming"
+                    : activeBuildingModal === "estudio_arte"
+                    ? "drawing"
+                    : "ceramics";
+                const resident = COZY_VILLAGE_RESIDENTS.find(
+                  (r) => r.buildingId === activeBuildingModal
+                );
+                const buildingSessions = recentSessions.filter(
+                  (s) => s.domain === domainKey
+                );
+                const skillSummary = state?.skill_summaries?.find(
+                  (s) => s.domain === domainKey
+                );
+
+                return (
+                  <BuildingInteriorShell
+                    buildingId={activeBuildingModal}
+                    buildingName={
+                      activeBuildingModal === "ludoteca"
+                        ? "Salón Recreativo & Ludoteca"
+                        : activeBuildingModal === "estudio_arte"
+                        ? "Estudio de Ilustración & Dibujo"
+                        : "Taller de Alfarería & Cerámica"
+                    }
+                    domain={domainKey}
+                    districtName="Distrito de Artes & Oficios"
+                    icon={
+                      activeBuildingModal === "ludoteca"
+                        ? "🎮"
+                        : activeBuildingModal === "estudio_arte"
+                        ? "🎨"
+                        : "🏺"
+                    }
+                    tagline="Espacio de práctica artesanal, presencia y forja de proyectos creativos"
+                    playerLevel={playerLevel}
+                    skillLevel={skillSummary?.level || 1}
+                    totalGpEarned={skillSummary?.total_gp_earned || 0}
+                    resident={resident}
+                    sessionsCount={buildingSessions.length}
+                    specificMetrics={[
+                      { label: "Prácticas", value: buildingSessions.length, icon: "✨" },
+                      {
+                        label: "Tiempo Dedicado",
+                        value: `${buildingSessions.reduce(
+                          (acc, s) => acc + (s.duration_minutes || 0),
+                          0
+                        )} min`,
+                        icon: "⏱️",
+                      },
+                    ]}
+                    activeTab="info"
+                    tabs={[
+                      { id: "info", label: "Taller & Caballete" },
+                      {
+                        id: "history",
+                        label: "Historial de Práctica",
+                        badge: buildingSessions.length,
+                      },
+                    ]}
+                    onTabChange={() => {}}
+                    onClose={() => setActiveBuildingModal(null)}
+                  >
+                    <div className="space-y-4">
+                      <div className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_4px_0_#3A2E2B] space-y-3">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C] text-2xl shadow-[0_2px_0_#3A2E2B]">
+                            {activeBuildingModal === "ludoteca"
+                              ? "🎮"
+                              : activeBuildingModal === "estudio_arte"
+                              ? "🎨"
+                              : "🏺"}
+                          </span>
+                          <div>
+                            <h3 className="text-base font-black text-[#3A2E2B]">
+                              Taller Artesanal Habilitado en el Santuario
+                            </h3>
+                            <p className="text-xs text-[#795548]">
+                              Taller activo e integrado plenamente en el pueblo de Oakhaven.
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-[#5D4037] leading-relaxed">
+                          {resident?.greetingQuote ||
+                            "Cada sesión de práctica consciente fortalece tu calma y maestría."}
+                        </p>
+
+                        {resident?.microQuest && (
+                          <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#EAF3ED] p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <span className="text-[10px] font-black uppercase text-[#314C3C] block">
+                                Micro-Misión de Hoy
+                              </span>
+                              <p className="text-xs font-bold text-[#2A4331]">
+                                {resident.microQuest.title}
+                              </p>
+                              <span className="text-[10px] text-[#5D4037]">
+                                {resident.microQuest.description}
+                              </span>
+                            </div>
+
+                            <CozyButton
+                              variant="forest"
+                              size="sm"
+                              onClick={async () => {
+                                triggerHaptic("success");
+                                await handleSubmitSkillSession({
+                                  action: "log_skill_session",
+                                  domain: domainKey,
+                                  duration_minutes:
+                                    resident.microQuest.estimatedMinutes || 15,
+                                  details: `Micro-Misión de ${resident.name}: ${resident.microQuest.title}`,
+                                });
+                                await fetchState();
+                              }}
+                            >
+                              Completar ({resident.microQuest.estimatedMinutes} min)
+                            </CozyButton>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </BuildingInteriorShell>
+                );
+              })()}
             </div>
           </div>
         </div>
