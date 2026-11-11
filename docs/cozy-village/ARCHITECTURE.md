@@ -1,9 +1,9 @@
 # ARQUITECTURA DEL SISTEMA — COZY LIVING VILLAGE
 ## RPG Life-Engine 3.5.0
 **Documento Técnico:** `docs/cozy-village/ARCHITECTURE.md`  
-**Versión:** 1.5.0  
+**Versión:** 1.6.0  
 **Fecha:** 11 de Noviembre de 2026  
-**Estado:** Fase 6 (Specialized Building Interiors) Implementada & Validada en Producción
+**Estado:** Fase 7 (Universal Skill Session Engine) Implementada & Validada en Producción
 
 ---
 
@@ -156,6 +156,34 @@ flowchart TD
   7. **Invernadero Botánico (`gardening`):** Canteros vivos de hábitos, esquejes recolectados, registro de humedad y sesiones de calma botánica.
   8. **Puesto de Senderismo (`hiking`):** Rutas y senderos, kit de supervivencia, brújula de orientación y registro de caminatas/salidas al aire libre.
   9. **Cocina de Campamento (`cooking`):** Recetario culinario, despensa de ingredientes, temporizador de fuegos y preparación de banquetes del gremio.
+
+### 3.8. Motor Universal de Sesiones de Habilidad (`universal-session-engine.ts` & `useUniversalSession`)
+* **Ciclo de Vida Determinista de 8 Fases:**
+  1. **Preparar (`preparing`):** Selección anticipada del recurso, objetivo y notas preliminares antes de arrancar el tiempo.
+  2. **Iniciar (`running`):** Sellado de `startedAt` con marca de tiempo ISO de alta fidelidad.
+  3. **Pausar (`paused`):** Apertura de pausa viva con `activePauseStartedAt` sin alterar el acumulado neta.
+  4. **Reanudar (`running`):** Consolidación de la pausa en el array `pauses` con duración exacta en segundos.
+  5. **Finalizar (`completed`):** Cierre de sesión, cálculo de duración neta final y forja de payload tipado.
+  6. **Guardar:** Despacho con reintentos idempotentes hacia `/api/shortcuts/skill-session` e inserción en el búfer histórico local (`rpg_universal_sessions_history_v4`).
+  7. **Recuperar (Hidratación):** Reconstrucción instantánea tras recarga o cambio de pestaña con deducción matemática de pausas, cero desfase (0 drift) por suspensión de CPU.
+  8. **Consultar Historial:** Acceso local e integrado a las últimas 50 sesiones por habilidad para consulta offline y trazabilidad.
+* **Datos Comunes Estandarizados (`UniversalSessionRecord`):**
+  - Identidad: `sessionId`, `userId`, `idempotencyKey` determinista (`ses_univ_<userId>_<sessionId>`).
+  - Contexto: `domain`, `buildingId`, `projectId`, `projectName`, `resourceId`, `resourceTitle`, `sessionObjective`.
+  - Cronología: `preparedAt`, `startedAt`, `endedAt`, `pauses` (`started_at`, `ended_at`, `duration_seconds`).
+  - Estado y Métricas: `status` (`preparing | running | paused | completed | cancelled`), `elapsedSeconds`, `notes`, `evidenceUrls`.
+  - Trazabilidad: `historyLog` con marcas de auditoría de cada transición de estado.
+* **Especialización Tipada por Dominio:**
+  - `reading`: `book_id`, `book_title`, `pages_read`, `quote_text`, `quote_page`, `quotes_list`.
+  - `knitting`: `project_id`, `pattern_name`, `rounds_completed`, `rows_completed`, `yarn_details`, `technique`, `stitches_notes`.
+  - `study`: `subject`, `topic`, `study_method`, `exercises_completed`, `comprehension_rating`, `cards_reviewed`.
+  - `work`: `work_project_name`, `project_id`, `task_id`, `task_title`, `deliverable`, `impact_level`.
+  - `general` / Deep Work: `sessionObjective`, `focus_rating`, `distractions_count`, `distraction_logs`.
+  - `rubik`: `cube_id`, `cube_model`, `solve_time_seconds`, `penalty`, `algorithm_learned`, `ao5_seconds`.
+* **Seguridad, Aislamiento y Reglas de Oro:**
+  - **Aislamiento Multi-Usuario:** `hydrateUniversalSession` valida que el `userId` almacenado coincida con la sesión activa; cualquier intento de acceso cruzado devuelve `null`.
+  - **Prevención de Duplicados:** Candado de sesión activa con advertencia ante colisiones entre edificios y clave de idempotencia persistente.
+  - **Cero Emisión Paralela de XP/GP:** El motor frontend **no calcula ni genera GP, XP ni niveles**; únicamente reporta la duración neta real y el progreso físico verificado al backend canónico.
 
 ---
 

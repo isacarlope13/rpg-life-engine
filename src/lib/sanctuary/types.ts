@@ -43,6 +43,8 @@ export interface UniversalSessionState {
   specializedData?: Record<string, unknown>;
 }
 
+export * from "./universal-session-engine";
+
 export interface KnittingSessionPayload {
   projectId?: string;
   projectName?: string;
