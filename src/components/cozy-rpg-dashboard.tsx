@@ -67,6 +67,7 @@ import { CozySidebar } from "@/components/cozy/cozy-sidebar";
 import { CozyHeader } from "@/components/cozy/cozy-header";
 import { BentoDailyDashboard } from "@/components/cozy/bento-daily-dashboard";
 import { ResidentModal } from "@/components/cozy/resident-modal";
+import { CozySoundscapeModal } from "@/components/cozy/cozy-soundscape-modal";
 import {
   queueOfflineAction,
   processOfflineQueue,
@@ -136,6 +137,7 @@ export function CozyRpgDashboard() {
   // Notas de bitácora
   const [quickNote, setQuickNote] = useState("");
   const [isScrapbookOpen, setIsScrapbookOpen] = useState(false);
+  const [isSoundscapeOpen, setIsSoundscapeOpen] = useState(false);
   const [notesList, setNotesList] = useState<string[]>([
     "Recoger lana de alpaca para la bufanda nórdica.",
     "Completar 20 páginas del libro de arquitectura.",
@@ -398,6 +400,7 @@ export function CozyRpgDashboard() {
                 if (mode === "village_map") setActiveTab("village");
               }}
               onOpenScrapbook={() => setIsScrapbookOpen(true)}
+              onOpenSoundscape={() => setIsSoundscapeOpen(true)}
               walletGp={walletGp}
               vaultGp={vaultGp}
               isOffline={isOffline}
@@ -653,6 +656,12 @@ export function CozyRpgDashboard() {
         walletGp={walletGp}
         vaultGp={vaultGp}
         rubikPb={state?.rubik_stats?.pb_seconds ?? null}
+      />
+
+      {/* AMBIENTACIÓN SONORA PROCEDURAL */}
+      <CozySoundscapeModal
+        isOpen={isSoundscapeOpen}
+        onClose={() => setIsSoundscapeOpen(false)}
       />
     </div>
   );

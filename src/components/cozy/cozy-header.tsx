@@ -9,6 +9,7 @@ interface CozyHeaderProps {
   viewMode: "bento" | "village_map";
   onViewModeChange: (mode: "bento" | "village_map") => void;
   onOpenScrapbook: () => void;
+  onOpenSoundscape?: () => void;
   walletGp: number;
   vaultGp: number;
   isOffline?: boolean;
@@ -22,6 +23,7 @@ export function CozyHeader({
   viewMode,
   onViewModeChange,
   onOpenScrapbook,
+  onOpenSoundscape,
   walletGp,
   vaultGp,
   isOffline = false,
@@ -76,6 +78,14 @@ export function CozyHeader({
           title="Abrir álbum de recuerdos y postales"
         >
           📷 Álbum
+        </button>
+        <button
+          type="button"
+          onClick={onOpenSoundscape}
+          className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition cursor-pointer text-[#3A2E2B] hover:bg-[#E8DFCF]"
+          title="Abrir paisajes sonoros y música ambiental"
+        >
+          🎵 Audio
         </button>
       </div>
 

@@ -47,3 +47,13 @@ test("Cozy Design System 3: Radios de Borde Coherentes con Diseño Bento", () =>
   assert.equal(COZY_RADII.xl, "1.25rem");
   assert.equal(COZY_RADII["2xl"], "1.5rem");
 });
+
+test("Cozy Design System 4: Ambientación Sonora y Presets de Oakhaven", async () => {
+  const { SOUNDSCAPE_PRESETS, cozySoundscape } = await import("../src/lib/cozy/cozy-soundscape.ts");
+  assert.equal(SOUNDSCAPE_PRESETS.length, 5, "Deben existir 5 presets de paisajes sonoros");
+  assert.equal(SOUNDSCAPE_PRESETS[0].id, "off", "El preset inicial debe ser silencio 'off'");
+  assert.equal(cozySoundscape.getCurrentPreset(), "off", "El estado por defecto debe ser silencio absoluto");
+  
+  const presetIds = SOUNDSCAPE_PRESETS.map((p) => p.id);
+  assert.deepEqual(presetIds, ["off", "rain", "fireplace", "breeze", "chimes"]);
+});

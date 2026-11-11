@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { BookOpen, Award, CheckCircle2, Star, Users, Home, Calendar, Sparkles } from "lucide-react";
-import { COZY_VILLAGE_RESIDENTS, calculateBuildingTier } from "@/lib/sanctuary/village-tiers";
+import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 import type { SkillDomainSummary, SkillSessionRecord } from "@/types/rpg";
+import { CozyModal, CozyCard, CozyButton } from "@/components/cozy/ui";
 
 interface MayorsLedgerModalProps {
   isOpen: boolean;
@@ -54,103 +54,91 @@ export function MayorsLedgerModal({
   const activeDecree = DECREES[dayOfWeek % DECREES.length];
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={onClose}
+    <CozyModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Bitácora Oficial del Pueblo"
+      subtitle="Ayuntamiento Comunitario de Oakhaven"
+      icon="🏛️"
+      headerVariant="wood"
+      maxWidth="2xl"
     >
-      <div
-        className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border-4 border-[#5C4033] bg-[#F7F4EB] p-6 sm:p-8 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          boxShadow: "0 25px 50px -12px rgba(92, 64, 51, 0.4), inset 0 0 100px rgba(235, 229, 216, 0.6)",
-        }}
-      >
-        {/* ENCABEZADO ESTILO PERGAMINO REAL / ARCHIVO DEL AYUNTAMIENTO */}
-        <div className="border-b-3 border-[#5C4033]/30 pb-5 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border-2 border-[#5C4033] bg-[#E9C46A]/30 px-3.5 py-1 text-xs font-black text-[#5C4033]">
-            🏛️ Ayuntamiento Comunitario de Oakhaven
-          </div>
-          <h2 className="mt-3 text-2xl font-black tracking-tight text-[#3A2E2B]">
-            Bitácora Oficial del Pueblo
-          </h2>
-          <p className="mt-1 text-xs text-[#7A6B62]">
-            Registro de prosperidad comunitaria, obras públicas y censo de residentes.
-          </p>
-        </div>
-
+      <div className="space-y-4 text-[#3A2E2B]">
         {/* ESTACIÓN ACTUAL Y CLIMA */}
-        <div className="mt-6 rounded-2xl border-2 border-[#5C4033] bg-[#FFFBF2] p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">{seasonInfo.icon}</span>
-            <div>
-              <span className="text-[10px] font-black uppercase text-[#8C7A6B]">Estación Vigente</span>
-              <h4 className="text-sm font-black text-[#3A2E2B]">{seasonInfo.name}</h4>
-              <p className="text-xs text-[#5C4033]">{seasonInfo.climate}</p>
+        <CozyCard variant="cream" shadow="sm" className="p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl select-none">{seasonInfo.icon}</span>
+              <div>
+                <span className="text-[10px] font-black uppercase text-[#795548]">Estación Vigente</span>
+                <h4 className="text-sm font-black text-[#3A2E2B]">{seasonInfo.name}</h4>
+                <p className="text-xs text-[#5C4033]">{seasonInfo.climate}</p>
+              </div>
+            </div>
+            <div className="rounded-xl border-2 border-[#314C3C]/40 bg-[#77936A]/20 px-3 py-1.5 text-right">
+              <span className="text-[10px] font-bold text-[#314C3C]">Armonía Estacional</span>
+              <p className="text-xs font-black text-[#314C3C]">{seasonInfo.bonus}</p>
             </div>
           </div>
-          <div className="rounded-xl border border-[#4E6E58]/30 bg-[#4E6E58]/10 px-3 py-1.5 text-right">
-            <span className="text-[10px] font-bold text-[#4E6E58]">Armonía Estacional</span>
-            <p className="text-xs font-black text-[#2E4333]">{seasonInfo.bonus}</p>
-          </div>
-        </div>
+        </CozyCard>
 
         {/* DECRETO DEL DÍA */}
-        <div className="mt-4 rounded-2xl border-2 border-[#8C5835] bg-[#EFE8D6] p-4 text-center">
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#8C5835]">
+        <div className="rounded-2xl border-3 border-[#3A2E2B] bg-[#E7D69C]/40 p-4 text-center shadow-[0_3px_0_#3A2E2B]">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#795548] block">
             📜 Decreto del Alcalde Rowan
           </span>
           <p className="mt-1.5 text-xs font-semibold italic text-[#3A2E2B]">
-            "{activeDecree}"
+            &ldquo;{activeDecree}&rdquo;
           </p>
         </div>
 
         {/* MÉTRICAS COMUNITARIAS */}
-        <div className="mt-6">
-          <h4 className="text-xs font-black uppercase tracking-wider text-[#5C4033] mb-3">
+        <div>
+          <h4 className="text-xs font-black uppercase tracking-wider text-[#795548] mb-2">
             📊 Balance de Prosperidad
           </h4>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border-2 border-[#5C4033]/30 bg-[#FFFBF2] p-3 text-center">
+            <div className="rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-3 text-center shadow-[0_3px_0_#3A2E2B]">
               <span className="text-lg">⭐</span>
               <span className="block text-base font-black text-[#3A2E2B]">5.0 / 5.0</span>
-              <span className="text-[10px] font-bold text-[#7A6B62]">Satisfacción Vecinal</span>
+              <span className="text-[10px] font-bold text-[#795548]">Satisfacción Vecinal</span>
             </div>
-            <div className="rounded-2xl border-2 border-[#5C4033]/30 bg-[#FFFBF2] p-3 text-center">
+            <div className="rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-3 text-center shadow-[0_3px_0_#3A2E2B]">
               <span className="text-lg">🌱</span>
               <span className="block text-base font-black text-[#3A2E2B]">{totalSessions}</span>
-              <span className="text-[10px] font-bold text-[#7A6B62]">Sesiones de Calma</span>
+              <span className="text-[10px] font-bold text-[#795548]">Sesiones de Calma</span>
             </div>
-            <div className="col-span-2 sm:col-span-1 rounded-2xl border-2 border-[#5C4033]/30 bg-[#FFFBF2] p-3 text-center">
+            <div className="col-span-2 sm:col-span-1 rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-3 text-center shadow-[0_3px_0_#3A2E2B]">
               <span className="text-lg">💰</span>
-              <span className="block text-base font-black text-[#4E6E58]">
+              <span className="block text-base font-black text-[#314C3C]">
                 +{totalGp.toLocaleString("es-CO")} GP
               </span>
-              <span className="text-[10px] font-bold text-[#7A6B62]">Riqueza Forjada</span>
+              <span className="text-[10px] font-bold text-[#795548]">Riqueza Forjada</span>
             </div>
           </div>
         </div>
 
         {/* CENSO DE RESIDENTES */}
-        <div className="mt-6">
-          <h4 className="text-xs font-black uppercase tracking-wider text-[#5C4033] mb-3">
+        <div>
+          <h4 className="text-xs font-black uppercase tracking-wider text-[#795548] mb-2">
             👥 Censo Comunitario de Residentes ({COZY_VILLAGE_RESIDENTS.length})
           </h4>
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
             {COZY_VILLAGE_RESIDENTS.map((res) => (
               <div
                 key={res.id}
-                className="flex items-center justify-between rounded-xl border-2 border-[#5C4033]/20 bg-[#FFFBF2] p-2.5 px-3"
+                className="flex items-center justify-between rounded-xl border-2 border-[#3A2E2B] bg-[#FFFDF8] p-2.5 px-3 shadow-[0_2px_0_#3A2E2B]"
               >
                 <div className="flex items-center gap-2.5">
                   <span className="text-xl">{res.avatar}</span>
                   <div>
                     <span className="text-xs font-black text-[#3A2E2B]">{res.name}</span>
-                    <span className="ml-1.5 text-[10px] font-bold text-[#7A6B62]">
+                    <span className="ml-1.5 text-[10px] font-bold text-[#795548]">
                       ({res.species} • {res.title})
                     </span>
                   </div>
                 </div>
-                <span className="rounded-full bg-[#EBE5D8] px-2 py-0.5 text-[10px] font-extrabold text-[#4E6E58]">
+                <span className="rounded-full border border-[#77936A] bg-[#77936A]/20 px-2 py-0.5 text-[10px] font-extrabold text-[#314C3C]">
                   En su Puesto ✓
                 </span>
               </div>
@@ -159,16 +147,17 @@ export function MayorsLedgerModal({
         </div>
 
         {/* BOTÓN DE CIERRE */}
-        <div className="mt-6 pt-4 border-t-2 border-[#5C4033]/20 text-center">
-          <button
-            type="button"
+        <div className="pt-2 text-center">
+          <CozyButton
+            variant="sunlight"
+            size="md"
             onClick={onClose}
-            className="rounded-2xl border-3 border-[#5C4033] bg-[#E9C46A] px-6 py-2.5 text-xs font-black text-[#3A2E2B] shadow-md hover:bg-[#F4A261] transition cursor-pointer"
+            className="w-full sm:w-auto"
           >
             Cerrar Bitácora Municipal
-          </button>
+          </CozyButton>
         </div>
       </div>
-    </div>
+    </CozyModal>
   );
 }
