@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test tests/rpg-engine.test.ts tests/automation-core.test.ts tests/agents-core.test.ts tests/specialized-agents.test.ts tests/integrations.test.ts tests/stabilization-sprint.test.ts tests/cozy-design-system.test.ts tests/cozy-release-acceptance.test.ts tests/ios-safari-resilience.test.ts tests/cozy-village-expansion.test.ts"
+    "test": "node --test tests/rpg-engine.test.ts tests/automation-core.test.ts tests/agents-core.test.ts tests/specialized-agents.test.ts tests/integrations.test.ts tests/stabilization-sprint.test.ts tests/cozy-design-system.test.ts tests/cozy-release-acceptance.test.ts tests/ios-safari-resilience.test.ts tests/cozy-village-expansion.test.ts tests/financial-intelligence-39.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.0.0",

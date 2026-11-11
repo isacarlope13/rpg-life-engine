@@ -134,6 +134,19 @@ export function calculateFinancialSummary(
       continue;
     }
 
+    // Exclusión de saldos iniciales históricos (ej. 4 de septiembre de 2026)
+    const isInitial =
+      m.isInitialBalance === true ||
+      m.id === "mts5z6dfjzde" ||
+      m.id === "mts61q9xcf10" ||
+      (m.descripcion || "").toLowerCase().includes("inicial cuenta") ||
+      (m.descripcion || "").toLowerCase().includes("inicial efectivo");
+
+    if (isInitial) {
+      // Saldo de apertura: no se suma como ingreso nuevo del periodo
+      continue;
+    }
+
     if (rawType === "ingreso") {
       totalIncomeCop += amount;
     } else if (rawType === "gasto") {

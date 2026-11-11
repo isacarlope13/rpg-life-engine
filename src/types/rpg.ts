@@ -610,6 +610,17 @@ export interface TalentPerk {
   is_unlocked?: boolean;
 }
 
+export type FinancialClassification =
+  | "sueldo_quincenal"
+  | "saldo_inicial"
+  | "inversion_ahorro"
+  | "prestamo_familiar"
+  | "reembolso"
+  | "gasto_operativo"
+  | "gasto_fijo"
+  | "transferencia_interna"
+  | "pendiente_clasificar";
+
 export interface FinancialMovementRecord {
   id: string;
   fecha: string;
@@ -620,6 +631,11 @@ export interface FinancialMovementRecord {
   metodo_pago: string;
   detalle?: string;
   created_at?: string;
+  // Campos de auditoría y reclasificación OakHaven 3.9
+  classification?: FinancialClassification;
+  isInitialBalance?: boolean;
+  requiresReview?: boolean;
+  auditNotes?: string;
 }
 
 
