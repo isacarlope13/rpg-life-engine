@@ -27,6 +27,8 @@ import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyProgress, CozyNotification, CozyCard } from "@/components/cozy/ui";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
+import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
 
 interface LibreriaBuildingProps {
   books: ReadingBook[];
@@ -528,6 +530,31 @@ export function LibreriaBuilding({
                 </div>
               )}
             </div>
+
+            {/* Smart Capture & Valores Sugeridos */}
+            <SmartCaptureWidget
+              domain="reading"
+              context={{
+                domain: "reading",
+                activeBook: activeBook
+                  ? {
+                      id: activeBook.id,
+                      title: activeBook.title,
+                      author: activeBook.author,
+                      pages_read: activeBook.pages_read,
+                      total_pages: activeBook.total_pages,
+                    }
+                  : undefined,
+              }}
+              notes={quoteTextInput}
+              onNotesChange={setQuoteTextInput}
+              onApplySuggestedValues={(vals) => {
+                setPagesReadInput(vals.quantity);
+                if (vals.notes) {
+                  setQuoteTextInput(vals.notes);
+                }
+              }}
+            />
           </div>
         </div>
       )}
@@ -696,6 +723,11 @@ export function LibreriaBuilding({
                 </div>
               );
             })}
+          </div>
+
+          {/* BÓVEDA DE RECURSOS & PDFs ASOCIADOS A LA LECTURA */}
+          <div className="pt-4 border-t-2 border-[#D8B48A]/40">
+            <SkillResourceHubPanel domain="reading" />
           </div>
         </div>
       )}

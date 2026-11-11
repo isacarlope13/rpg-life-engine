@@ -442,3 +442,201 @@ test("Universal Session Engine 16: Idempotencia Criptográfica y Ausencia de Gen
   assert.equal(payload1.xp, undefined, "El motor frontend NO debe emitir recompensas de XP directas");
   assert.equal(payload1.level, undefined, "El motor frontend NO debe modificar niveles arbitrariamente");
 });
+
+test("Smart Capture 17: Validación Estricta de Seguridad de Archivos Adjuntos (< 5MB y MIME)", async () => {
+  const { validateSkillResourceAttachment, MAX_FILE_SIZE_BYTES } = await import(
+    "../src/lib/sanctuary/skill-resources-hub.ts"
+  );
+
+  // 1. Archivo válido dentro del límite (< 5 MB) y tipo permitido (PDF / PNG)
+  const validPdf = validateSkillResourceAttachment({
+    name: "patron-bufanda-cozy.pdf",
+    size: 1.5 * 1024 * 1024, // 1.5 MB
+    type: "application/pdf",
+  });
+  assert.equal(validPdf.valid, true);
+  assert.equal(validPdf.sanitizedName, "patron-bufanda-cozy.pdf");
+
+  const validImage = validateSkillResourceAttachment({
+    name: "avance_telar_24.png",
+    size: 2.1 * 1024 * 1024, // 2.1 MB
+    type: "image/png",
+  });
+  assert.equal(validImage.valid, true);
+
+  // 2. Archivo que supera el límite de 5 MB
+  const oversizedFile = validateSkillResourceAttachment({
+    name: "video_pesado_tutorial.mp4",
+    size: 6.2 * 1024 * 1024, // 6.2 MB
+    type: "video/mp4",
+  });
+  assert.equal(oversizedFile.valid, false);
+  assert.match(oversizedFile.error!, /excede el tamaño máximo de 5 MB/);
+
+  // 3. Extensión no admitida / peligrosa (.exe / .bat)
+  const maliciousFile = validateSkillResourceAttachment({
+    name: "script_peligroso.exe",
+    size: 100 * 1024,
+    type: "application/x-msdownload",
+  });
+  assert.equal(maliciousFile.valid, false);
+  assert.match(maliciousFile.error!, /Formato de archivo no permitido/);
+
+  // 4. Sanitización de nombres con caracteres extraños
+  const weirdName = validateSkillResourceAttachment({
+    name: "mi patrón #1 ($copia!).pdf",
+    size: 500 * 1024,
+    type: "application/pdf",
+  });
+  assert.equal(weirdName.valid, true);
+  assert.equal(weirdName.sanitizedName, "mi_patr_n__1___copia__.pdf");
+});
+
+test("Smart Capture 18: Generación Determinista de Valores Sugeridos por Habilidad", async () => {
+  const { getSuggestedSkillValues } = await import(
+    "../src/lib/sanctuary/skill-resources-hub.ts"
+  );
+
+  // Caso 1: Atelier (Knitting)
+  const knittingVals = getSuggestedSkillValues({
+    domain: "knitting",
+    activeKnittingProject: {
+      id: "proj_bufanda",
+      name: "Bufanda Nube",
+      current_rows: 24,
+      total_rows_target: 60,
+      yarn_name: "Lana Merino",
+    },
+  });
+  assert.equal(knittingVals.primaryTitle, "Bufanda Nube");
+  assert.equal(knittingVals.suggestedActionLabel, "Tejer Ronda 25");
+  assert.equal(knittingVals.progressPercentage, 40); // 24 / 60 = 40%
+  assert.ok(knittingVals.quickSnippets.length >= 3);
+
+  // Caso 2: Librería (Reading)
+  const readingVals = getSuggestedSkillValues({
+    domain: "reading",
+    activeBook: {
+      id: "bk_habits",
+      title: "Atomic Habits",
+      pages_read: 50,
+      total_pages: 200,
+    },
+  });
+  assert.equal(readingVals.primaryTitle, "Atomic Habits");
+  assert.equal(readingVals.suggestedQuantity, 15); // Ritmo sugerido de 15 páginas
+  assert.equal(readingVals.suggestedActionLabel, "Leer 15 páginas (pág. 50 a 65)");
+  assert.equal(readingVals.progressPercentage, 25); // 50 / 200 = 25%
+
+  // Caso 3: Biblioteca (Study)
+  const studyVals = getSuggestedSkillValues({
+    domain: "study",
+    activeStudy: {
+      subject: "Cálculo Integral",
+      topic: "Integración por Partes",
+      spacedCardsDueCount: 8,
+    },
+  });
+  assert.equal(studyVals.suggestedActionLabel, "Repasar 8 Flashcards SM-2");
+  assert.equal(studyVals.suggestedQuantity, 8);
+  assert.equal(studyVals.unitLabel, "tarjetas");
+
+  // Caso 4: Oficina (Work)
+  const workVals = getSuggestedSkillValues({
+    domain: "work",
+    activeWorkProject: {
+      id: "proj_cozy",
+      name: "Cozy Village",
+      currentStage: "Desarrollo",
+      nextPendingTask: "Bóveda de Recursos",
+    },
+  });
+  assert.equal(workVals.primaryTitle, "Cozy Village");
+  assert.equal(workVals.suggestedActionLabel, "Sprint en tarea: Bóveda de Recursos");
+});
+
+test("Smart Capture 19: Extracción Inteligente y Confirmación Humana Previa (HITL)", async () => {
+  const { parseSmartCaptureSnippet } = await import(
+    "../src/lib/sanctuary/skill-resources-hub.ts"
+  );
+
+  // 1. Extracción de lectura
+  const readingSnippet = parseSmartCaptureSnippet("Hoy leí 25 páginas del capítulo de hábitos", "reading");
+  assert.equal(readingSnippet.candidateNumber, 25);
+  assert.equal(readingSnippet.candidateUnit, "páginas");
+  assert.equal(readingSnippet.requiresConfirmation, true, "HITL: siempre requiere confirmación del usuario");
+
+  // 2. Extracción de tejido
+  const knittingSnippet = parseSmartCaptureSnippet("Completé la vuelta 18 sin errores", "knitting");
+  assert.equal(knittingSnippet.candidateNumber, 18);
+  assert.equal(knittingSnippet.candidateUnit, "rondas");
+  assert.equal(knittingSnippet.requiresConfirmation, true);
+
+  // 3. Extracción de cita entre comillas
+  const quoteSnippet = parseSmartCaptureSnippet('El libro dice: "La paciencia es el arte de la esperanza"', "reading");
+  assert.equal(quoteSnippet.candidateNotes, "La paciencia es el arte de la esperanza");
+  assert.ok(quoteSnippet.candidateTags.includes("cita_destacada"));
+
+  // 4. Extracción de solve de Rubik
+  const rubikSnippet = parseSmartCaptureSnippet("Nuevo PB de 13.82s en 3x3", "rubik");
+  assert.equal(rubikSnippet.candidateNumber, 13.82);
+  assert.equal(rubikSnippet.candidateUnit, "segundos");
+});
+
+test("Smart Capture 20: Aislamiento de Usuario y Persistencia Local de Recursos", async () => {
+  // Mock global localStorage para Node.js test runner
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (key: string) => store.get(key) || null,
+    setItem: (key: string, val: string) => store.set(key, val),
+    removeItem: (key: string) => store.delete(key),
+    clear: () => store.clear(),
+    length: 0,
+    key: () => null,
+  };
+  Object.defineProperty(globalThis, "localStorage", {
+    value: mockStorage,
+    writable: true,
+    configurable: true,
+  });
+
+  const {
+    saveSkillResource,
+    getStoredSkillResources,
+    deleteSkillResource,
+  } = await import("../src/lib/sanctuary/skill-resources-hub.ts");
+
+  // Usuario A guarda un patrón
+  const userAResource = saveSkillResource(
+    {
+      domain: "knitting",
+      userId: "usr_alice",
+      type: "pattern",
+      title: "Patrón Bufanda Calada",
+      tags: ["knitting", "pattern"],
+    },
+    "usr_alice"
+  );
+
+  assert.ok(userAResource.id);
+  assert.equal(userAResource.title, "Patrón Bufanda Calada");
+
+  // Usuario B no ve los recursos de Usuario A (aislamiento RLS / multi-tenant)
+  const userBResources = getStoredSkillResources("knitting", "usr_bob");
+  assert.equal(userBResources.length, 0);
+
+  // Usuario A sí ve su recurso
+  const userAResources = getStoredSkillResources("knitting", "usr_alice");
+  assert.equal(userAResources.length, 1);
+  assert.equal(userAResources[0].id, userAResource.id);
+
+  // Usuario B no puede borrar el recurso de Usuario A
+  const deleteByB = deleteSkillResource(userAResource.id, "usr_bob");
+  const checkStillThere = getStoredSkillResources("knitting", "usr_alice");
+  assert.equal(checkStillThere.length, 1, "El recurso de Alice no debió ser borrado por Bob");
+
+  // Usuario A sí puede borrar su recurso
+  const deleteByA = deleteSkillResource(userAResource.id, "usr_alice");
+  assert.equal(deleteByA, true);
+  assert.equal(getStoredSkillResources("knitting", "usr_alice").length, 0);
+});

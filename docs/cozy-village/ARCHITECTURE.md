@@ -1,9 +1,9 @@
 # ARQUITECTURA DEL SISTEMA — COZY LIVING VILLAGE
 ## RPG Life-Engine 3.5.0
 **Documento Técnico:** `docs/cozy-village/ARCHITECTURE.md`  
-**Versión:** 1.6.0  
+**Versión:** 1.7.0  
 **Fecha:** 11 de Noviembre de 2026  
-**Estado:** Fase 7 (Universal Skill Session Engine) Implementada & Validada en Producción
+**Estado:** Fase 8 (Skill Resource Hub & Smart Capture) Implementada & Validada en Producción
 
 ---
 
@@ -184,6 +184,25 @@ flowchart TD
   - **Aislamiento Multi-Usuario:** `hydrateUniversalSession` valida que el `userId` almacenado coincida con la sesión activa; cualquier intento de acceso cruzado devuelve `null`.
   - **Prevención de Duplicados:** Candado de sesión activa con advertencia ante colisiones entre edificios y clave de idempotencia persistente.
   - **Cero Emisión Paralela de XP/GP:** El motor frontend **no calcula ni genera GP, XP ni niveles**; únicamente reporta la duración neta real y el progreso físico verificado al backend canónico.
+
+### 3.9. Bóveda de Recursos & Captura Inteligente (`SkillResourceHubPanel` & `SmartCaptureWidget`)
+* **Objetivo de Eficiencia:** Minimizar la carga cognitiva y el tecleo manual durante las sesiones activas, derivando automáticamente el contexto de progreso y permitiendo adjuntar materiales de referencia.
+* **Tipología Unificada de Recursos (`SkillResource`):**
+  - Soporta vinculación de Libros (`book`), Documentos PDF (`pdf`), Videos tutoriales (`video`), Enlaces web (`link`), Patrones de artesanía (`pattern`), Imágenes y diagramas (`image`), Apuntes rápidos (`note`), Materiales (`material`) y Plantillas (`template`).
+  - Validación de seguridad estricta: límite infranqueable de 5 MB (`MAX_FILE_SIZE_BYTES`), filtrado por lista blanca MIME (`image/*`, `application/pdf`, `text/*`) y sanitización de nombres de archivo contra caracteres peligrosos.
+  - Aislamiento Local-First Multi-Usuario: Bóveda persistida bajo prefijo unívoco por usuario (`rpg_skill_resources_v4_<userId>`).
+* **Captura Inteligente Contextual (Smart Capture):**
+  - **Valores Sugeridos Deterministas:**
+    - *Atelier:* Recuerda la última ronda tejida y sugiere avanzar a la siguiente (`last_round + 1` o bloques de 5), calcula el % de avance del proyecto y ofrece snippets frecuentes ("Punto bobo parejo", "Cambio de ovillo").
+    - *Librería:* Sugiere páginas restantes respetando el ritmo del lector (`read_pages + 15`), autocompleta el libro en curso y facilita captura de citas con número de página.
+    - *Biblioteca:* Recuerda la materia/tema activo y detecta automáticamente si hay tarjetas SM-2 vencidas pendientes de repaso.
+    - *Oficina:* Presenta la siguiente tarea pendiente del backlog de sprint ágil (Scrum/Kanban) con botón de 1 clic para iniciar.
+  - **Captura Multimodal (Voz y Fotografías):**
+    - Dictado accesible por voz mediante Web Speech API (`SpeechRecognition`) con indicador visual de escucha en tiempo real.
+    - Carga y previsualización de evidencias fotográficas (fotos de tejido en bastidor, notas de campo) adjuntadas de forma segura a la sesión universal.
+  - **Confirmación Humana Previa (HITL — Human-in-the-Loop):**
+    - Todo snippet o comando dictado analizado heurísticamente por `parseSmartCaptureSnippet` despliega un banner de confirmación previa con los valores detectados (ej. "25 páginas", "vuelta 18"), requiriendo que el usuario presione `Confirmar y Aplicar` antes de alterar el estado.
+* **Integración sin Modificación de Reglas:** Reutiliza las estructuras de `/api/shortcuts/skill-session` sin crear servicios externos costosos ni alterar balances de economía o niveles.
 
 ---
 

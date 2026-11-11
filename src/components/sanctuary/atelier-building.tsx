@@ -23,6 +23,8 @@ import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyProgress, CozyNotification } from "@/components/cozy/ui";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
+import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
 
 interface AtelierBuildingProps {
   projects: KnittingProject[];
@@ -57,6 +59,7 @@ export function AtelierBuilding({
   // Contador de vueltas de la sesión actual
   const [sessionRows, setSessionRows] = useState<number>(0);
   const [stitchesNotes, setStitchesNotes] = useState<string>("");
+  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
   const [notification, setNotification] = useState<{
     type: "success" | "error" | "warning";
     message: string;
@@ -117,6 +120,7 @@ export function AtelierBuilding({
         project_id: activeProject?.id,
         rows_completed: sessionRows > 0 ? sessionRows : 1,
         stitches_notes: stitchesNotes,
+        photo_evidence_url: uploadedPhotoUrl || undefined,
       });
 
       if (result) {
@@ -126,6 +130,7 @@ export function AtelierBuilding({
         });
         setSessionRows(0);
         setStitchesNotes("");
+        setUploadedPhotoUrl(null);
         await onRefreshState();
       }
     } catch (err) {
@@ -397,6 +402,34 @@ export function AtelierBuilding({
                 </p>
               </div>
             </div>
+
+            {/* Smart Capture & Asistente Contextual */}
+            <SmartCaptureWidget
+              domain="knitting"
+              context={{
+                domain: "knitting",
+                activeKnittingProject: activeProject
+                  ? {
+                      id: activeProject.id,
+                      name: activeProject.name,
+                      current_rows: activeProject.completed_rows,
+                      total_rows_target: activeProject.total_rows_target,
+                      yarn_name: activeProject.yarn_details,
+                    }
+                  : undefined,
+              }}
+              notes={stitchesNotes}
+              onNotesChange={setStitchesNotes}
+              onApplySuggestedValues={(vals) => {
+                setSessionRows(vals.quantity);
+                if (vals.notes) {
+                  setStitchesNotes((prev) => (prev ? `${prev} • ${vals.notes}` : vals.notes || ""));
+                }
+              }}
+              onPhotoUploaded={(dataUrl) => {
+                setUploadedPhotoUrl(dataUrl);
+              }}
+            />
           </div>
         </div>
       )}
@@ -515,6 +548,11 @@ export function AtelierBuilding({
                 </div>
               );
             })}
+          </div>
+
+          {/* BÓVEDA DE RECURSOS & PATRONES ADJUNTOS */}
+          <div className="pt-4 border-t-2 border-[#D8B48A]/40">
+            <SkillResourceHubPanel domain="knitting" />
           </div>
         </div>
       )}
