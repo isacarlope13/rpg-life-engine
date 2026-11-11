@@ -33,6 +33,7 @@ import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 import { projectRubikProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
+import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
 
 interface ClubPuzzlesBuildingProps {
   cubes: RubikCubeCatalogItem[];
@@ -520,7 +521,24 @@ export function ClubPuzzlesBuilding({
           MODO 1: PRÁCTICA WCA & SPEEDCUBING
          ================================================================= */}
       {rubikSubMode === "practice" && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="space-y-4">
+          {/* ASISTENTE CONTEXTUAL: MILO EL SPEEDCUBER WCA (FASE 10) */}
+          <ResidentAssistantWidget
+            context={{
+              residentId: "milo",
+              buildingId: "club_puzzles",
+              domain: "rubik",
+              rubikPb: activeRubikStats.pb_seconds,
+              rubikSolvesCount: activeRubikStats.total_solves || activeRubikStats.recent_solves?.length || 0,
+            }}
+            onPrepareSession={(prepared) => {
+              if (prepared.objective) {
+                setRubikAlgInput(prepared.objective);
+              }
+            }}
+          />
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/80 p-5 lg:col-span-7">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -760,6 +778,7 @@ export function ClubPuzzlesBuilding({
               />
             </div>
           </div>
+        </div>
         </div>
       )}
 

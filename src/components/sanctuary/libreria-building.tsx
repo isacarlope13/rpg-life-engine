@@ -31,6 +31,7 @@ import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget"
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
 import { projectLibreriaProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
+import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
 
 interface LibreriaBuildingProps {
   books: ReadingBook[];
@@ -368,7 +369,30 @@ export function LibreriaBuilding({
           TAB 1: LECTURA ACTIVA (LIBRO EN CURSO, TIMER, CAPTURA DE PÁGINAS & CITAS)
          ======================================================================= */}
       {activeTab === "lectura" && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="space-y-4">
+          {/* ASISTENTE CONTEXTUAL: ELDRIN EL ARCHIVERO MAYOR (FASE 10) */}
+          <ResidentAssistantWidget
+            context={{
+              residentId: "eldrin",
+              buildingId: "libreria",
+              domain: "reading",
+              readingBooks: books,
+              recentSessions: readingSessions,
+            }}
+            onPrepareSession={(prepared) => {
+              if (prepared.resourceId) {
+                setSelectedBookId(prepared.resourceId);
+              }
+              if (prepared.recommendedMinutes) {
+                setPagesReadInput(15);
+              }
+              if (prepared.initialNotes) {
+                setQuoteTextInput((prev) => (prev ? `${prev} • ${prepared.initialNotes}` : prepared.initialNotes || ""));
+              }
+            }}
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
           {/* Columna Izquierda: Libro Activo & Cronómetro */}
           <div className="md:col-span-7 space-y-5">
             <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_6px_0_#3A2E2B] space-y-4">
@@ -621,6 +645,7 @@ export function LibreriaBuilding({
               }}
             />
           </div>
+        </div>
         </div>
       )}
 

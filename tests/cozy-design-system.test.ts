@@ -906,11 +906,11 @@ test("Visual Progression 25: Invariante económica — Cero GP y Cero XP emitido
   const advancedVillage = projectVillageProgression({
     userId: "usr_veteran",
     skillSummaries: [
-      { domain: "knitting", level: 5, sessions_count: 20, total_gp_earned: 5000 },
-      { domain: "reading", level: 5, sessions_count: 25, total_gp_earned: 6200 },
-      { domain: "study", level: 5, sessions_count: 18, total_gp_earned: 4500 },
-      { domain: "work", level: 5, sessions_count: 30, total_gp_earned: 9000 },
-      { domain: "rubik", level: 5, sessions_count: 50, total_gp_earned: 15000 },
+      { domain: "knitting", label: "Tejido", total_xp: 1000, total_minutes: 500, level: 5, sessions_count: 20, total_gp_earned: 5000 },
+      { domain: "reading", label: "Lectura", total_xp: 1200, total_minutes: 600, level: 5, sessions_count: 25, total_gp_earned: 6200 },
+      { domain: "study", label: "Estudio", total_xp: 900, total_minutes: 450, level: 5, sessions_count: 18, total_gp_earned: 4500 },
+      { domain: "work", label: "Trabajo", total_xp: 1500, total_minutes: 800, level: 5, sessions_count: 30, total_gp_earned: 9000 },
+      { domain: "rubik", label: "Rubik", total_xp: 2000, total_minutes: 1000, level: 5, sessions_count: 50, total_gp_earned: 15000 },
     ],
     knittingProjects: [
       { id: "k1", name: "P1", technique: "Crochet", total_rows_target: 60, completed_rows: 60, yarn_details: "Y1", status: "completed" },
@@ -934,4 +934,256 @@ test("Visual Progression 25: Invariante económica — Cero GP y Cero XP emitido
   assert.ok(advancedVillage.totalMilestonesUnlocked > 15, "Deben haberse proyectado múltiples hitos");
   assert.equal(advancedVillage.overallVillageTier, 3, "El pueblo entero debe alcanzar Tier 3");
 });
+
+test("Resident Assistant 26: Asistente Piloto (Clara en Atelier) recuerda proyecto, vuelta y prepara sesión determinista (Nivel 1 Automático)", async () => {
+  const { generateResidentAdvice } = await import(
+    "../src/lib/sanctuary/cozy-residents-engine.ts"
+  );
+
+  const context = {
+    residentId: "clara",
+    buildingId: "atelier",
+    domain: "knitting" as const,
+    knittingProjects: [
+      {
+        id: "proj_bufanda",
+        name: "Bufanda Nórdica",
+        technique: "Crochet" as const,
+        total_rows_target: 60,
+        completed_rows: 40,
+        yarn_details: "Lana Merino 100g",
+        status: "in_progress" as const,
+      },
+    ],
+  };
+
+  const advice = generateResidentAdvice(context);
+
+  // 1. Identidad del residente no controlable
+  assert.equal(advice.residentId, "clara");
+  assert.equal(advice.residentName, "Clara");
+  assert.equal(advice.avatar, "🐇");
+
+  // 2. Resumen contextual con memoria de proyecto y vuelta
+  assert.ok(advice.contextSummary.includes("Bufanda Nórdica"));
+  assert.ok(advice.contextSummary.includes("40 de 60"));
+
+  // 3. Preparación automática de sesión (Nivel 1)
+  assert.ok(advice.preparedSession);
+  assert.equal(advice.preparedSession.resourceTitle, "Bufanda Nórdica");
+  assert.equal(advice.preparedSession.resourceId, "proj_bufanda");
+  assert.equal(advice.preparedSession.recommendedMinutes, 20);
+  assert.ok(advice.preparedSession.objective.includes("5 vueltas"));
+});
+
+test("Resident Assistant 27: Propuesta Nivel 2 (HITL) requiere confirmación humana explícita antes de aplicar", async () => {
+  const {
+    generateResidentAdvice,
+    resolveResidentProposal,
+    classifyResidentAction,
+    getStoredResidentJournal,
+  } = await import("../src/lib/sanctuary/cozy-residents-engine.ts");
+
+  // Proyecto a punto de terminar (58 de 60 vueltas -> resta 2 vueltas)
+  const context = {
+    userId: "usr_clara_test",
+    residentId: "clara",
+    buildingId: "atelier",
+    domain: "knitting" as const,
+    knittingProjects: [
+      {
+        id: "proj_finishing",
+        name: "Gorro Invernal",
+        technique: "Dos Agujas" as const,
+        total_rows_target: 60,
+        completed_rows: 58,
+        yarn_details: "Alpaca",
+        status: "in_progress" as const,
+      },
+    ],
+  };
+
+  const advice = generateResidentAdvice(context);
+
+  // Debe haber generado una propuesta Nivel 2 (HITL)
+  assert.equal(advice.pendingProposals.length, 1);
+  const proposal = advice.pendingProposals[0];
+  assert.equal(proposal.level, 2, "La propuesta debe ser estrictamente Nivel 2 (HITL)");
+  assert.equal(proposal.status, "pending_approval");
+  assert.ok(proposal.title.includes("Remate Final"));
+
+  // Clasificación de seguridad previa
+  const classification = classifyResidentAction({
+    category: proposal.category,
+    payload: proposal.suggestedPayload,
+  });
+  assert.equal(classification.level, 2);
+  assert.equal(classification.isAllowed, true);
+
+  // 1. Decisión de rechazo del usuario
+  const rejectResult = resolveResidentProposal({
+    proposal,
+    decision: "reject",
+    userId: "usr_clara_test",
+    rejectionReason: "Prefiero terminar en otro momento",
+  });
+  assert.equal(rejectResult.proposal.status, "rejected");
+  assert.equal(rejectResult.journalEntry.status, "rejected_by_user");
+
+  // 2. Decisión de aprobación del usuario
+  const approveResult = resolveResidentProposal({
+    proposal,
+    decision: "approve",
+    userId: "usr_clara_test",
+  });
+  assert.equal(approveResult.proposal.status, "approved");
+  assert.equal(approveResult.journalEntry.status, "approved_by_user");
+
+  // Verificación en el diario de auditoría (Journal)
+  const journal = getStoredResidentJournal("usr_clara_test");
+  assert.ok(journal.length >= 2, "Debe haber registrado ambas decisiones en el diario");
+});
+
+test("Resident Assistant 28: Bloqueo estricto de Nivel 3 (Protegido) — Prohibición absoluta de alterar GP, XP o finanzas", async () => {
+  const { classifyResidentAction, resolveResidentProposal } = await import(
+    "../src/lib/sanctuary/cozy-residents-engine.ts"
+  );
+
+  // Intento de inyectar GP o XP en una propuesta
+  const maliciousProposal = {
+    proposalId: "prop_hack_gp",
+    residentId: "clara",
+    buildingId: "atelier",
+    domain: "knitting" as const,
+    level: 2 as const,
+    title: "Bono falso de oro",
+    description: "Intento de agregar GP por fuera del motor canónico",
+    category: "backlog_task_proposal" as const,
+    suggestedPayload: {
+      gp_earned: 5000,
+      xp_earned: 2000,
+      bank_balance: 999999,
+    },
+    createdAt: new Date().toISOString(),
+    status: "pending_approval" as const,
+  };
+
+  // 1. Clasificación debe interceptar como Nivel 3 Protegido y denegar
+  const classification = classifyResidentAction({
+    category: maliciousProposal.category,
+    payload: maliciousProposal.suggestedPayload,
+  });
+  assert.equal(classification.level, 3, "Debe clasificar como Nivel 3 Protegido");
+  assert.equal(classification.isAllowed, false, "Debe prohibir la ejecución");
+  assert.ok(classification.violationReason?.includes("gp_earned") || classification.violationReason?.includes("bloqueada"));
+
+  // 2. Intento de forzar aprobación debe ser bloqueado por la política de seguridad
+  const blockedResult = resolveResidentProposal({
+    proposal: maliciousProposal,
+    decision: "approve",
+    userId: "usr_attacker",
+  });
+  assert.equal(blockedResult.proposal.status, "blocked");
+  assert.equal(blockedResult.journalEntry.status, "blocked_by_policy");
+});
+
+test("Resident Assistant 29: Asistentes contextuales en múltiples edificios (Lyra en Biblioteca, Eldrin en Librería, Milo en Rubik)", async () => {
+  const { generateResidentAdvice } = await import(
+    "../src/lib/sanctuary/cozy-residents-engine.ts"
+  );
+
+  // 1. Lyra (Biblioteca / SM-2)
+  const lyraAdvice = generateResidentAdvice({
+    residentId: "lyra",
+    buildingId: "biblioteca",
+    domain: "study",
+    spacedRepetitionCards: [
+      { id: "c1", prompt: "P1", reflection: "R1", ease_factor: 2.5, interval_days: 1, repetitions: 1, next_review: new Date().toISOString() },
+      { id: "c2", prompt: "P2", reflection: "R2", ease_factor: 2.5, interval_days: 1, repetitions: 1, next_review: new Date().toISOString() },
+    ],
+  });
+  assert.equal(lyraAdvice.residentId, "lyra");
+  assert.equal(lyraAdvice.avatar, "🦉");
+  assert.ok(lyraAdvice.contextSummary.includes("2 tarjetas"));
+  assert.ok(lyraAdvice.preparedSession?.objective.includes("Duelo de Repaso Activo SM-2"));
+
+  // 2. Eldrin (Librería / Lectura)
+  const eldrinAdvice = generateResidentAdvice({
+    residentId: "eldrin",
+    buildingId: "libreria",
+    domain: "reading",
+    readingBooks: [
+      { id: "b1", title: "Hábitos Atómicos", author: "James Clear", total_pages: 320, pages_read: 150, status: "reading", category: "Autoayuda" },
+    ],
+  });
+  assert.equal(eldrinAdvice.residentId, "eldrin");
+  assert.equal(eldrinAdvice.avatar, "🦡");
+  assert.ok(eldrinAdvice.contextSummary.includes("Hábitos Atómicos"));
+  assert.ok(eldrinAdvice.contextSummary.includes("150 de 320"));
+
+  // 3. Milo (Club de Puzzles / Rubik)
+  const miloAdvice = generateResidentAdvice({
+    residentId: "milo",
+    buildingId: "club_puzzles",
+    domain: "rubik",
+    rubikPb: 16.85,
+    rubikSolvesCount: 42,
+  });
+  assert.equal(miloAdvice.residentId, "milo");
+  assert.equal(miloAdvice.avatar, "🐿️");
+  assert.ok(miloAdvice.contextSummary.includes("16.85s"));
+  assert.ok(miloAdvice.contextSummary.includes("42 solves"));
+});
+
+test("Resident Assistant 30: Gobernanza, Registro de Auditoría (Journal) y Desactivación de Asistentes", async () => {
+  const {
+    saveResidentSettings,
+    getStoredResidentSettings,
+    generateResidentAdvice,
+  } = await import("../src/lib/sanctuary/cozy-residents-engine.ts");
+
+  const userId = "usr_governance_test";
+
+  // 1. Silenciar a Clara individualmente
+  saveResidentSettings({ mutedResidents: ["clara"] }, userId);
+  const settings1 = getStoredResidentSettings(userId);
+  assert.ok(settings1.mutedResidents.includes("clara"));
+
+  const claraAdviceMuted = generateResidentAdvice({
+    userId,
+    residentId: "clara",
+    buildingId: "atelier",
+    domain: "knitting",
+    knittingProjects: [
+      { id: "p1", name: "P1", technique: "Crochet", total_rows_target: 60, completed_rows: 58, yarn_details: "Y", status: "in_progress" },
+    ],
+  });
+  assert.equal(claraAdviceMuted.pendingProposals.length, 0, "Clara silenciada no debe generar propuestas");
+
+  // Lyra sigue activa y no está silenciada
+  const lyraAdviceActive = generateResidentAdvice({
+    userId,
+    residentId: "lyra",
+    buildingId: "biblioteca",
+    domain: "study",
+    spacedRepetitionCards: [
+      { id: "c1", prompt: "P1", reflection: "R1", ease_factor: 2.5, interval_days: 1, repetitions: 1, next_review: new Date().toISOString() },
+    ],
+  });
+  assert.equal(lyraAdviceActive.residentName, "Lyra");
+
+  // 2. Desactivación Global de Asistentes
+  saveResidentSettings({ assistantsEnabledGlobal: false }, userId);
+  const settingsGlobal = getStoredResidentSettings(userId);
+  assert.equal(settingsGlobal.assistantsEnabledGlobal, false);
+
+  const lyraAdviceGlobalOff = generateResidentAdvice({
+    userId,
+    residentId: "lyra",
+    buildingId: "biblioteca",
+    domain: "study",
+  });
+  assert.equal(lyraAdviceGlobalOff.pendingProposals.length, 0, "Con asistentes desactivados globalmente no hay propuestas");
+});
+
 

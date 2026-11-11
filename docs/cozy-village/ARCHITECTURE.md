@@ -1,9 +1,9 @@
 # ARQUITECTURA DEL SISTEMA — COZY LIVING VILLAGE
 ## RPG Life-Engine 3.5.0
 **Documento Técnico:** `docs/cozy-village/ARCHITECTURE.md`  
-**Versión:** 1.9.0  
+**Versión:** 2.0.0  
 **Fecha:** 11 de Noviembre de 2026  
-**Estado:** Fase 9 (Visual Village Progression) Implementada & Validada en Producción
+**Estado:** Fase 10 (Cozy Residents & Automation) Implementada & Validada en Producción
 
 ---
 
@@ -222,11 +222,29 @@ flowchart TD
   - **Idempotencia Estricta:** El registro de eventos (`recordConfirmedMilestoneEvent`) utiliza claves unívocas (`eventId`), impidiendo duplicación de estados o unlocks repetidos.
   - **Aislamiento Multi-Usuario:** Estados particionados por identificador de usuario (`rpg_village_progression_<userId>`).
 
+### 3.11. Asistentes Contextuales & Automatización de 3 Niveles (`cozy-residents-engine.ts` & `ResidentAssistantWidget`)
+* **Concepto de Residentes no Controlables (NPCs):** Personajes estables asociados a cada habilidad (Clara en Atelier, Eldrin en Librería, Lyra en Biblioteca, Milo en Club de Puzzles, Marcus en Oficina) que reducen la fricción cognitiva recordando el contexto histórico y preparando sesiones. **No existe avatar controlable del usuario.**
+* **Matriz de Seguridad y Automatización en 3 Niveles:**
+  - **Nivel 1 (Automático / Read-Only):**
+    - Consulta de información, resumen contextual de actividad reciente, preparación de objetivos y tiempo sugerido para el temporizador universal, y actualización de indicadores.
+    - Se ejecuta de manera transparente y determinista sin requerir confirmación explícita.
+  - **Nivel 2 (Requiere Confirmación Humana — HITL):**
+    - Propuestas de sprints de remate final, creación de tareas en backlog, reorganización de sesiones o incorporación de nuevos recursos a la bóveda.
+    - Se despliegan como tarjetas interactivas con botones explícitos `Aceptar y Aplicar` o `Descartar`.
+  - **Nivel 3 (Protegido / Estrictamente Bloqueado):**
+    - GP, XP, finanzas, transferencias, amortización de deuda y recompensas.
+    - El interceptor `classifyResidentAction` deniega automáticamente cualquier mutación de Nivel 3 y la registra como `blocked_by_policy` en el diario de auditoría.
+* **Gobernanza, Privacidad y Diario de Auditoría (Journal):**
+  - **Registro de Acciones:** Registro cronológico de auditoría persistido localmente (`rpg_resident_journal_<userId>`) con resultado de cada decisión (`auto_executed`, `approved_by_user`, `rejected_by_user`, `blocked_by_policy`).
+  - **Interruptores de Silencio y Control:** Permite al usuario silenciar a un asistente particular (`mutedResidents`) o desactivar la asistencia globalmente (`assistantsEnabledGlobal: false`).
+  - **Límites y Anti-Flood:** Cooldowns y cuotas máximas de propuestas diarias por edificio para evitar saturación.
+
 ---
 
 ## 4. Garantías de No Regresión e Invariantes
 
-1. **Invariante Financiera:** Ninguna interacción, decoración o progreso visual genera GP arbitrario; toda recompensa se valida contra la Bóveda del usuario.
-2. **Invariante de Idempotencia:** Las micro-misiones, sesiones y eventos de hito emplean prefijos unívocos (`village_journal_<id>_<date>_<ts>`, `evt_<building>_<type>_<id>`).
-3. **Invariante de No Degradación:** Los logros de los edificios nunca se revierten por ausencia o inactividad del usuario.
-4. **Accesibilidad Sensorial:** El audio nunca se inicia automáticamente; respeta el gesto deliberado del usuario y las directivas de `prefers-reduced-motion`.
+1. **Invariante Financiera y de XP:** Ninguna interacción, decoración, progreso visual o acción de residente genera GP o XP arbitrario; toda recompensa se valida exclusivamente contra la Bóveda del usuario en el backend canónico.
+2. **Invariante de Idempotencia:** Las micro-misiones, sesiones, eventos de hito y propuestas emplean identificadores unívocos (`village_journal_<id>_<date>_<ts>`, `evt_<building>_<type>_<id>`, `prop_<resident>_<target>_<ts>`).
+3. **Invariante de No Degradación:** Los logros de los edificios y trofeos nunca se revierten por ausencia o inactividad del usuario.
+4. **Invariante de Autonomía Acotada (HITL):** Los residentes no tienen autonomía irrestricta; toda mutación de proyecto o tarea requiere confirmación previa del usuario.
+5. **Accesibilidad Sensorial:** El audio nunca se inicia automáticamente; respeta el gesto deliberado del usuario y las directivas de `prefers-reduced-motion`.

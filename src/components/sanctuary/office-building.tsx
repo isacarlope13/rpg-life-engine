@@ -29,6 +29,7 @@ import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget"
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
 import { projectOficinaProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
+import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
 
 interface OfficeBuildingProps {
   playerLevel: number;
@@ -273,7 +274,28 @@ export function OfficeBuilding({
           TAB 1: SPRINTS & POMODORO
          ======================================================================= */}
       {activeTab === "timer" && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="space-y-4">
+          {/* ASISTENTE CONTEXTUAL: MARCUS EL FACILITADOR ÁGIL (FASE 10) */}
+          <ResidentAssistantWidget
+            context={{
+              residentId: "marcus_lead",
+              buildingId: "oficina",
+              domain: "work",
+              workProjects: DEFAULT_PROJECTS.map((p) => ({
+                id: p.id,
+                name: p.name,
+                progressPercent: p.progressPercent,
+                pendingTasks: [p.deliverable || "Sprint de trabajo enfocado"],
+              })),
+            }}
+            onPrepareSession={(prepared) => {
+              if (prepared.objective) {
+                setSessionNotes((prev) => (prev ? `${prev} • ${prepared.objective}` : prepared.objective));
+              }
+            }}
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
           <div className="md:col-span-7 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_6px_0_#3A2E2B] text-center space-y-4">
             <span className="text-xs font-extrabold uppercase tracking-wider text-[#795548]">
               {isRunning
@@ -441,6 +463,7 @@ export function OfficeBuilding({
               }}
             />
           </div>
+        </div>
         </div>
       )}
 

@@ -29,6 +29,7 @@ import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget"
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
 import { projectBibliotecaProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
+import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
 
 interface BibliotecaBuildingProps {
   cards: SpacedRepetitionCard[];
@@ -225,7 +226,27 @@ export function BibliotecaBuilding({
           TAB 1: SESIÓN DE ESTUDIO ACTIVA
          ======================================================================= */}
       {activeTab === "estudio" && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="space-y-4">
+          {/* ASISTENTE CONTEXTUAL: LYRA LA ERUDITA DE LA CÁTEDRA (FASE 10) */}
+          <ResidentAssistantWidget
+            context={{
+              residentId: "lyra",
+              buildingId: "biblioteca",
+              domain: "study",
+              spacedRepetitionCards: cards,
+              recentSessions: studySessions,
+            }}
+            onPrepareSession={(prepared) => {
+              if (prepared.recommendedMinutes) {
+                setStudyMinutes(prepared.recommendedMinutes);
+              }
+              if (prepared.objective) {
+                setSessionNotes((prev) => (prev ? `${prev} • ${prepared.objective}` : prepared.objective));
+              }
+            }}
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
           <div className="md:col-span-7 space-y-4">
             <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_6px_0_#3A2E2B] space-y-4">
               <div className="space-y-1">
@@ -442,6 +463,7 @@ export function BibliotecaBuilding({
               }}
             />
           </div>
+        </div>
         </div>
       )}
 
