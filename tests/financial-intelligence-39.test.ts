@@ -30,6 +30,11 @@ import {
   calculateReadingValueExtraction,
   type AtelierYarnInventory,
 } from "../src/lib/sanctuary/skill-financial-bridge.ts";
+import {
+  WishlistDualEngine,
+  defaultWishlistDualEngine,
+  type DualWishlistItem,
+} from "../src/lib/sanctuary/wishlist-dual-engine.ts";
 
 test("Hito 3.9.1 — 1. Exclusión estricta de saldos iniciales de ingresos y sueldos", () => {
   const result: ReclassifiedFinancialDataset = auditAndClassifyMovements(INITIAL_FINANCIAL_MOVEMENTS);
@@ -827,6 +832,146 @@ test("Hito 3.9.5 — 28. Librería: Extracción de valor intelectual de libros s
 
   // INVARIANTE: La lectura de páginas forja XP y GP en el Santuario de Oakhaven sin generar débitos bancarios.
 });
+
+// ==============================================================================
+// PRUEBAS HITO 3.9.6: GP, RESERVAS Y WISHLIST DUAL
+// ==============================================================================
+
+test("Hito 3.9.6 — 29. Canje con GP suficientes pero Dinero Real en COP insuficiente", () => {
+  const engine = new WishlistDualEngine();
+  const item = engine.getItemById("wish_cubo_gan")!; // Costo: 85.000 GP, Precio: $140.000 COP
+
+  // Usuario tiene 100.000 GP (sobran GP), pero solo tiene $90.000 COP de dinero libre reservado
+  const outcome = engine.executeDualRedemption(item, {
+    itemId: item.id,
+    userWalletGp: 100000,
+    availableReservedCashCop: 90000,
+    currentStreakDays: 5,
+    hasOverdueDebts: false,
+  });
+
+  assert.equal(outcome.success, false, "El canje debe ser rechazado por falta de dinero real.");
+  assert.equal(outcome.deductedGp, 0);
+  assert.equal(outcome.deductedCashCop, 0);
+  assert.ok(outcome.rejectionReason?.includes("Insuficiencia de Presupuesto Real"));
+});
+
+test("Hito 3.9.6 — 30. Canje con Dinero Real en COP suficiente pero GP lúdicos insuficientes", () => {
+  const engine = new WishlistDualEngine();
+  const item = engine.getItemById("wish_cubo_gan")!; // Costo: 85.000 GP, Precio: $140.000 COP
+
+  // Usuario tiene $300.000 COP en mano (sobra dinero), pero solo tiene 20.000 GP (faltan 65.000 GP)
+  const outcome = engine.executeDualRedemption(item, {
+    itemId: item.id,
+    userWalletGp: 20000,
+    availableReservedCashCop: 300000,
+    currentStreakDays: 5,
+    hasOverdueDebts: false,
+  });
+
+  assert.equal(outcome.success, false, "El canje debe ser rechazado por falta de GP forjados con hábitos.");
+  assert.equal(outcome.deductedGp, 0);
+  assert.equal(outcome.deductedCashCop, 0);
+  assert.ok(outcome.rejectionReason?.includes("Insuficiencia de GP"));
+});
+
+test("Hito 3.9.6 — 31. Alerta por mora activa (ADDI) y confirmación explícita del usuario", () => {
+  const engine = new WishlistDualEngine();
+  const item = engine.getItemById("wish_libro_finanzas")!; // Costo: 30.000 GP, Precio: $52.000 COP
+
+  // 1. Intento sin confirmación cuando hay mora activa de ADDI ($213.374 atraso)
+  const outcomeBlocked = engine.executeDualRedemption(item, {
+    itemId: item.id,
+    userWalletGp: 50000,
+    availableReservedCashCop: 100000,
+    currentStreakDays: 5,
+    hasOverdueDebts: true, // Mora activa en ADDI
+    userExplicitOverrideConfirmed: false,
+  });
+
+  assert.equal(outcomeBlocked.success, false);
+  assert.ok(outcomeBlocked.rejectionReason?.includes("Recomendación Prudente de Oakhaven"));
+  assert.ok(outcomeBlocked.rejectionReason?.includes("ADDI"));
+
+  // 2. Con confirmación explícita del usuario que decide continuar bajo su soberanía
+  const outcomeApproved = engine.executeDualRedemption(item, {
+    itemId: item.id,
+    userWalletGp: 50000,
+    availableReservedCashCop: 100000,
+    currentStreakDays: 5,
+    hasOverdueDebts: true,
+    userExplicitOverrideConfirmed: true,
+  });
+
+  assert.equal(outcomeApproved.success, true, "El canje procede con confirmación humana explícita.");
+  assert.equal(outcomeApproved.deductedGp, 30000);
+  assert.equal(outcomeApproved.deductedCashCop, 52000);
+  assert.equal(outcomeApproved.remainingWalletGp, 20000);
+  assert.equal(outcomeApproved.remainingReservedCashCop, 48000);
+});
+
+test("Hito 3.9.6 — 32. Reversión completa de canje cancelado con restitución de GP y COP", () => {
+  const engine = new WishlistDualEngine();
+  const item = engine.getItemById("wish_set_agujas_crochet")!; // Costo: 45.000 GP, Precio: $68.000 COP
+
+  // Ejecutar canje exitoso
+  const outcome = engine.executeDualRedemption(item, {
+    itemId: item.id,
+    userWalletGp: 60000,
+    availableReservedCashCop: 100000,
+    currentStreakDays: 5,
+    hasOverdueDebts: false,
+  });
+  assert.equal(outcome.success, true);
+  assert.equal(item.isRedeemed, true);
+
+  // El usuario cancela la orden de compra antes de entrega
+  const revert = engine.revertRedemption(item.id, {
+    currentWalletGp: outcome.remainingWalletGp, // 15.000 GP
+    currentReservedCashCop: outcome.remainingReservedCashCop, // 32.000 COP
+  });
+
+  assert.equal(revert.reverted, true);
+  assert.equal(revert.restoredWalletGp, 60000, "Los 45.000 GP deben regresar íntegros a la billetera (15k + 45k = 60k).");
+  assert.equal(revert.restoredReservedCashCop, 100000, "Los $68.000 COP deben regresar al presupuesto de bienestar (32k + 68k = 100k).");
+  assert.equal(item.isRedeemed, false, "El artículo vuelve a estar disponible para canje futuro.");
+});
+
+test("Hito 3.9.6 — 33. Concurrencia e idempotencia: Prevención de doble deducción simultánea", () => {
+  const engine = new WishlistDualEngine();
+  const item = engine.getItemById("wish_cubo_gan")!; // Costo: 85.000 GP, Precio: $140.000 COP
+
+  const idempotencyKey = "tx_wish_idemp_20261111";
+
+  // Primera solicitud de canje con saldo justo para una sola compra
+  const outcome1 = engine.executeDualRedemption(item, {
+    itemId: item.id,
+    userWalletGp: 90000,
+    availableReservedCashCop: 150000,
+    currentStreakDays: 5,
+    hasOverdueDebts: false,
+    idempotencyKey,
+  });
+  assert.equal(outcome1.success, true);
+  assert.equal(outcome1.isIdempotentReplay, false);
+
+  // Segunda solicitud idéntica (reintento de red o doble clic)
+  const outcome2 = engine.executeDualRedemption(item, {
+    itemId: item.id,
+    userWalletGp: outcome1.remainingWalletGp,
+    availableReservedCashCop: outcome1.remainingReservedCashCop,
+    currentStreakDays: 5,
+    hasOverdueDebts: false,
+    idempotencyKey,
+  });
+
+  // Debe devolver el resultado previo sin volver a descontar saldo
+  assert.equal(outcome2.success, true);
+  assert.equal(outcome2.isIdempotentReplay, true);
+  assert.equal(outcome2.deductedGp, 85000);
+  assert.equal(outcome2.remainingWalletGp, 5000);
+});
+
 
 
 
