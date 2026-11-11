@@ -660,101 +660,23 @@ export function CozyVillageMap({
                   onMouseEnter={() => setHoveredBuildingId(building.id)}
                   onMouseLeave={() => setHoveredBuildingId(null)}
                 >
-                  {/* EDIFICIO PILOTO PIXEL ART (EL ATELIER) */}
-                  {building.id === "atelier" ? (
-                    <VillagePixelBuilding
-                      building={building}
-                      tierInfo={tierInfo}
-                      pending={pending}
-                      resident={resident}
-                      isHovered={isHovered}
-                      onInspect={() => setSelectedBuildingDetail(building)}
-                      onEnter={() => onSelectBuilding(building.id, building.domain)}
-                      onSelectResident={(res) => {
-                        if (onSelectResident) {
-                          onSelectResident(res);
-                        } else {
-                          setActiveResidentDialogue(res);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <>
-                      {/* Badge de Actividad Pendiente */}
-                      {pending.hasPending && (
-                        <span className="absolute -top-7 z-20 flex items-center gap-1 rounded-full border-2 border-[#3A2E2B] bg-[#E7D69C] px-2 py-0.5 text-[9px] font-black text-[#3A2E2B] shadow-[0_2px_0_#3A2E2B] animate-bounce whitespace-nowrap">
-                          <span>⚡</span> {pending.label || "Actividad lista"}
-                        </span>
-                      )}
-
-                      {/* FACHADA DEL EDIFICIO */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("medium");
-                          setSelectedBuildingDetail(building);
-                        }}
-                        onDoubleClick={() => onSelectBuilding(building.id, building.domain)}
-                        className={`relative flex flex-col items-center justify-center w-28 sm:w-32 rounded-2xl border-4 border-[#3A2E2B] p-2.5 sm:p-3 text-center shadow-[0_5px_0_#3A2E2B] transition-all duration-300 cursor-pointer ${
-                          tierInfo.tier === 3
-                            ? "ring-4 ring-[#E7D69C]/50 bg-gradient-to-b from-[#2E3524] to-[#1C2016]"
-                            : tierInfo.tier === 2
-                            ? "bg-gradient-to-b from-[#2E3D31] to-[#1C251F]"
-                            : "bg-gradient-to-b from-[#3A2E2B] to-[#251E1C]"
-                        } ${
-                          isHovered
-                            ? "-translate-y-1.5 shadow-[0_8px_0_#3A2E2B] border-[#FFFDF8]"
-                            : ""
-                        }`}
-                        aria-label={`Edificio: ${building.name}. Tier ${tierInfo.tier}. Clic para inspeccionar.`}
-                      >
-                        {/* Tejado / Humo de Chimenea */}
-                        <span className="text-3xl sm:text-4xl filter drop-shadow group-hover:scale-110 transition-transform">
-                          {building.icon}
-                        </span>
-
-                        <span className="mt-1 text-[11px] font-black text-[#FFFDF8] leading-tight line-clamp-1">
-                          {building.name.split(" ")[0]} {building.name.split(" ")[1] || ""}
-                        </span>
-
-                        {/* Insignia de Tier */}
-                        <span className="mt-0.5 rounded-full bg-[#E7D69C] px-1.5 py-0.2 text-[8px] font-black text-[#3A2E2B]">
-                          {tierInfo.badge}
-                        </span>
-
-                        {/* Decoraciones exteriores desbloqueadas (Fase 9: Visual Progression) */}
-                        {tierInfo.tier >= 2 && (
-                          <span className="absolute -top-2.5 -left-2 text-xs filter drop-shadow select-none" title="Farol artesanal exterior instalado (Tier 2+)">
-                            🏮
-                          </span>
-                        )}
-                        {tierInfo.tier === 3 && (
-                          <span className="absolute -top-3.5 -right-2 text-sm filter drop-shadow select-none animate-bounce" title="Estandarte y cúpula de maestría (Tier 3)">
-                            🚩
-                          </span>
-                        )}
-
-                        {/* Avatar del Residente Asistente junto a la puerta */}
-                        {resident && (
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              triggerHaptic("light");
-                              if (onSelectResident) {
-                                onSelectResident(resident);
-                              } else {
-                                setActiveResidentDialogue(resident);
-                              }
-                            }}
-                            className="absolute -bottom-2 -right-2 flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#3A2E2B] bg-[#FFFDF8] text-sm shadow-[0_2px_0_#3A2E2B] hover:scale-115 transition"
-                            title={`Hablar con ${resident.name}`}
-                          >
-                            {resident.avatar}
-                          </span>
-                        )}
-                      </button>
-                    </>
-                  )}
+                  {/* EDIFICIO PIXEL ART DEL MAPA DE OAKHAVEN */}
+                  <VillagePixelBuilding
+                    building={building}
+                    tierInfo={tierInfo}
+                    pending={pending}
+                    resident={resident}
+                    isHovered={isHovered}
+                    onInspect={() => setSelectedBuildingDetail(building)}
+                    onEnter={() => onSelectBuilding(building.id, building.domain)}
+                    onSelectResident={(res) => {
+                      if (onSelectResident) {
+                        onSelectResident(res);
+                      } else {
+                        setActiveResidentDialogue(res);
+                      }
+                    }}
+                  />
 
                   {/* TOOLTIP RÁPIDO EN HOVER */}
                   {isHovered && (

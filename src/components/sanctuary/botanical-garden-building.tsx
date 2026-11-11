@@ -17,7 +17,7 @@ import {
   Sun,
   ShieldCheck,
 } from "lucide-react";
-import type { Quest } from "@/types/rpg";
+import type { Quest, SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 
@@ -27,6 +27,7 @@ interface BotanicalGardenBuildingProps {
   totalGpEarned?: number;
   isCozyActive?: boolean;
   quests?: Quest[];
+  sessions?: SkillSessionRecord[];
   onRefreshState: () => Promise<void>;
   onSubmitDirectSkillSession: (payload: Record<string, unknown>) => Promise<unknown>;
   onClose?: () => void;
@@ -127,6 +128,7 @@ export function BotanicalGardenBuilding({
   totalGpEarned = 0,
   isCozyActive = true,
   quests = [],
+  sessions = [],
   onRefreshState,
   onSubmitDirectSkillSession,
   onClose,
@@ -134,7 +136,7 @@ export function BotanicalGardenBuilding({
   // Estado del cantero de plantas
   const [plants, setPlants] = useState<PlantSpecimen[]>(DEFAULT_PLANTS);
   const [fieldNotes, setFieldNotes] = useState<FieldNote[]>(INITIAL_FIELD_NOTES);
-  const [activeTab, setActiveTab] = useState<"garden" | "notes" | "session">("garden");
+  const [activeTab, setActiveTab] = useState<"garden" | "session" | "resources" | "notes">("garden");
 
   // Formulario de nuevo esqueje / nota de campo
   const [isAddingNote, setIsAddingNote] = useState(false);
@@ -242,6 +244,7 @@ export function BotanicalGardenBuilding({
   };
 
   const wateredCount = plants.filter((p) => p.wateredToday).length;
+  const gardeningSessions = sessions.filter((s) => s.domain === "gardening");
 
   return (
     <div className="space-y-6 text-[#3A2E2B]">
@@ -298,33 +301,42 @@ export function BotanicalGardenBuilding({
       )}
 
       {/* SELECTOR DE PESTAÑAS */}
-      <div className="flex rounded-2xl border-2 border-[#5C4033] bg-[#EBE5D8] p-1 text-xs font-bold">
+      <div className="flex flex-wrap gap-1 rounded-2xl border-2 border-[#5C4033] bg-[#EBE5D8] p-1 text-xs font-bold">
         <button
           type="button"
           onClick={() => setActiveTab("garden")}
-          className={`flex-1 rounded-xl py-2 transition cursor-pointer ${
+          className={`flex-1 min-w-[120px] rounded-xl py-2 px-2 transition cursor-pointer text-center ${
             activeTab === "garden" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
           }`}
         >
-          🌱 Cantero de Hábitos Vivos
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("notes")}
-          className={`flex-1 rounded-xl py-2 transition cursor-pointer ${
-            activeTab === "notes" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
-          }`}
-        >
-          📖 Cuaderno de Campo Botánico
+          🌱 Cantero de Plantas ({plants.length})
         </button>
         <button
           type="button"
           onClick={() => setActiveTab("session")}
-          className={`flex-1 rounded-xl py-2 transition cursor-pointer ${
+          className={`flex-1 min-w-[120px] rounded-xl py-2 px-2 transition cursor-pointer text-center ${
             activeTab === "session" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
           }`}
         >
           ⏱️ Temporizador de Cuidados
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("resources")}
+          className={`flex-1 min-w-[120px] rounded-xl py-2 px-2 transition cursor-pointer text-center ${
+            activeTab === "resources" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
+          }`}
+        >
+          📚 Recursos Botánicos
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("notes")}
+          className={`flex-1 min-w-[120px] rounded-xl py-2 px-2 transition cursor-pointer text-center ${
+            activeTab === "notes" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
+          }`}
+        >
+          📖 Historial & Campo ({gardeningSessions.length + fieldNotes.length})
         </button>
       </div>
 
@@ -466,8 +478,40 @@ export function BotanicalGardenBuilding({
             </form>
           )}
 
-          {/* LISTA DE NOTAS */}
-          <div className="space-y-2.5">
+          {/* 1. SESIONES BOTÁNICAS REGISTRADAS */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#4E6E58] flex items-center gap-1.5">
+              <span>⏱️</span> Sesiones de Jardinería Realizadas ({gardeningSessions.length})
+            </h4>
+            {gardeningSessions.length === 0 ? (
+              <p className="text-xs text-[#7A6B62] italic bg-[#FFFBF2] p-3 rounded-2xl border border-[#5C4033]/20">
+                Aún no has completado sesiones de temporizador en el Invernadero. Puedes iniciar una en la pestaña de temporizador.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {gardeningSessions.slice(0, 5).map((s) => (
+                  <div
+                    key={s.id}
+                    className="rounded-2xl border-2 border-[#38523F]/30 bg-[#F0F6F1] p-3 shadow-sm flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <span className="font-bold text-[#1F2C23]">{s.details || "Sesión de cuidados botánicos"}</span>
+                      <p className="text-[10px] text-[#4E6E58]">{s.duration_minutes} minutos dedicados con presencia</p>
+                    </div>
+                    <span className="font-mono text-[10px] font-bold text-[#7A6B62]">
+                      {s.timestamp ? new Date(s.timestamp).toLocaleDateString("es-ES", { month: "short", day: "numeric" }) : "Reciente"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 2. LISTA DE NOTAS DE CAMPO */}
+          <div className="space-y-2.5 pt-2">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#795548] flex items-center gap-1.5">
+              <span>📝</span> Observaciones & Esquejes ({fieldNotes.length})
+            </h4>
             {fieldNotes.map((note) => (
               <div
                 key={note.id}
@@ -485,6 +529,57 @@ export function BotanicalGardenBuilding({
                 <span className="text-[10px] font-bold text-[#8C7A6B]">{note.date}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* PESTAÑA: RECURSOS BOTÁNICOS & GUÍAS DE CUIDADO */}
+      {activeTab === "resources" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-3xl border-3 border-[#38523F] bg-[#FFFBF2] p-5 shadow-sm space-y-2">
+              <span className="text-2xl select-none">🧪</span>
+              <h4 className="text-sm font-black text-[#1F2C23]">Sustrato Equilibrado de Oakhaven</h4>
+              <p className="text-xs text-[#5C4033] leading-relaxed">
+                40% compost orgánico de roble, 30% perlita aireada y 30% humus de bosque. Retiene humedad suave sin asfixiar las raíces finas.
+              </p>
+              <span className="inline-block rounded-md bg-[#E8EFE9] px-2 py-0.5 text-[10px] font-black text-[#2D4533]">
+                Fórmula Canónica
+              </span>
+            </div>
+
+            <div className="rounded-3xl border-3 border-[#38523F] bg-[#FFFBF2] p-5 shadow-sm space-y-2">
+              <span className="text-2xl select-none">💧</span>
+              <h4 className="text-sm font-black text-[#1F2C23]">Calendario de Riego Consciente</h4>
+              <p className="text-xs text-[#5C4033] leading-relaxed">
+                Revisar siempre la humedad a 2 cm bajo la superficie antes de regar. Preferir horas tempranas de la mañana para evitar hongos y evaporación rápida.
+              </p>
+              <span className="inline-block rounded-md bg-[#E8EFE9] px-2 py-0.5 text-[10px] font-black text-[#2D4533]">
+                Hábito Sostenible
+              </span>
+            </div>
+
+            <div className="rounded-3xl border-3 border-[#38523F] bg-[#FFFBF2] p-5 shadow-sm space-y-2">
+              <span className="text-2xl select-none">✂️</span>
+              <h4 className="text-sm font-black text-[#1F2C23]">Propagación por Esquejes en Agua</h4>
+              <p className="text-xs text-[#5C4033] leading-relaxed">
+                Corte limpio bajo el nudo en ángulo de 45°. Sumergir en agua de manantial cambiando cada 3 días hasta obtener 3 cm de raíces vigorosas.
+              </p>
+              <span className="inline-block rounded-md bg-[#E8EFE9] px-2 py-0.5 text-[10px] font-black text-[#2D4533]">
+                Multiplicación
+              </span>
+            </div>
+
+            <div className="rounded-3xl border-3 border-[#38523F] bg-[#FFFBF2] p-5 shadow-sm space-y-2">
+              <span className="text-2xl select-none">☀️</span>
+              <h4 className="text-sm font-black text-[#1F2C23]">Ventanas de Luz Tamizada</h4>
+              <p className="text-xs text-[#5C4033] leading-relaxed">
+                Ubicación cerca de cristales orientados al este para recibir sol suave matinal. Evitar el sol cenital directo que quema las hojas tiernas.
+              </p>
+              <span className="inline-block rounded-md bg-[#E8EFE9] px-2 py-0.5 text-[10px] font-black text-[#2D4533]">
+                Fotosíntesis Calma
+              </span>
+            </div>
           </div>
         </div>
       )}

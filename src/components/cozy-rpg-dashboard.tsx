@@ -722,6 +722,7 @@ export function CozyRpgDashboard() {
                   totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "gardening")?.total_gp_earned || 0}
                   isCozyActive={true}
                   quests={quests}
+                  sessions={recentSessions}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
                   onClose={() => setActiveBuildingModal(null)}
