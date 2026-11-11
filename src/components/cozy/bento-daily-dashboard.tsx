@@ -34,6 +34,7 @@ import {
   type VillageResident,
   calculateBuildingTier,
 } from "@/lib/sanctuary/village-tiers";
+import { VILLAGE_BUILDINGS_CATALOG } from "@/lib/sanctuary/village-buildings-registry";
 import {
   CozyButton,
   CozyCard,
@@ -70,6 +71,7 @@ interface BentoDailyDashboardProps {
   onOpenQuestsModal?: () => void;
   onOpenScrapbook?: () => void;
   onOpenQuickCapture?: () => void;
+  onOpenCompanions?: () => void;
   onSubmitSkillSession?: (payload: Record<string, unknown>) => Promise<boolean>;
 }
 
@@ -98,6 +100,7 @@ export function BentoDailyDashboard({
   onOpenQuestsModal,
   onOpenScrapbook,
   onOpenQuickCapture,
+  onOpenCompanions,
   onSubmitSkillSession,
 }: BentoDailyDashboardProps) {
   // Personalización del orden de tarjetas con persistencia local segura
@@ -477,7 +480,7 @@ export function BentoDailyDashboard({
                     Pueblo de Oakhaven
                   </h3>
                   <span className="text-[11px] font-bold text-[#795548]">
-                    8 Edificios Especializados
+                    {VILLAGE_BUILDINGS_CATALOG.length} Edificios del Santuario
                   </span>
                 </div>
               </div>
@@ -956,28 +959,47 @@ export function BentoDailyDashboard({
               </div>
             </div>
 
-            <span className="rounded-full border-2 border-[#3A2E2B] bg-[#E8DFCF] px-3 py-1 text-xs font-black text-[#3A2E2B]">
-              {residents.length} Asistentes Activos
-            </span>
+            <div className="flex items-center gap-2">
+              {onOpenCompanions && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("medium");
+                    onOpenCompanions();
+                  }}
+                  className="rounded-xl border-2 border-[#3A2E2B] bg-[#E7D69C] hover:bg-[#F4EEDC] px-3 py-1 text-xs font-black text-[#3A2E2B] shadow-[0_2px_0_#3A2E2B] transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>👥</span> Ver Censo (13) ➜
+                </button>
+              )}
+              <span className="rounded-full border-2 border-[#3A2E2B] bg-[#E8DFCF] px-3 py-1 text-xs font-black text-[#3A2E2B]">
+                {residents.length} Vecinos
+              </span>
+            </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3">
             {residents.map((resident) => (
               <div
                 key={resident.id}
                 onClick={() => onSelectResident(resident)}
-                className="group rounded-2xl border-3 border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] text-center hover:-translate-y-1 hover:shadow-[0_4px_0_#3A2E2B] transition-all cursor-pointer"
+                className="group rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] text-center hover:-translate-y-1 hover:shadow-[0_4px_0_#3A2E2B] transition-all cursor-pointer flex flex-col justify-between"
               >
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#3A2E2B] bg-[#FFFDF8] text-2xl group-hover:scale-110 transition-transform select-none">
-                  {resident.avatar}
+                <div>
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#3A2E2B] bg-[#FFFDF8] text-2xl group-hover:scale-110 transition-transform select-none">
+                    {resident.avatar}
+                  </div>
+                  <h4 className="mt-1.5 text-xs font-black text-[#3A2E2B] leading-tight">
+                    {resident.name}
+                  </h4>
+                  <span className="block text-[10px] font-bold text-[#4E6E58] mt-0.5">
+                    {resident.species}
+                  </span>
+                  <span className="block text-[9px] font-semibold text-[#795548] mt-0.5 line-clamp-1">
+                    {resident.title}
+                  </span>
                 </div>
-                <h4 className="mt-1.5 text-xs font-black text-[#3A2E2B] truncate">
-                  {resident.name}
-                </h4>
-                <span className="block text-[9px] font-bold text-[#795548] truncate">
-                  {resident.title}
-                </span>
-                <p className="mt-1 text-[9px] italic text-[#5C4033] line-clamp-1">
+                <p className="mt-2 text-[9px] italic text-[#5C4033] line-clamp-2 bg-[#FFFDF8]/70 p-1.5 rounded-lg border border-[#3A2E2B]/10">
                   &ldquo;{resident.greetingQuote}&rdquo;
                 </p>
               </div>
@@ -988,7 +1010,7 @@ export function BentoDailyDashboard({
         {/* =======================================================================
             SECCIÓN H: BITÁCORA DE NOTAS RÁPIDAS (12 COLS)
            ======================================================================= */}
-        <div className="lg:col-span-12 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B]">
+        <div id="quick-notes" className="lg:col-span-12 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B]">
           <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
             <div className="flex items-center gap-2">
               <span className="text-xl select-none">✍️</span>

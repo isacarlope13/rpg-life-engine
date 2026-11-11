@@ -11,6 +11,7 @@ interface CozyHeaderProps {
   onOpenScrapbook: () => void;
   onOpenSoundscape?: () => void;
   onOpenQuickCapture?: () => void;
+  onOpenCompanions?: () => void;
   walletGp: number;
   vaultGp: number;
   isOffline?: boolean;
@@ -26,6 +27,7 @@ export function CozyHeader({
   onOpenScrapbook,
   onOpenSoundscape,
   onOpenQuickCapture,
+  onOpenCompanions,
   walletGp,
   vaultGp,
   isOffline = false,
@@ -81,6 +83,16 @@ export function CozyHeader({
         >
           📷 Álbum
         </button>
+        {onOpenCompanions && (
+          <button
+            type="button"
+            onClick={onOpenCompanions}
+            className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition cursor-pointer text-[#3A2E2B] hover:bg-[#E8DFCF]"
+            title="Conoce a los 13 residentes de Oakhaven"
+          >
+            👥 Vecinos
+          </button>
+        )}
         <button
           type="button"
           onClick={onOpenSoundscape}

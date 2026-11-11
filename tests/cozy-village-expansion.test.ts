@@ -144,3 +144,28 @@ test("Cozy Village Expansion 6: Filtrado por Distritos Comunitarios", () => {
   assert.ok(naturaleza.some((b) => b.id === "invernadero"), "Invernadero debe estar en Naturaleza");
   assert.ok(naturaleza.some((b) => b.id === "gimnasio"), "Gimnasio debe estar en Naturaleza");
 });
+
+test("Cozy Village Expansion 7: Consistencia de contadores dinámicos y ausencia de valores quemados", () => {
+  assert.equal(VILLAGE_BUILDINGS_CATALOG.length, 14, "El catálogo del pueblo debe tener exactamente 14 edificios.");
+  assert.equal(COZY_VILLAGE_RESIDENTS.length, 13, "El censo de Oakhaven debe tener exactamente 13 residentes.");
+
+  // El edificio piloto 'atelier' debe existir y pertenecer al dominio knitting
+  const atelier = getBuildingById("atelier");
+  assert.ok(atelier, "El edificio piloto 'atelier' debe existir.");
+  assert.equal(atelier.domain, "knitting");
+  assert.equal(atelier.residentId, "clara");
+});
+
+test("Cozy Village Expansion 8: Progresión visual de Tiers del Edificio Piloto (Atelier)", () => {
+  const tier1 = calculateBuildingTier({ level: 1, sessionsCount: 0 });
+  assert.equal(tier1.tier, 1);
+  assert.ok(tier1.badge.includes("Tier 1") || tier1.badge.includes("T1"));
+
+  const tier2 = calculateBuildingTier({ level: 3, sessionsCount: 5, completedProjectsCount: 1 });
+  assert.equal(tier2.tier, 2);
+  assert.ok(tier2.badge.includes("Tier 2") || tier2.badge.includes("T2"));
+
+  const tier3 = calculateBuildingTier({ level: 5, sessionsCount: 15, completedProjectsCount: 3 });
+  assert.equal(tier3.tier, 3);
+  assert.ok(tier3.badge.includes("Tier 3") || tier3.badge.includes("T3"));
+});

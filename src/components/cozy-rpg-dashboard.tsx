@@ -325,14 +325,19 @@ export function CozyRpgDashboard() {
           setActiveBuildingModal(null);
         } else if (selectedResident) {
           setSelectedResident(null);
+        } else if (isCompanionsOpen) {
+          setIsCompanionsOpen(false);
+          setActiveTab(viewMode === "village_map" ? "village" : "home");
         } else if (isQuickCaptureOpen) {
           setIsQuickCaptureOpen(false);
         } else if (isVillageQuestsOpen) {
           setIsVillageQuestsOpen(false);
+          setActiveTab(viewMode === "village_map" ? "village" : "home");
         } else if (isSoundscapeOpen) {
           setIsSoundscapeOpen(false);
         } else if (isScrapbookOpen) {
           setIsScrapbookOpen(false);
+          setActiveTab(viewMode === "village_map" ? "village" : "home");
         }
       }
     };
@@ -341,10 +346,12 @@ export function CozyRpgDashboard() {
   }, [
     activeBuildingModal,
     selectedResident,
+    isCompanionsOpen,
     isQuickCaptureOpen,
     isVillageQuestsOpen,
     isSoundscapeOpen,
     isScrapbookOpen,
+    viewMode,
   ]);
 
   // Agregar nota con persistencia
@@ -433,6 +440,11 @@ export function CozyRpgDashboard() {
               if (tab === "notes") {
                 triggerHaptic("light");
                 setViewMode("bento");
+                setTimeout(() => {
+                  if (typeof document !== "undefined") {
+                    document.getElementById("quick-notes")?.scrollIntoView({ behavior: "smooth" });
+                  }
+                }, 100);
               }
             }}
             questsCount={quests.length}
@@ -459,6 +471,7 @@ export function CozyRpgDashboard() {
               onOpenScrapbook={() => setIsScrapbookOpen(true)}
               onOpenSoundscape={() => setIsSoundscapeOpen(true)}
               onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+              onOpenCompanions={() => setIsCompanionsOpen(true)}
               walletGp={walletGp}
               vaultGp={vaultGp}
               isOffline={isOffline}
@@ -478,6 +491,7 @@ export function CozyRpgDashboard() {
                 rubikSolvesCount={state?.rubik_stats?.total_solves || 0}
                 onSelectBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
                 onSelectResident={(resident) => setSelectedResident(resident)}
+                onOpenCompanions={() => setIsCompanionsOpen(true)}
                 onSubmitSkillSession={handleSubmitSkillSession}
               />
             )}
@@ -511,6 +525,7 @@ export function CozyRpgDashboard() {
                 onOpenQuestsModal={() => setIsVillageQuestsOpen(true)}
                 onOpenScrapbook={() => setIsScrapbookOpen(true)}
                 onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+                onOpenCompanions={() => setIsCompanionsOpen(true)}
                 onSubmitSkillSession={handleSubmitSkillSession}
               />
             )}
@@ -842,7 +857,10 @@ export function CozyRpgDashboard() {
       {/* CASA DE COMPAÑEROS (CENSO DE RESIDENTES & INVENTARIO HUMANO) */}
       <CompanionsModal
         isOpen={isCompanionsOpen}
-        onClose={() => setIsCompanionsOpen(false)}
+        onClose={() => {
+          setIsCompanionsOpen(false);
+          setActiveTab(viewMode === "village_map" ? "village" : "home");
+        }}
         onSelectResident={(resident) => setSelectedResident(resident)}
         onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
         skillSummaries={state?.skill_summaries}
@@ -852,7 +870,10 @@ export function CozyRpgDashboard() {
       {/* ÁLBUM DE RECUERDOS Y POSTALES */}
       <VillageScrapbookModal
         isOpen={isScrapbookOpen}
-        onClose={() => setIsScrapbookOpen(false)}
+        onClose={() => {
+          setIsScrapbookOpen(false);
+          setActiveTab(viewMode === "village_map" ? "village" : "home");
+        }}
         playerLevel={playerLevel}
         booksCount={readingBooks.length}
         knittingProjectsCount={knittingProjects.length}
@@ -873,7 +894,10 @@ export function CozyRpgDashboard() {
       {/* DIARIO DE MISIONES VECINALES (ACCESIBLE DESDE BENTO Y MAPA) */}
       <VillageQuestsModal
         isOpen={isVillageQuestsOpen}
-        onClose={() => setIsVillageQuestsOpen(false)}
+        onClose={() => {
+          setIsVillageQuestsOpen(false);
+          setActiveTab(viewMode === "village_map" ? "village" : "home");
+        }}
         onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
         onSubmitSkillSession={handleSubmitSkillSession}
         skillSummaries={state?.skill_summaries || []}
