@@ -64,6 +64,7 @@ import { KitchenBuilding } from "@/components/sanctuary/kitchen-building";
 import { OfficeBuilding } from "@/components/sanctuary/office-building";
 import { GymBuilding } from "@/components/sanctuary/gym-building";
 import { JournalingBuilding } from "@/components/sanctuary/journaling-building";
+import { BankBuilding } from "@/components/sanctuary/bank-building";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { VillageScrapbookModal } from "@/components/sanctuary/village-scrapbook-modal";
 import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
@@ -786,6 +787,21 @@ export function CozyRpgDashboard() {
                   skillLevel={state?.skill_summaries?.find((s) => s.domain === "work")?.level || 1}
                   totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "work")?.total_gp_earned || 0}
                   isCozyActive={true}
+                  onRefreshState={fetchState}
+                  onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
+                />
+              )}
+
+              {(activeBuildingModal === "banco_oakhaven" || activeBuildingModal === "banco") && (
+                <BankBuilding
+                  playerLevel={playerLevel}
+                  skillLevel={state?.skill_summaries?.find((s) => s.domain === "work")?.level || 1}
+                  totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "work")?.total_gp_earned || 0}
+                  walletGp={state?.wallet_gp || 0}
+                  vaultGp={state?.vault_gp || 0}
+                  vaultCapGp={400000}
+                  aegisShields={state?.aegis_shields || 1}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
                   onClose={() => setActiveBuildingModal(null)}

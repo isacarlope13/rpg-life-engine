@@ -39,7 +39,7 @@ export interface VillageBuildingDefinition {
 
 export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
   // ==========================================
-  // 1. PLAZA CENTRAL & TRABAJO
+  // 1. PLAZA CENTRAL & GESTIÓN
   // ==========================================
   {
     id: "oficina",
@@ -352,6 +352,28 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
       };
     },
   },
+  // ==========================================
+  // 5. BANCO DE OAKHAVEN & REAL TESORERÍA (FASE 3.8)
+  // ==========================================
+  {
+    id: "banco_oakhaven",
+    name: "Banco de OakHaven & Real Tesorería",
+    domain: "work",
+    district: "plaza",
+    tagline: "Libro Mayor, Cuentas en COP & Bóveda del Reino",
+    description: "Sede central de custodia financiera de Oakhaven. Administra cuentas reales, presupuestos sin fugas y deudas como jefes de mazmorra.",
+    icon: "🏦",
+    accentColor: "#D4AF37",
+    borderColor: "#AA820A",
+    bgGradient: "from-[#2C2411] to-[#1A1508]",
+    residentId: "silas",
+    mapCoordinates: { x: 50, y: 31, row: 1, col: 2 },
+    getPendingActivity: () => ({
+      hasPending: true,
+      label: "Tesorería activa",
+      urgency: "normal",
+    }),
+  },
 ];
 
 /**
@@ -361,6 +383,9 @@ export function getBuildingById(id: string): VillageBuildingDefinition | undefin
   if (id === "pabellon_gardening" || id === "invernadero") {
     return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === "invernadero" || b.id === "pabellon_gardening");
   }
+  if (id === "banco" || id === "banco_oakhaven" || id === "banco_reino") {
+    return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === "banco_oakhaven");
+  }
   return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === id);
 }
 
@@ -368,6 +393,9 @@ export function getBuildingById(id: string): VillageBuildingDefinition | undefin
  * Obtiene la definición de un edificio por su dominio de habilidad canónico.
  */
 export function getBuildingByDomain(domain: SkillDomain): VillageBuildingDefinition | undefined {
+  if (domain === "work") {
+    return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === "oficina");
+  }
   return VILLAGE_BUILDINGS_CATALOG.find((b) => b.domain === domain);
 }
 

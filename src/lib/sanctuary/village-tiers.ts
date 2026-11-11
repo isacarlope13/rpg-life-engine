@@ -378,6 +378,30 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
       return "El torno está engrasado y la arcilla en su punto de humedad. Respira y conecta con la materia prima.";
     },
   },
+  {
+    id: "silas",
+    name: "Silas",
+    title: "Canciller de la Real Tesorería",
+    species: "Tejón Tesorero",
+    avatar: "🦡",
+    buildingId: "banco_oakhaven",
+    domain: "work",
+    favoriteGift: "Monedas Antiguas de Cobre & Café de Tostión Media",
+    greetingQuote: "El verdadero patrimonio se forja con claridad, evitando las fugas invisibles y honrando cada esfuerzo.",
+    microQuest: {
+      title: "Auditoría Serena del Día",
+      description: "Revisa los movimientos de hoy, clasifica una compra y verifica tu saldo libre de fugas.",
+      targetAction: "financial_audit",
+      estimatedMinutes: 5,
+      badge: "🏦 +5 min claridad financiera",
+    },
+    getDynamicAdvice: ({ sessionsCount }) => {
+      if (sessionsCount === 0) {
+        return "¡Bienvenido a la Tesorería de Oakhaven! Las cuentas y la bóveda están preparadas para ordenar tus números con serenidad.";
+      }
+      return `Llevas ${sessionsCount} revisiones financieras registradas. La claridad sobre tus números es tu mayor escudo.`;
+    },
+  },
 ];
 
 export interface BuildingTrophyItem {
@@ -771,6 +795,37 @@ export function getBuildingTrophies(
           unlocked: sessions >= 6 || level >= 3,
           requirement: "6+ entradas o Nivel 3+",
           flavorText: "Cuaderno encuadernado en piel que recopila un mapa honesto de tu camino interior.",
+        },
+      ];
+    case "banco_oakhaven":
+    case "banco":
+      return [
+        {
+          id: "bnk_ledger",
+          name: "Gran Libro Mayor de Roble & Bronce",
+          category: "furniture",
+          icon: "📖",
+          unlocked: true,
+          requirement: "Disponible desde el inicio",
+          flavorText: "Encuadernación solemne donde cada ingreso y gasto encuentra su lugar sin juicio.",
+        },
+        {
+          id: "bnk_scales",
+          name: "Balanza de Latón del Tesorero",
+          category: "trophy",
+          icon: "⚖️",
+          unlocked: sessions >= 3 || level >= 2,
+          requirement: "3+ revisiones o Nivel 2+",
+          flavorText: "Instrumento de equilibrio que recuerda que la riqueza real es la paz mental.",
+        },
+        {
+          id: "bnk_vault",
+          name: "Bóveda Acorazada de la Fortaleza",
+          category: "trophy",
+          icon: "🏛️",
+          unlocked: sessions >= 6 || level >= 3,
+          requirement: "6+ revisiones o Nivel 3+",
+          flavorText: "Cámara sellada de acero y roble para salvaguardar tu patrimonio con total soberanía.",
         },
       ];
     default:

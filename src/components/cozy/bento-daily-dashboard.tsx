@@ -454,14 +454,23 @@ export function BentoDailyDashboard({
             <span className="text-xs font-bold text-[#795548]">
               {recentSessions.length} actividades reales forjadas
             </span>
-            <button
-              type="button"
-              onClick={onSwitchToVillageMap}
-              className="text-xs font-black text-[#4E6E58] hover:underline cursor-pointer flex items-center gap-1"
-            >
-              <span>Explorar Pueblo y Edificios</span>
-              <ArrowRight className="h-3 w-3" />
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => onOpenBuilding("banco_oakhaven")}
+                className="text-xs font-black text-[#795548] hover:text-[#3A2E2B] hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <span>🏛️ Banco del Reino</span>
+              </button>
+              <button
+                type="button"
+                onClick={onSwitchToVillageMap}
+                className="text-xs font-black text-[#4E6E58] hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <span>Explorar Pueblo y Edificios</span>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
           </div>
         </div>
 

@@ -37,9 +37,17 @@ export function VillagePixelBuilding({
 
   const isGreenhouse = building.id === "invernadero" || building.id === "pabellon_gardening";
   const isAtelier = building.id === "atelier";
+  const isBank = building.id === "banco_oakhaven" || building.id === "banco";
 
   // Colores temáticos por distrito
   const getDistrictRoofGradient = () => {
+    if (isBank) {
+      return isTier3
+        ? "bg-gradient-to-b from-[#D4AF37] to-[#7D6116]"
+        : isTier2
+        ? "bg-gradient-to-b from-[#E6C653] to-[#997A24]"
+        : "bg-gradient-to-b from-[#F3DE8A] to-[#B3923B]";
+    }
     if (isGreenhouse) {
       return isTier3
         ? "bg-gradient-to-b from-[#2D5A3E] to-[#1E3B29]"
@@ -155,19 +163,31 @@ export function VillagePixelBuilding({
             </div>
           </div>
 
-          {/* Cuerpo de la casa (Muros entramados estilo half-timber o invernadero acristalado) */}
+          {/* Cuerpo de la casa (Muros entramados estilo half-timber, invernadero acristalado o banco de piedra) */}
           <div
             className={`w-24 sm:w-28 h-20 border-x-3 border-b-3 border-[#3A2E2B] rounded-b-xl relative p-2 shadow-[0_5px_0_#3A2E2B] flex flex-col justify-between ${
-              isGreenhouse
+              isBank
+                ? "bg-[#FFFDF8]" // Piedra noble del Banco
+                : isGreenhouse
                 ? "bg-[#EAF4EC]" // Tono translúcido de jardín botánico
                 : "bg-[#F7F4EB]" // Crema de entramado de madera
             }`}
           >
-            {/* Vigas de madera decorativas */}
+            {/* Vigas o Columnas Clásicas */}
             <div className="absolute inset-0 pointer-events-none">
-              <div className="absolute left-2 top-0 bottom-0 w-1 bg-[#3A2E2B]/20" />
-              <div className="absolute right-2 top-0 bottom-0 w-1 bg-[#3A2E2B]/20" />
-              <div className="absolute bottom-0 left-0 right-0 h-2 bg-[#8D6E63] border-t border-[#3A2E2B]" />
+              {isBank ? (
+                <>
+                  <div className="absolute left-1.5 top-0 bottom-0 w-2.5 bg-[#E2DBD0] border-x border-[#3A2E2B]/40" />
+                  <div className="absolute right-1.5 top-0 bottom-0 w-2.5 bg-[#E2DBD0] border-x border-[#3A2E2B]/40" />
+                  <div className="absolute bottom-0 left-0 right-0 h-2 bg-[#AA820A] border-t border-[#3A2E2B]" />
+                </>
+              ) : (
+                <>
+                  <div className="absolute left-2 top-0 bottom-0 w-1 bg-[#3A2E2B]/20" />
+                  <div className="absolute right-2 top-0 bottom-0 w-1 bg-[#3A2E2B]/20" />
+                  <div className="absolute bottom-0 left-0 right-0 h-2 bg-[#8D6E63] border-t border-[#3A2E2B]" />
+                </>
+              )}
             </div>
 
             {/* Ventana iluminada / Cristales de canteros */}
@@ -175,6 +195,10 @@ export function VillagePixelBuilding({
               {isGreenhouse ? (
                 <div className="flex h-5 w-6 items-center justify-center rounded-lg border-2 border-[#3A2E2B] bg-[#A7D7B5] shadow-inner text-xs" title="Plantas interiores">
                   <span>🌿</span>
+                </div>
+              ) : isBank ? (
+                <div className="flex h-5 w-6 items-center justify-center rounded-lg border-2 border-[#3A2E2B] bg-[#F9E79F] shadow-inner text-xs" title="Ventanilla del Banco">
+                  <span>🪙</span>
                 </div>
               ) : (
                 <div className="flex h-5 w-5 items-center justify-center rounded-lg border-2 border-[#3A2E2B] bg-[#FFEAA7] shadow-inner" title="Taller iluminado">
@@ -195,8 +219,10 @@ export function VillagePixelBuilding({
 
             {/* Puerta de entrada y decoraciones exteriores */}
             <div className="flex items-end justify-between px-1 z-10">
-              {/* Jardinera floral o maceta */}
-              {isGreenhouse ? (
+              {/* Jardinera floral, maceta o cofre dorado */}
+              {isBank ? (
+                <span className="text-xs filter drop-shadow select-none">⚖️</span>
+              ) : isGreenhouse ? (
                 <span className="text-xs filter drop-shadow select-none">🌻</span>
               ) : tierInfo.tier >= 2 ? (
                 <span className="text-xs filter drop-shadow select-none">🌸</span>
@@ -204,11 +230,11 @@ export function VillagePixelBuilding({
                 <span className="text-[10px] text-[#795548] select-none">🪴</span>
               )}
 
-              {/* Puerta de madera con arco */}
+              {/* Puerta de madera con arco o bóveda acorazada */}
               <div className={`w-6 h-8 rounded-t-md border-2 border-[#3A2E2B] relative flex items-center justify-end pr-0.5 shadow-inner ${
-                isGreenhouse ? "bg-[#3D6649]" : "bg-[#8D5B4C]"
+                isBank ? "bg-[#D4AF37]" : isGreenhouse ? "bg-[#3D6649]" : "bg-[#8D5B4C]"
               }`}>
-                <div className="h-1.5 w-1.5 rounded-full bg-[#E7D69C] border border-[#3A2E2B]" />
+                <div className={`h-1.5 w-1.5 rounded-full ${isBank ? "bg-[#1A1508] border border-[#AA820A]" : "bg-[#E7D69C] border border-[#3A2E2B]"}`} />
               </div>
             </div>
           </div>
