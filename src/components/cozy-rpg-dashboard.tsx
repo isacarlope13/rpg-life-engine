@@ -420,6 +420,7 @@ export function CozyRpgDashboard() {
                 rubikSolvesCount={state?.rubik_stats?.total_solves || 0}
                 onSelectBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
                 onSelectResident={(resident) => setSelectedResident(resident)}
+                onSubmitSkillSession={handleSubmitSkillSession}
               />
             )}
 

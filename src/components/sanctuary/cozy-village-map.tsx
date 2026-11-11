@@ -31,6 +31,7 @@ import {
 } from "@/lib/sanctuary/village-tiers";
 import { cozySoundscape, type SoundscapeTheme } from "@/lib/sanctuary/cozy-soundscape";
 import { MayorsLedgerModal } from "@/components/sanctuary/mayors-ledger-modal";
+import { VillageQuestsModal } from "@/components/cozy/village-quests-modal";
 
 interface CozyVillageMapProps {
   skillSummaries?: SkillDomainSummary[];
@@ -40,6 +41,7 @@ interface CozyVillageMapProps {
   rubikSolvesCount?: number;
   onSelectBuilding: (buildingId: string, domain: SkillDomain) => void;
   onSelectResident?: (resident: VillageResident) => void;
+  onSubmitSkillSession?: (payload: Record<string, unknown>) => Promise<boolean>;
 }
 
 interface MapBuildingItem {
@@ -166,6 +168,7 @@ export function CozyVillageMap({
   rubikSolvesCount = 0,
   onSelectBuilding,
   onSelectResident,
+  onSubmitSkillSession,
 }: CozyVillageMapProps) {
   const [ambientAnimEnabled, setAmbientAnimEnabled] = useState(true);
   const [weather, setWeather] = useState<VillageWeather>(() => {
@@ -187,6 +190,7 @@ export function CozyVillageMap({
     return true;
   });
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
+  const [isQuestsOpen, setIsQuestsOpen] = useState(false);
   const [selectedDistrict, setSelectedDistrict] = useState<"all" | "artes" | "saber" | "naturaleza">("all");
   const [activeResidentDialogue, setActiveResidentDialogue] = useState<VillageResident | null>(null);
 
@@ -277,6 +281,16 @@ export function CozyVillageMap({
           >
             <BookOpen className="h-3.5 w-3.5" />
             Bitácora del Alcalde
+          </button>
+
+          {/* Botón Diario de Misiones Vecinales */}
+          <button
+            type="button"
+            onClick={() => setIsQuestsOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#5C4033] bg-[#88A98E] px-3 py-1.5 text-xs font-black text-[#1E1B18] shadow-sm hover:bg-[#97B89D] transition cursor-pointer"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Diario de Misiones
           </button>
 
           {/* Selector de Clima / Atmósfera */}
@@ -435,16 +449,31 @@ export function CozyVillageMap({
                 })}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                onSelectBuilding(activeResidentDialogue.buildingId, activeResidentDialogue.domain);
-                setActiveResidentDialogue(null);
-              }}
-              className="rounded-2xl border-2 border-[#5C4033] bg-[#4E6E58] px-4 py-2.5 text-xs font-black text-[#F7F4EB] shadow-md hover:bg-[#3D5645] cursor-pointer"
-            >
-              Entrar al Edificio de {activeResidentDialogue.name} ➜
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {onSelectResident && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const res = activeResidentDialogue;
+                    setActiveResidentDialogue(null);
+                    onSelectResident(res);
+                  }}
+                  className="rounded-2xl border-2 border-[#3A2E2B] bg-[#E9C46A] px-3.5 py-2 text-xs font-black text-[#3A2E2B] shadow-sm hover:bg-[#F4A261] transition cursor-pointer"
+                >
+                  💬 Charlar a fondo & Micro-Misión
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectBuilding(activeResidentDialogue.buildingId, activeResidentDialogue.domain);
+                  setActiveResidentDialogue(null);
+                }}
+                className="rounded-2xl border-2 border-[#5C4033] bg-[#4E6E58] px-4 py-2 text-xs font-black text-[#F7F4EB] shadow-md hover:bg-[#3D5645] cursor-pointer"
+              >
+                Entrar al Edificio de {activeResidentDialogue.name} ➜
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -520,10 +549,19 @@ export function CozyVillageMap({
                   : 0,
             });
 
+            const isTier3 = tierInfo.tier === 3;
+            const isTier2 = tierInfo.tier === 2;
+
             return (
               <div
                 key={building.id}
-                className={`group relative flex flex-col justify-between rounded-3xl border-3 border-[#5C4033] p-5 shadow-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
+                className={`group relative flex flex-col justify-between rounded-3xl p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
+                  isTier3
+                    ? "border-4 border-[#E7D69C] shadow-[0_6px_0_#3A2E2B] ring-2 ring-[#E7D69C]/30"
+                    : isTier2
+                    ? "border-3 border-[#77936A] shadow-[0_5px_0_#3A2E2B]"
+                    : "border-3 border-[#5C4033] shadow-[0_3px_0_#3A2E2B]"
+                } ${
                   weather === "night"
                     ? "bg-[#252A3E] text-[#F7F4EB] hover:border-[#E9C46A]"
                     : "bg-[#FFFBF2] text-[#3A2E2B] hover:border-[#3A2E2B]"
@@ -537,10 +575,12 @@ export function CozyVillageMap({
                     }`}
                   >
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase ${
-                        weather === "night"
-                          ? "bg-amber-950/60 text-amber-300 border border-amber-600/30"
-                          : "bg-[#EBE5D8] text-[#5C4033]"
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase ${
+                        isTier3
+                          ? "bg-[#E7D69C] text-[#3A2E2B] border border-[#3A2E2B] shadow-sm"
+                          : isTier2
+                          ? "bg-[#77936A]/20 text-[#314C3C] border border-[#77936A]"
+                          : "bg-[#D8B48A]/30 text-[#3A2E2B] border border-[#5C4033]/30"
                       }`}
                     >
                       {tierInfo.badge}
@@ -557,9 +597,24 @@ export function CozyVillageMap({
                   {/* FACHADA VISUAL DEL EDIFICIO */}
                   <div
                     className={`relative flex flex-col items-center justify-center rounded-2xl border-2 ${
-                      weather === "night" ? "border-amber-500/40 shadow-amber-500/10 shadow-lg" : "border-[#5C4033]"
+                      isTier3
+                        ? "border-[#E7D69C] shadow-lg shadow-[#E7D69C]/10"
+                        : weather === "night"
+                        ? "border-amber-500/40 shadow-amber-500/10 shadow-lg"
+                        : "border-[#5C4033]"
                     } bg-gradient-to-b ${building.bgGradient} p-4 text-center shadow-inner`}
                   >
+                    {isTier3 && (
+                      <span className="absolute -top-2.5 left-3 rounded-full border border-[#3A2E2B] bg-[#E7D69C] px-2 py-0.2 text-[9px] font-black text-[#3A2E2B] shadow-sm">
+                        ⭐ Cúpula de Maestría
+                      </span>
+                    )}
+                    {isTier2 && (
+                      <span className="absolute -top-2.5 left-3 rounded-full border border-[#77936A] bg-[#EAF3ED] px-2 py-0.2 text-[9px] font-bold text-[#314C3C]">
+                        🌿 Taller Establecido
+                      </span>
+                    )}
+
                     <span className="text-4xl filter drop-shadow group-hover:scale-110 transition-transform duration-300">
                       {building.icon}
                     </span>
@@ -576,9 +631,13 @@ export function CozyVillageMap({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setActiveResidentDialogue(resident);
+                          if (onSelectResident) {
+                            onSelectResident(resident);
+                          } else {
+                            setActiveResidentDialogue(resident);
+                          }
                         }}
-                        className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#5C4033] bg-[#FFFBF2] text-sm shadow-md hover:scale-115 transition cursor-pointer"
+                        className="absolute -bottom-2.5 -right-2.5 flex h-9 w-9 items-center justify-center rounded-full border-3 border-[#3A2E2B] bg-[#FFFBF2] text-base shadow-[0_2px_0_#3A2E2B] hover:scale-115 transition cursor-pointer"
                         title={`Hablar con ${resident.name} (${resident.species})`}
                       >
                         {resident.avatar}
@@ -647,6 +706,16 @@ export function CozyVillageMap({
         recentSessions={recentSessions}
         activeBooksCount={activeBooksCount}
         activeKnittingProjectsCount={activeKnittingProjectsCount}
+      />
+
+      {/* MODAL DIARIO DE MISIONES VECINALES */}
+      <VillageQuestsModal
+        isOpen={isQuestsOpen}
+        onClose={() => setIsQuestsOpen(false)}
+        onOpenBuilding={onSelectBuilding}
+        onSubmitSkillSession={onSubmitSkillSession || (async () => false)}
+        skillSummaries={skillSummaries}
+        recentSessions={recentSessions}
       />
     </div>
   );
