@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Maximize2, Compass } from "lucide-react";
+import React, { useState } from "react";
+import { Maximize2, Compass, CheckCircle2, Sparkles, BookOpen } from "lucide-react";
 import type {
   ReadingBook,
   KnittingProject,
@@ -10,6 +10,8 @@ import type {
   Quest,
 } from "@/types/rpg";
 import type { VillageResident } from "@/lib/sanctuary/village-tiers";
+import { CozyButton } from "@/components/cozy/ui";
+import { triggerHaptic } from "@/lib/offline-sync";
 
 interface BentoDailyDashboardProps {
   playerLevel: number;
@@ -31,6 +33,8 @@ interface BentoDailyDashboardProps {
   onSwitchToVillageMap: () => void;
   onOpenBuilding: (buildingId: string) => void;
   onSelectResident: (resident: VillageResident) => void;
+  onOpenQuestsModal?: () => void;
+  onSubmitSkillSession?: (payload: Record<string, unknown>) => Promise<boolean>;
 }
 
 export function BentoDailyDashboard({
@@ -53,7 +57,39 @@ export function BentoDailyDashboard({
   onSwitchToVillageMap,
   onOpenBuilding,
   onSelectResident,
+  onOpenQuestsModal,
+  onSubmitSkillSession,
 }: BentoDailyDashboardProps) {
+  const dayIndex = new Date().getDay();
+  const featuredResident = residents[dayIndex % (residents.length || 1)] || residents[0];
+  const [isFeaturedCompleted, setIsFeaturedCompleted] = useState(false);
+  const [isSubmittingFeatured, setIsSubmittingFeatured] = useState(false);
+
+  const handleCompleteFeaturedQuest = async () => {
+    if (!featuredResident?.microQuest || !onSubmitSkillSession || isFeaturedCompleted || isSubmittingFeatured) return;
+    setIsSubmittingFeatured(true);
+    triggerHaptic("light");
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const idempotencyKey = `bento_micro_${featuredResident.id}_${today}_${Date.now()}`;
+      const success = await onSubmitSkillSession({
+        domain: featuredResident.domain,
+        duration_minutes: featuredResident.microQuest.estimatedMinutes,
+        title: `[Micro-Misión Destacada] ${featuredResident.microQuest.title}`,
+        notes: `${featuredResident.microQuest.description} • Guía: ${featuredResident.name} (${featuredResident.species})`,
+        idempotency_key: idempotencyKey,
+      });
+      if (success) {
+        setIsFeaturedCompleted(true);
+        triggerHaptic("success");
+      }
+    } catch (err) {
+      console.error("[BentoDashboard] Error al completar micro-misión:", err);
+    } finally {
+      setIsSubmittingFeatured(false);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
       {/* TARJETA 1: RESUMEN DE PROGRESO Y REINO — 7 COLS */}
@@ -169,6 +205,93 @@ export function BentoDailyDashboard({
           </button>
         </div>
       </div>
+
+      {/* TARJETA DESTACADA: MICRO-MISIÓN DEL DÍA DE LOS RESIDENTES — 12 COLS */}
+      {featuredResident && (
+        <div className="lg:col-span-12 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] transition-transform hover:-translate-y-0.5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#3A2E2B]/10 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C] shadow-[0_2px_0_#3A2E2B] text-xl select-none">
+                ✨
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-[#3A2E2B] uppercase tracking-wide">
+                    Micro-Misión Destacada de Oakhaven
+                  </h3>
+                  <span className="rounded-full border border-[#77936A] bg-[#77936A]/20 px-2.5 py-0.5 text-[10px] font-black text-[#314C3C]">
+                    Paso Guiado de Hoy
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-[#795548]">
+                  Sugerencia de {featuredResident.name} ({featuredResident.species})
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {onOpenQuestsModal && (
+                <CozyButton
+                  variant="wood"
+                  size="sm"
+                  onClick={onOpenQuestsModal}
+                  icon={<BookOpen className="h-3.5 w-3.5" />}
+                >
+                  Ver Todas ({residents.length})
+                </CozyButton>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col md:flex-row items-center justify-between gap-4 rounded-2xl border-3 border-[#3A2E2B] bg-[#F7F4EB] p-4 shadow-[0_2px_0_#3A2E2B]">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+              <div
+                onClick={() => onSelectResident(featuredResident)}
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] text-3xl shadow-sm hover:scale-105 transition cursor-pointer"
+                title={`Hablar con ${featuredResident.name}`}
+              >
+                {featuredResident.avatar}
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-black text-[#3A2E2B]">
+                    {featuredResident.microQuest.title}
+                  </h4>
+                  <span className="rounded-md border border-[#3A2E2B]/20 bg-[#FFFDF8] px-2 py-0.5 font-mono text-[10px] font-bold text-[#795548]">
+                    ⏱️ ~{featuredResident.microQuest.estimatedMinutes}m
+                  </span>
+                </div>
+                <p className="text-xs text-[#5C4033] line-clamp-2">
+                  {featuredResident.microQuest.description}
+                </p>
+                <p className="text-[11px] italic text-[#795548] pt-0.5">
+                  &ldquo;{featuredResident.greetingQuote}&rdquo;
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto justify-end shrink-0">
+              <CozyButton
+                variant="sage"
+                size="sm"
+                onClick={() => onOpenBuilding(featuredResident.buildingId)}
+              >
+                Ir al Edificio
+              </CozyButton>
+
+              <CozyButton
+                variant={isFeaturedCompleted ? "sage" : "forest"}
+                size="sm"
+                disabled={isFeaturedCompleted || isSubmittingFeatured}
+                onClick={handleCompleteFeaturedQuest}
+                icon={isFeaturedCompleted ? <CheckCircle2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+              >
+                {isFeaturedCompleted ? "Completada Hoy ✓" : isSubmittingFeatured ? "Guardando..." : "Registrar Avance"}
+              </CozyButton>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TARJETA 3: REGISTRO DE MISIONES REALES — 7 COLS */}
       <div className="lg:col-span-7 rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] flex flex-col justify-between hover:-translate-y-0.5 transition-transform">

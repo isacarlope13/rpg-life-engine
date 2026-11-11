@@ -68,6 +68,7 @@ import { CozyHeader } from "@/components/cozy/cozy-header";
 import { BentoDailyDashboard } from "@/components/cozy/bento-daily-dashboard";
 import { ResidentModal } from "@/components/cozy/resident-modal";
 import { CozySoundscapeModal } from "@/components/cozy/cozy-soundscape-modal";
+import { VillageQuestsModal } from "@/components/cozy/village-quests-modal";
 import {
   queueOfflineAction,
   processOfflineQueue,
@@ -138,6 +139,7 @@ export function CozyRpgDashboard() {
   const [quickNote, setQuickNote] = useState("");
   const [isScrapbookOpen, setIsScrapbookOpen] = useState(false);
   const [isSoundscapeOpen, setIsSoundscapeOpen] = useState(false);
+  const [isVillageQuestsOpen, setIsVillageQuestsOpen] = useState(false);
   const [notesList, setNotesList] = useState<string[]>([
     "Recoger lana de alpaca para la bufanda nórdica.",
     "Completar 20 páginas del libro de arquitectura.",
@@ -448,6 +450,8 @@ export function CozyRpgDashboard() {
                 onSwitchToVillageMap={() => setViewMode("village_map")}
                 onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
                 onSelectResident={(resident) => setSelectedResident(resident)}
+                onOpenQuestsModal={() => setIsVillageQuestsOpen(true)}
+                onSubmitSkillSession={handleSubmitSkillSession}
               />
             )}
           </main>
@@ -663,6 +667,16 @@ export function CozyRpgDashboard() {
       <CozySoundscapeModal
         isOpen={isSoundscapeOpen}
         onClose={() => setIsSoundscapeOpen(false)}
+      />
+
+      {/* DIARIO DE MISIONES VECINALES (ACCESIBLE DESDE BENTO Y MAPA) */}
+      <VillageQuestsModal
+        isOpen={isVillageQuestsOpen}
+        onClose={() => setIsVillageQuestsOpen(false)}
+        onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
+        onSubmitSkillSession={handleSubmitSkillSession}
+        skillSummaries={state?.skill_summaries || []}
+        recentSessions={recentSessions}
       />
     </div>
   );
