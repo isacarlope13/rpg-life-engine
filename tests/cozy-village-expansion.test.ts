@@ -11,6 +11,12 @@ import {
   getBuildingTrophies,
   calculateBuildingTier,
 } from "../src/lib/sanctuary/village-tiers.ts";
+import {
+  GYM_ROUTINES_CATALOG,
+  calculateWorkoutMetrics,
+  RPE_DESCRIPTIONS,
+  type GymSetRecord,
+} from "../src/lib/sanctuary/gym-engine.ts";
 import type { SkillDomain } from "../src/types/rpg.ts";
 
 test("Cozy Village Expansion 1: Cobertura total de habilidades del Santuario", () => {
@@ -169,3 +175,83 @@ test("Cozy Village Expansion 8: Progresión visual de Tiers del Edificio Piloto 
   assert.equal(tier3.tier, 3);
   assert.ok(tier3.badge.includes("Tier 3") || tier3.badge.includes("T3"));
 });
+
+test("Cozy Village Expansion 9: OakHaven 3.7 — Motor de Gimnasio, cálculo de tonelaje y escala RPE", () => {
+  // 1. Verificación del Catálogo de Rutinas
+  const ROUTINE_KEYS = ["fuerza", "cardio", "movilidad", "hipertrofia"] as const;
+  for (const key of ROUTINE_KEYS) {
+    const routine = GYM_ROUTINES_CATALOG[key];
+    assert.ok(routine, `La rutina '${key}' debe existir en el catálogo.`);
+    assert.ok(routine.name, `La rutina '${key}' debe tener nombre descriptivo.`);
+    assert.ok(routine.exercises.length > 0, `La rutina '${key}' debe contener al menos un ejercicio.`);
+    assert.ok(routine.defaultRestSecs >= 30, `El descanso de '${key}' debe ser de al menos 30 segundos.`);
+  }
+
+  // 2. Verificación de la Escala RPE (1 a 10)
+  for (let r = 1; r <= 10; r++) {
+    assert.ok(RPE_DESCRIPTIONS[r], `La escala RPE debe tener descripción para el nivel ${r}`);
+  }
+
+  // 3. Verificación de Cálculo Matemático de Volumen y RPE (Tonelaje)
+  const sampleSets: GymSetRecord[] = [
+    {
+      id: "s1",
+      exerciseName: "Sentadilla Goblet",
+      setNumber: 1,
+      reps: 10,
+      weightKg: 20, // 200 kg
+      rpe: 7,
+      completed: true,
+    },
+    {
+      id: "s2",
+      exerciseName: "Sentadilla Goblet",
+      setNumber: 2,
+      reps: 8,
+      weightKg: 25, // 200 kg
+      rpe: 8,
+      completed: true,
+    },
+    {
+      id: "s3",
+      exerciseName: "Sentadilla Goblet",
+      setNumber: 3,
+      reps: 6,
+      weightKg: 30, // 180 kg (no completada, no debe sumar)
+      rpe: 9,
+      completed: false,
+    },
+  ];
+
+  const metrics = calculateWorkoutMetrics(sampleSets);
+  assert.equal(metrics.totalCount, 3, "Total de series debe ser 3.");
+  assert.equal(metrics.completedCount, 2, "Series completadas deben ser 2.");
+  assert.equal(metrics.totalVolumeKg, 400, "El tonelaje acumulado debe ser 400 kg (200 + 200).");
+  assert.equal(metrics.avgRpe, 7.5, "El RPE promedio debe ser exactamente 7.5.");
+});
+
+test("Cozy Village Expansion 10: OakHaven 3.7 — Residente Bruno, Micro-Misión y Guía de Vitalidad", () => {
+  const bruno = COZY_VILLAGE_RESIDENTS.find((r) => r.id === "bruno");
+  assert.ok(bruno, "El residente 'bruno' debe estar presente en el censo.");
+  assert.equal(bruno.buildingId, "gimnasio", "Bruno debe ser el residente asignado al Gimnasio.");
+  assert.equal(bruno.domain, "sports", "Bruno debe pertenecer al dominio 'sports'.");
+  assert.ok(bruno.greetingQuote.length > 10, "Bruno debe tener un saludo inspirador.");
+
+  // Micro-misión de Vitalidad
+  assert.ok(bruno.microQuest, "Bruno debe tener una micro-misión.");
+  assert.equal(bruno.microQuest.targetAction, "sports_session", "La micro-misión debe apuntar a sports_session.");
+
+  // Consejos dinámicos de Bruno
+  const adviceNewbie = bruno.getDynamicAdvice({ skillLevel: 1, sessionsCount: 0 });
+  assert.ok(
+    adviceNewbie.includes("barras") || adviceNewbie.includes("rutina") || adviceNewbie.includes("hidratación"),
+    "Consejo inicial debe alentar al nuevo héroe."
+  );
+
+  const adviceVeteran = bruno.getDynamicAdvice({ skillLevel: 3, sessionsCount: 12 });
+  assert.ok(
+    adviceVeteran.includes("12") || adviceVeteran.includes("sesiones") || adviceVeteran.includes("disciplina"),
+    "Consejo avanzado debe reconocer las 12 sesiones."
+  );
+});
+

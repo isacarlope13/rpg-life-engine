@@ -10,8 +10,10 @@ import {
   RotateCcw,
   CheckCircle2,
   ChevronRight,
+  User,
 } from "lucide-react";
 import type { SkillDomain } from "@/types/rpg";
+import type { VillageResident } from "@/lib/sanctuary/village-tiers";
 import { CozyButton, CozyCard } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";
 
@@ -32,6 +34,8 @@ export interface BuildingInteriorShellProps {
   playerLevel: number;
   skillLevel?: number;
   totalGpEarned?: number;
+  resident?: VillageResident;
+  sessionsCount?: number;
   specificMetrics?: {
     label: string;
     value: string | number;
@@ -40,6 +44,13 @@ export interface BuildingInteriorShellProps {
   lastSessionSummary?: string;
   continueActionLabel?: string;
   onContinueLastSession?: () => void;
+  activeSessionBanner?: {
+    isActive: boolean;
+    isPaused: boolean;
+    formattedTime: string;
+    label?: string;
+    onViewSession?: () => void;
+  };
   activeTab: string;
   tabs: BuildingInteriorTab[];
   onTabChange: (tabId: string) => void;
@@ -57,10 +68,13 @@ export function BuildingInteriorShell({
   playerLevel,
   skillLevel = 1,
   totalGpEarned = 0,
+  resident,
+  sessionsCount,
   specificMetrics = [],
   lastSessionSummary,
   continueActionLabel = "Continuar última sesión",
   onContinueLastSession,
+  activeSessionBanner,
   activeTab,
   tabs,
   onTabChange,
@@ -144,7 +158,89 @@ export function BuildingInteriorShell({
             </div>
           ))}
         </div>
+
+        {/* =========================================================================
+            RESIDENTE ASOCIADO (VECINO GUÍA DEL EDIFICIO)
+           ========================================================================= */}
+        {resident && (
+          <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C]/25 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_2px_0_#3A2E2B]">
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#FFFDF8] text-2xl shadow-[0_2px_0_#3A2E2B]">
+                {resident.avatar}
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black text-[#3A2E2B]">{resident.name}</span>
+                  <span className="text-[10px] font-bold text-[#795548] bg-[#F4EEDC] px-2 py-0.5 rounded-full border border-[#3A2E2B]/15">
+                    {resident.species} • {resident.title}
+                  </span>
+                </div>
+                <p className="text-xs italic text-[#5D4037] pt-0.5">
+                  &ldquo;
+                  {resident.getDynamicAdvice
+                    ? resident.getDynamicAdvice({
+                        skillLevel,
+                        sessionsCount: sessionsCount ?? (specificMetrics.length > 0 ? Number(specificMetrics[0].value) || 0 : 0),
+                      })
+                    : resident.greetingQuote}
+                  &rdquo;
+                </p>
+              </div>
+            </div>
+            {resident.microQuest && (
+              <div className="shrink-0 text-left sm:text-right w-full sm:w-auto border-t sm:border-t-0 border-[#3A2E2B]/10 pt-2 sm:pt-0">
+                <span className="text-[9px] font-black uppercase text-[#314C3C] block">
+                  Misión Activa
+                </span>
+                <span className="text-xs font-bold text-[#3A2E2B]">
+                  {resident.microQuest.title}
+                </span>
+                <span className="block text-[10px] text-[#795548]">
+                  {resident.microQuest.badge}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* =========================================================================
+          BANNER GLOBAL DE SESIÓN EN CURSO
+         ========================================================================= */}
+      {activeSessionBanner && (activeSessionBanner.isActive || activeSessionBanner.isPaused) && (
+        <div className="rounded-3xl border-3 border-[#3A2E2B] bg-[#314C3C] text-[#FFFDF8] p-4 shadow-[0_4px_0_#1A2B20] flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFFDF8] text-xl text-[#314C3C] shadow-inner font-bold">
+              {activeSessionBanner.isPaused ? "⏸️" : "⏱️"}
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-[#E7D69C]">
+                  {activeSessionBanner.isPaused ? "Sesión en Pausa" : "Sesión en Curso"}
+                </span>
+                <span className="font-mono text-sm font-black bg-[#1A2B20] px-2.5 py-0.5 rounded-lg border border-[#FFFDF8]/20 text-emerald-300">
+                  {activeSessionBanner.formattedTime}
+                </span>
+              </div>
+              <p className="text-xs text-[#EAF3ED]">
+                {activeSessionBanner.label || "Actividad activa registrada en este edificio"}
+              </p>
+            </div>
+          </div>
+          {activeSessionBanner.onViewSession && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("light");
+                activeSessionBanner.onViewSession!();
+              }}
+              className="rounded-2xl border-2 border-[#FFFDF8] bg-[#E7D69C] px-3.5 py-2 text-xs font-black text-[#3A2E2B] shadow-[0_2px_0_#FFFDF8] hover:bg-[#F4EEDC] transition cursor-pointer"
+            >
+              Ver Panel de Esfuerzo
+            </button>
+          )}
+        </div>
+      )}
 
       {/* =========================================================================
           2. TARJETA DESTACADA: CONTINUAR ÚLTIMA SESIÓN (SI EXISTE)
