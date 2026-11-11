@@ -20,6 +20,8 @@ import {
 import type { Quest, SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
+import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
+import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 
 interface BotanicalGardenBuildingProps {
   playerLevel: number;
@@ -246,99 +248,54 @@ export function BotanicalGardenBuilding({
   const wateredCount = plants.filter((p) => p.wateredToday).length;
   const gardeningSessions = sessions.filter((s) => s.domain === "gardening");
 
+  const barnabyResident = COZY_VILLAGE_RESIDENTS.find((r) => r.id === "barnaby");
+
   return (
-    <div className="space-y-6 text-[#3A2E2B]">
-      {/* CABECERA TEMÁTICA DEL INVERNADERO */}
-      <div className="rounded-3xl border-3 border-[#5C4033] bg-[#E8EFE9] p-5 sm:p-6 shadow-md flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#38523F] bg-[#4E6E58] text-3xl text-white shadow-inner">
-            🌿
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black text-[#1F2C23]">Invernadero Botánico & Jardín</h2>
-              <span className="rounded-full bg-[#4E6E58]/20 border border-[#4E6E58]/40 px-2.5 py-0.5 text-[10px] font-black text-[#2D4533]">
-                Nivel {skillLevel} Botánico
-              </span>
-            </div>
-            <p className="text-xs text-[#4F6854]">
-              Canteros vivos de hábitos, esquejes recolectados y sesiones de cuidado libre de culpa.
-            </p>
-          </div>
-        </div>
-
-        {/* CONTADOR DE RIEGO DIARIO & REGRESO */}
-        <div className="flex flex-wrap items-center gap-2">
-          {onClose && (
-            <CozyButton
-              variant="wood"
-              size="sm"
-              onClick={onClose}
-              className="flex items-center gap-1.5"
-            >
-              <span>← Volver al Pueblo</span>
-            </CozyButton>
-          )}
-          <div className="flex items-center gap-2 rounded-2xl border-2 border-[#38523F] bg-[#FFFBF2] px-4 py-2 shadow-sm">
-            <Droplets className="h-4 w-4 text-[#2A9D8F]" />
-            <div>
-              <span className="text-[10px] font-extrabold uppercase text-[#7A6B62]">Cantero Hoy</span>
-              <p className="text-xs font-black text-[#1F2C23]">
-                {wateredCount} / {plants.length} Plantas Regadas
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <BuildingInteriorShell
+      buildingId="invernadero"
+      buildingName="Invernadero & Jardín Botánico"
+      domain="gardening"
+      districtName="Naturaleza & Vitalidad"
+      icon="🌿"
+      tagline="Canteros vivos de hábitos, esquejes recolectados y sesiones de cuidado botánico libre de culpa."
+      playerLevel={playerLevel}
+      skillLevel={skillLevel}
+      totalGpEarned={totalGpEarned}
+      resident={barnabyResident}
+      sessionsCount={gardeningSessions.length}
+      specificMetrics={[
+        { label: "Plantas Vivas", value: plants.length, icon: "🌱" },
+        { label: "Regadas Hoy", value: `${wateredCount} / ${plants.length}`, icon: "💧" },
+        { label: "Esquejes & Notas", value: fieldNotes.length, icon: "📝" },
+        { label: "Sesiones de Calma", value: gardeningSessions.length, icon: "⏱️" },
+      ]}
+      activeSessionBanner={{
+        isActive: isRunning || isPaused,
+        isPaused,
+        formattedTime,
+        label: "Cuidado de canteros y observación en el invernadero botánico",
+        onViewSession: () => setActiveTab("session"),
+      }}
+      activeTab={activeTab}
+      tabs={[
+        { id: "garden", label: "Cantero de Plantas", icon: <Sprout className="h-4 w-4" />, badge: plants.length },
+        { id: "session", label: "Sesión & Cuidados", icon: <Clock className="h-4 w-4" /> },
+        { id: "resources", label: "Recursos Botánicos", icon: <BookOpen className="h-4 w-4" /> },
+        { id: "notes", label: "Historial & Campo", icon: <Flower2 className="h-4 w-4" />, badge: gardeningSessions.length + fieldNotes.length },
+      ]}
+      onTabChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+      onClose={onClose}
+    >
       {/* NOTIFICACIÓN FLOTANTE ESTANDARIZADA */}
       {feedbackMsg && (
-        <CozyNotification
-          variant="success"
-          message={feedbackMsg}
-          onDismiss={() => setFeedbackMsg(null)}
-        />
+        <div className="mb-4">
+          <CozyNotification
+            variant="success"
+            message={feedbackMsg}
+            onDismiss={() => setFeedbackMsg(null)}
+          />
+        </div>
       )}
-
-      {/* SELECTOR DE PESTAÑAS */}
-      <div className="flex flex-wrap gap-1 rounded-2xl border-2 border-[#5C4033] bg-[#EBE5D8] p-1 text-xs font-bold">
-        <button
-          type="button"
-          onClick={() => setActiveTab("garden")}
-          className={`flex-1 min-w-[120px] rounded-xl py-2 px-2 transition cursor-pointer text-center ${
-            activeTab === "garden" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
-          }`}
-        >
-          🌱 Cantero de Plantas ({plants.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("session")}
-          className={`flex-1 min-w-[120px] rounded-xl py-2 px-2 transition cursor-pointer text-center ${
-            activeTab === "session" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
-          }`}
-        >
-          ⏱️ Temporizador de Cuidados
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("resources")}
-          className={`flex-1 min-w-[120px] rounded-xl py-2 px-2 transition cursor-pointer text-center ${
-            activeTab === "resources" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
-          }`}
-        >
-          📚 Recursos Botánicos
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("notes")}
-          className={`flex-1 min-w-[120px] rounded-xl py-2 px-2 transition cursor-pointer text-center ${
-            activeTab === "notes" ? "bg-[#4E6E58] text-[#F7F4EB] shadow-sm font-black" : "hover:text-[#4E6E58]"
-          }`}
-        >
-          📖 Historial & Campo ({gardeningSessions.length + fieldNotes.length})
-        </button>
-      </div>
 
       {/* PESTAÑA 1: CANTERO DE HÁBITOS VIVOS */}
       {activeTab === "garden" && (
@@ -667,6 +624,6 @@ export function BotanicalGardenBuilding({
           )}
         </div>
       )}
-    </div>
+    </BuildingInteriorShell>
   );
 }

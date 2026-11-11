@@ -28,6 +28,7 @@ import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub
 import { projectAtelierProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
+import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 
 interface AtelierBuildingProps {
   projects: KnittingProject[];
@@ -194,6 +195,17 @@ export function AtelierBuilding({
       playerLevel={playerLevel}
       skillLevel={skillLevel}
       totalGpEarned={totalGpEarned}
+      resident={COZY_VILLAGE_RESIDENTS.find((r) => r.id === "clara")}
+      sessionsCount={knittingSessions.length}
+      activeSessionBanner={{
+        isActive,
+        isPaused,
+        formattedTime,
+        label: activeProject
+          ? `Tejiendo "${activeProject.name}" (+${sessionRows} vueltas)`
+          : "Sesión de telar activa",
+        onViewSession: () => setActiveTab("taller"),
+      }}
       specificMetrics={[
         { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Proyectos en Curso", value: projects.length },

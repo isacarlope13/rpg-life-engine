@@ -255,3 +255,25 @@ test("Cozy Village Expansion 10: OakHaven 3.7 — Residente Bruno, Micro-Misión
   );
 });
 
+test("Cozy Village Expansion 11: OakHaven 3.7 — Cobertura de Edificios Vivos (Atelier, Invernadero, Gimnasio, Cabaña del Diario)", () => {
+  const CORE_LIVING_BUILDINGS = [
+    { id: "atelier", domain: "knitting", residentId: "clara", residentName: "Clara" },
+    { id: "invernadero", domain: "gardening", residentId: "barnaby", residentName: "Barnaby" },
+    { id: "gimnasio", domain: "sports", residentId: "bruno", residentName: "Bruno" },
+    { id: "cabana_diario", domain: "journaling", residentId: "sora", residentName: "Sora" },
+  ];
+
+  for (const b of CORE_LIVING_BUILDINGS) {
+    const building = getBuildingById(b.id);
+    assert.ok(building, `El edificio ${b.id} debe existir en el catálogo.`);
+    assert.equal(building.domain, b.domain, `El dominio de ${b.id} debe ser ${b.domain}.`);
+    assert.equal(building.residentId, b.residentId, `El residente de ${b.id} debe ser ${b.residentId}.`);
+
+    const resident = COZY_VILLAGE_RESIDENTS.find((r) => r.id === b.residentId);
+    assert.ok(resident, `El residente ${b.residentName} (${b.residentId}) debe estar registrado.`);
+    assert.equal(resident.name, b.residentName, `El nombre del residente debe coincidir.`);
+    assert.ok(resident.greetingQuote.length > 5, `El residente ${b.residentName} debe tener un saludo inspirador.`);
+    assert.ok(resident.microQuest, `El residente ${b.residentName} debe tener micro-misión asignada.`);
+  }
+});
+
