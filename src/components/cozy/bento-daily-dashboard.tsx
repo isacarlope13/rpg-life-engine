@@ -41,6 +41,7 @@ import {
   CozyEmptyState,
 } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { safeLocalStorage } from "@/lib/storage-safe";
 
 export type BentoLayoutOrder = "balanced" | "quests_first" | "sanctuary_first";
 
@@ -99,24 +100,24 @@ export function BentoDailyDashboard({
   onOpenQuickCapture,
   onSubmitSkillSession,
 }: BentoDailyDashboardProps) {
-  // Personalización del orden de tarjetas con persistencia local
+  // Personalización del orden de tarjetas con persistencia local segura
   const [layoutOrder, setLayoutOrder] = useState<BentoLayoutOrder>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("oakhaven_bento_layout") as BentoLayoutOrder | null;
+    try {
+      const saved = safeLocalStorage.getItem("oakhaven_bento_layout") as BentoLayoutOrder | null;
       if (saved && ["balanced", "quests_first", "sanctuary_first"].includes(saved)) {
         return saved;
       }
+    } catch {
+      // Ignorar fallback seguro
     }
     return "balanced";
   });
 
   const handleLayoutChange = (order: BentoLayoutOrder) => {
     setLayoutOrder(order);
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("oakhaven_bento_layout", order);
-      } catch {}
-    }
+    try {
+      safeLocalStorage.setItem("oakhaven_bento_layout", order);
+    } catch {}
     triggerHaptic("light");
   };
 

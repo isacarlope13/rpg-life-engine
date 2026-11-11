@@ -45,6 +45,7 @@ import { MayorsLedgerModal } from "@/components/sanctuary/mayors-ledger-modal";
 import { VillageQuestsModal } from "@/components/cozy/village-quests-modal";
 import { CozyButton, CozyCard } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { safeLocalStorage } from "@/lib/storage-safe";
 
 export type VillageWeather = "sunny" | "rain" | "autumn" | "night";
 export type MapViewMode = "landscape" | "grid";
@@ -76,21 +77,25 @@ export function CozyVillageMap({
   const [selectedBuildingDetail, setSelectedBuildingDetail] = useState<VillageBuildingDefinition | null>(null);
 
   const [weather, setWeather] = useState<VillageWeather>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("oakhaven_weather_pref") as VillageWeather | null;
+    try {
+      const saved = safeLocalStorage.getItem("oakhaven_weather_pref") as VillageWeather | null;
       if (saved && ["sunny", "rain", "autumn", "night"].includes(saved)) {
         return saved;
       }
+    } catch {
+      // Fallback seguro
     }
     return "sunny";
   });
 
   const [isMuted, setIsMuted] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("oakhaven_sound_muted_pref");
+    try {
+      const saved = safeLocalStorage.getItem("oakhaven_sound_muted_pref");
       if (saved !== null) {
         return saved === "true";
       }
+    } catch {
+      // Fallback seguro
     }
     return true;
   });
@@ -111,11 +116,9 @@ export function CozyVillageMap({
   const handleWeatherChange = (newWeather: VillageWeather) => {
     setWeather(newWeather);
     triggerHaptic("light");
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("oakhaven_weather_pref", newWeather);
-      } catch {}
-    }
+    try {
+      safeLocalStorage.setItem("oakhaven_weather_pref", newWeather);
+    } catch {}
     if (!isMuted) {
       const themeMap: Record<VillageWeather, SoundscapeTheme> = {
         sunny: "sunny_breeze",
@@ -132,11 +135,9 @@ export function CozyVillageMap({
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
     triggerHaptic("medium");
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("oakhaven_sound_muted_pref", String(nextMuted));
-      } catch {}
-    }
+    try {
+      safeLocalStorage.setItem("oakhaven_sound_muted_pref", String(nextMuted));
+    } catch {}
     cozySoundscape.setMuted(nextMuted);
     if (!nextMuted) {
       const themeMap: Record<VillageWeather, SoundscapeTheme> = {

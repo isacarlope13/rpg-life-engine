@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ChunkErrorHandler } from "@/components/chunk-error-handler";
 
 export const viewport: Viewport = {
   themeColor: "#0B0F19",
@@ -32,6 +33,7 @@ export default function RootLayout({
   return (
     <html lang="es" className="dark">
       <body className="min-h-screen bg-[#0B0F19] text-[#F1F5F9] antialiased selection:bg-emerald-500/30">
+        <ChunkErrorHandler />
         {children}
       </body>
     </html>

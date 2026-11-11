@@ -2009,8 +2009,12 @@ export function RPGLifeEngineDashboard({
     setSessionTimerActive(false);
     setSessionTimerPreset(defaultMinutes);
     if (typeof window !== "undefined") {
-      const savedNotes = localStorage.getItem(`rpg_session_notes_${domain}`);
-      setSessionNotesText(savedNotes || "");
+      try {
+        const savedNotes = localStorage.getItem(`rpg_session_notes_${domain}`);
+        setSessionNotesText(savedNotes || "");
+      } catch {
+        setSessionNotesText("");
+      }
     }
     setSessionChecklistValues({});
     setSessionNotionToast(null);
@@ -2261,8 +2265,12 @@ export function RPGLifeEngineDashboard({
         label: `📝 Guardar Nota Rápida: "${noteContent.slice(0, 40)}..."`,
         execute: () => {
           if (typeof window !== "undefined") {
-            const current = localStorage.getItem("rpg_session_notes_general") || "";
-            localStorage.setItem("rpg_session_notes_general", `${current}\n• ${noteContent}`.trim());
+            try {
+              const current = localStorage.getItem("rpg_session_notes_general") || "";
+              localStorage.setItem("rpg_session_notes_general", `${current}\n• ${noteContent}`.trim());
+            } catch {
+              // ignore
+            }
           }
           triggerHaptic("success");
           alert("📝 ¡Nota rápida guardada en tu bitácora!");
@@ -6440,7 +6448,9 @@ export function RPGLifeEngineDashboard({
                   onChange={(e) => {
                     setSessionNotesText(e.target.value);
                     if (typeof window !== "undefined") {
-                      localStorage.setItem(`rpg_session_notes_${activeSkillTab}`, e.target.value);
+                      try {
+                        localStorage.setItem(`rpg_session_notes_${activeSkillTab}`, e.target.value);
+                      } catch {}
                     }
                   }}
                   placeholder={`Escribe apuntes, materiales usados o reflexiones para tu sesión de ${activeSkillTab}...`}
@@ -8149,7 +8159,9 @@ export function RPGLifeEngineDashboard({
                 onChange={(e) => {
                   setSessionNotesText(e.target.value);
                   if (typeof window !== "undefined") {
-                    localStorage.setItem(`rpg_session_notes_${activeSessionModal.domain}`, e.target.value);
+                    try {
+                      localStorage.setItem(`rpg_session_notes_${activeSessionModal.domain}`, e.target.value);
+                    } catch {}
                   }
                 }}
                 placeholder="Escribe notas rápidas, fragmentos, fórmulas, reflexiones o ideas durante tu sesión..."

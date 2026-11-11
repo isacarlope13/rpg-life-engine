@@ -1,5 +1,7 @@
 // Utilidad de sincronización offline, registro de Service Worker y respuesta háptica PWA
 
+import { safeLocalStorage } from "./storage-safe.ts";
+
 export type HapticType = "light" | "medium" | "heavy" | "success" | "warning" | "error";
 
 export function triggerHaptic(type: HapticType = "light"): void {
@@ -59,17 +61,16 @@ export interface OfflineAction {
 const OFFLINE_QUEUE_KEY = "rpg_offline_queue_v1";
 
 export function queueOfflineAction(action: Omit<OfflineAction, "id" | "timestamp">): void {
-  if (typeof window === "undefined") return;
   try {
-    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    const raw = safeLocalStorage.getItem(OFFLINE_QUEUE_KEY);
     const queue: OfflineAction[] = raw ? JSON.parse(raw) : [];
     const item: OfflineAction = {
       ...action,
-      id: crypto.randomUUID ? crypto.randomUUID() : `offline-${Date.now()}`,
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `offline-${Date.now()}`,
       timestamp: new Date().toISOString(),
     };
     queue.push(item);
-    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    safeLocalStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
     triggerHaptic("warning");
   } catch (e) {
     console.error("Error guardando acción offline:", e);
@@ -77,9 +78,8 @@ export function queueOfflineAction(action: Omit<OfflineAction, "id" | "timestamp
 }
 
 export function getOfflineQueue(): OfflineAction[] {
-  if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    const raw = safeLocalStorage.getItem(OFFLINE_QUEUE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -113,7 +113,12 @@ export async function processOfflineQueue(
     }
   }
 
-  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+  try {
+    safeLocalStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+  } catch (e) {
+    console.warn("Error actualizando cola offline:", e);
+  }
+
   if (successful > 0) {
     triggerHaptic("success");
     if (onSynced) onSynced(successful);
