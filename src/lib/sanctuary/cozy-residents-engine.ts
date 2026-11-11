@@ -119,6 +119,8 @@ export const FORBIDDEN_LEVEL_3_FIELDS = [
   "gp",
   "gp_earned",
   "gold_pieces",
+  "wallet_gp",
+  "vault_gp",
   "xp",
   "xp_earned",
   "experience_points",

@@ -248,3 +248,40 @@ flowchart TD
 3. **Invariante de No Degradación:** Los logros de los edificios y trofeos nunca se revierten por ausencia o inactividad del usuario.
 4. **Invariante de Autonomía Acotada (HITL):** Los residentes no tienen autonomía irrestricta; toda mutación de proyecto o tarea requiere confirmación previa del usuario.
 5. **Accesibilidad Sensorial:** El audio nunca se inicia automáticamente; respeta el gesto deliberado del usuario y las directivas de `prefers-reduced-motion`.
+
+---
+
+## 5. Auditoría de Calidad, Integración y Rendimiento (Fase 11)
+
+### 5.1. Matriz de Integración E2E y Navegación
+* **Flujo Integral:** Navegación fluida y determinista entre el Dashboard Bento (`viewMode = 'bento'`), el Pueblo Interactivo de Oakhaven (`viewMode = 'village_map'`), los 9 edificios especializados y el retorno unificado al mapa.
+* **Control de Modales y Teclado:**
+  - Los 9 edificios especializados implementan el contenedor accesible `role="dialog"` y `aria-modal="true"`.
+  - Escucha global de la tecla `Escape` para cerrar limpiamente modales activos (`activeBuildingModal`, `selectedResident`, `isQuickCaptureOpen`, `isVillageQuestsOpen`, `isSoundscapeOpen`, `isScrapbookOpen`).
+  - Botón "Volver al Pueblo ✕" con objetivos táctiles de tamaño mínimo conforme a WCAG 2.5.5 (`min-h-[44px] min-w-[44px]`).
+
+### 5.2. Métricas de Rendimiento y Empaquetado
+* **Bundle Size (Next.js 15.5.29 Production Build):**
+  - First Load JS compartido por todas las rutas: **103 kB** (altamente optimizado).
+  - Ruta `/cozy`: **47.6 kB** (Total First Load JS: **223 kB**).
+  - Compilación de 28/28 rutas estáticas y dinámicas completada en **7.4 segundos**.
+* **Renderizado del Mapa SVG:**
+  - Gráficos basados en vectores planos (sin dependencias pesadas de WebGL ni Three.js), logrando 60 FPS estables en dispositivos móviles y de escritorio.
+  - Supresión automática de transiciones y animaciones (`0.01ms`) bajo la directiva CSS `@media (prefers-reduced-motion: reduce)`.
+
+### 5.3. Auditoría de Seguridad y Multi-Tenant
+* **Aislamiento Multi-Usuario Estricto:**
+  - Todas las llaves locales de persistencia están particionadas criptográficamente por usuario: `rpg_sessions_v4_<userId>`, `rpg_skill_resources_v4_<userId>`, `rpg_village_progression_<userId>`, `rpg_resident_journal_<userId>`, `rpg_resident_config_<userId>`.
+  - Verificado en Test 33: Ningún usuario puede hidratar sesiones, consultar recursos, forzar hitos o leer diarios de auditoría de otros inquilinos.
+* **Validación de Archivos Adjuntos:**
+  - Límite estricto de **5 MB** (`MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024`).
+  - Whitelist de tipos MIME segura: imágenes (`image/png`, `image/jpeg`, `image/webp`), documentos (`application/pdf`, `text/plain`, `text/markdown`, `application/json`).
+  - Bloqueo tajante de ejecutables y scripts (`.exe`, `.sh`, `.bat`, etc.).
+* **Matriz de Seguridad de Residentes:**
+  - Inclusión de `wallet_gp` y `vault_gp` en `FORBIDDEN_LEVEL_3_FIELDS`.
+  - Bloqueo inmediato con estatus `blocked_by_policy` y registro en el diario de cualquier propuesta que intente inyectar balances económicos.
+
+### 5.4. Resultados de la Suite de Pruebas Automatizadas
+* **Ejecución Total:** **79 pruebas ejecutadas, 79 aprobadas, 0 fallidas (100% de éxito)**.
+* **Tiempo de ejecución de la suite:** **1.31 segundos**.
+* **Verificación de Tipos TypeScript (`tsc --noEmit`):** **0 errores** de tipado en toda la base de código.

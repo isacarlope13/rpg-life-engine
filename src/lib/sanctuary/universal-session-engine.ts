@@ -524,7 +524,7 @@ export function buildSkillSessionPayload(
 ): Record<string, unknown> {
   const durationMinutes = Math.max(1, Math.round((session.elapsedSeconds || 0) / 60));
   const domain = session.domain;
-  const spec = session.specializedData;
+  const spec = session.specializedData || {};
 
   const basePayload: Record<string, unknown> = {
     action: "log_session",

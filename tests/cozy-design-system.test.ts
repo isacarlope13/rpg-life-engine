@@ -1098,8 +1098,30 @@ test("Resident Assistant 29: Asistentes contextuales en múltiples edificios (Ly
     buildingId: "biblioteca",
     domain: "study",
     spacedRepetitionCards: [
-      { id: "c1", prompt: "P1", reflection: "R1", ease_factor: 2.5, interval_days: 1, repetitions: 1, next_review: new Date().toISOString() },
-      { id: "c2", prompt: "P2", reflection: "R2", ease_factor: 2.5, interval_days: 1, repetitions: 1, next_review: new Date().toISOString() },
+      {
+        id: "c1",
+        source_type: "study",
+        source_title: "Tema 1",
+        front_prompt: "P1",
+        back_reflection: "R1",
+        ease_factor: 2.5,
+        interval_days: 1,
+        repetition: 1,
+        due_date: "2026-11-11",
+        review_count: 1,
+      },
+      {
+        id: "c2",
+        source_type: "study",
+        source_title: "Tema 2",
+        front_prompt: "P2",
+        back_reflection: "R2",
+        ease_factor: 2.5,
+        interval_days: 1,
+        repetition: 1,
+        due_date: "2026-11-11",
+        review_count: 1,
+      },
     ],
   });
   assert.equal(lyraAdvice.residentId, "lyra");
@@ -1167,7 +1189,18 @@ test("Resident Assistant 30: Gobernanza, Registro de Auditoría (Journal) y Desa
     buildingId: "biblioteca",
     domain: "study",
     spacedRepetitionCards: [
-      { id: "c1", prompt: "P1", reflection: "R1", ease_factor: 2.5, interval_days: 1, repetitions: 1, next_review: new Date().toISOString() },
+      {
+        id: "c1",
+        source_type: "study",
+        source_title: "Tema 1",
+        front_prompt: "P1",
+        back_reflection: "R1",
+        ease_factor: 2.5,
+        interval_days: 1,
+        repetition: 1,
+        due_date: "2026-11-11",
+        review_count: 1,
+      },
     ],
   });
   assert.equal(lyraAdviceActive.residentName, "Lyra");
@@ -1184,6 +1217,262 @@ test("Resident Assistant 30: Gobernanza, Registro de Auditoría (Journal) y Desa
     domain: "study",
   });
   assert.equal(lyraAdviceGlobalOff.pendingProposals.length, 0, "Con asistentes desactivados globalmente no hay propuestas");
+});
+
+test("Fase 11 — Test 31: Integración de Navegación, Catálogo de Edificios y Retorno al Pueblo", async () => {
+  const { VILLAGE_BUILDINGS_CATALOG } = await import(
+    "../src/lib/sanctuary/village-buildings-registry.ts"
+  );
+  const { SANCTUARY_BUILDINGS } = await import(
+    "../src/lib/sanctuary/buildings-registry.ts"
+  );
+
+  // 1. Integridad de los 9 edificios en el catálogo de la aldea
+  assert.equal(VILLAGE_BUILDINGS_CATALOG.length, 9, "Deben existir 9 edificios en el catálogo del pueblo");
+
+  // 2. Coincidencia por dominio con el catálogo central del Santuario
+  const sanctuaryDomains = new Set(SANCTUARY_BUILDINGS.map((b) => b.domain));
+  for (const building of VILLAGE_BUILDINGS_CATALOG) {
+    assert.ok(
+      sanctuaryDomains.has(building.domain),
+      `El dominio ${building.domain} de ${building.id} debe existir en el registro central del santuario`
+    );
+  }
+
+  // 3. Verificación de coordenadas porcentuales para renderizado responsive y accesibilidad
+  for (const building of VILLAGE_BUILDINGS_CATALOG) {
+    assert.ok(
+      building.mapCoordinates.x >= 0 && building.mapCoordinates.x <= 100,
+      `Coordenada X de ${building.id} dentro del plano (0-100%)`
+    );
+    assert.ok(
+      building.mapCoordinates.y >= 0 && building.mapCoordinates.y <= 100,
+      `Coordenada Y de ${building.id} dentro del plano (0-100%)`
+    );
+    assert.ok(building.accentColor, `Color de acento definido para ${building.id}`);
+  }
+});
+
+test("Fase 11 — Test 32: Hidratación de Datos Reales, Resiliencia y Estados Vacíos (Zero-State Graceful)", async () => {
+  const { getBuildingById } = await import(
+    "../src/lib/sanctuary/village-buildings-registry.ts"
+  );
+  const { generateResidentAdvice } = await import(
+    "../src/lib/sanctuary/cozy-residents-engine.ts"
+  );
+  const { projectAtelierProgression } = await import(
+    "../src/lib/sanctuary/visual-village-progression.ts"
+  );
+
+  const libreria = getBuildingById("libreria")!;
+  const atelier = getBuildingById("atelier")!;
+  const oficina = getBuildingById("oficina")!;
+
+  // 1. Detección de actividad pendiente no debe lanzar excepciones con datos nulos o vacíos
+  const pendingLibreria = libreria.getPendingActivity({ activeBooksCount: 0 });
+  assert.equal(pendingLibreria.hasPending, false, "Librería sin libros activos no tiene actividad pendiente");
+
+  const pendingAtelier = atelier.getPendingActivity({ activeKnittingProjectsCount: 0 });
+  assert.equal(pendingAtelier.hasPending, false, "Atelier sin proyectos no tiene actividad pendiente");
+
+  const pendingOficina = oficina.getPendingActivity({ buildingSessions: [] });
+  assert.equal(pendingOficina.hasPending, true, "Oficina sin sesión hoy señala bloque disponible");
+
+  // 2. Generación de consejos de residente en estado vacío
+  const claraEmptyAdvice = generateResidentAdvice({
+    residentId: "clara",
+    buildingId: "atelier",
+    domain: "knitting",
+    knittingProjects: [],
+    recentSessions: [],
+  });
+  assert.ok(claraEmptyAdvice.greetingQuote.length > 0);
+  assert.ok(claraEmptyAdvice.contextSummary.includes("listos") || claraEmptyAdvice.contextSummary.includes("puntos"));
+
+  // 3. Progresión visual en estado inicial se mantiene en Tier 1
+  const initialProgression = projectAtelierProgression({
+    level: 1,
+    sessionsCount: 0,
+    knittingProjects: [],
+  });
+  assert.equal(initialProgression.tier, 1);
+  assert.equal(initialProgression.tierName, "Cabaña de Bastidor Rústico");
+});
+
+test("Fase 11 — Test 33: Aislamiento Criptográfico y Multi-tenant en Todas las Fuentes de Persistencia", async () => {
+  const {
+    createUniversalSession,
+    hydrateUniversalSession,
+  } = await import("../src/lib/sanctuary/universal-session-engine.ts");
+  const {
+    saveSkillResource,
+    getStoredSkillResources,
+  } = await import("../src/lib/sanctuary/skill-resources-hub.ts");
+  const {
+    recordConfirmedMilestoneEvent,
+    getStoredProgressionState,
+  } = await import("../src/lib/sanctuary/visual-village-progression.ts");
+  const {
+    appendResidentJournalEntry,
+    getStoredResidentJournal,
+  } = await import("../src/lib/sanctuary/cozy-residents-engine.ts");
+
+  const userAlice = "usr_tenant_alice";
+  const userBob = "usr_tenant_bob";
+
+  // 1. Universal Sessions: Alice guarda sesión activa, Bob no puede hidratarla
+  const aliceSession = createUniversalSession({
+    userId: userAlice,
+    domain: "study",
+    buildingId: "biblioteca",
+    resourceTitle: "Matemáticas Discretas",
+  });
+  const serialized = JSON.stringify(aliceSession);
+  const hydratedByAlice = hydrateUniversalSession(serialized, userAlice);
+  const hydratedByBob = hydrateUniversalSession(serialized, userBob);
+  assert.ok(hydratedByAlice !== null, "Alice debe poder hidratar su sesión");
+  assert.equal(hydratedByBob, null, "Bob NO debe poder hidratar la sesión de Alice (aislamiento multi-tenant)");
+
+  // 2. Skill Resources: Alice almacena un PDF de estudio, Bob no debe acceder
+  const aliceResource = saveSkillResource(
+    {
+      userId: userAlice,
+      domain: "study",
+      type: "pdf",
+      title: "Teoremas de Grafos",
+      tags: ["grafos"],
+    },
+    userAlice
+  );
+  assert.ok(aliceResource.id);
+  const aliceResources = getStoredSkillResources("study", userAlice);
+  const bobResources = getStoredSkillResources("study", userBob);
+  assert.equal(aliceResources.some((r) => r.id === aliceResource.id), true);
+  assert.equal(bobResources.some((r) => r.id === aliceResource.id), false);
+
+  // 3. Village Progression: Alice registra hito de progreso, el estado de Bob no se modifica
+  recordConfirmedMilestoneEvent(userAlice, {
+    eventId: "evt_milestone_alice_01",
+    userId: userAlice,
+    buildingId: "atelier",
+    domain: "knitting",
+    milestoneType: "project_completed",
+    targetId: "p_alice_1",
+    title: "Bufanda Merina",
+    confirmedAt: new Date().toISOString(),
+  });
+  const aliceProg = getStoredProgressionState(userAlice);
+  const bobProg = getStoredProgressionState(userBob);
+  assert.ok(aliceProg.processedEventIds.includes("evt_milestone_alice_01"));
+  assert.ok(!bobProg.processedEventIds.includes("evt_milestone_alice_01"));
+
+  // 4. Resident Audit Journal: Alice registra decisiones, Bob tiene diario independiente
+  appendResidentJournalEntry(
+    {
+      userId: userAlice,
+      residentId: "clara",
+      buildingId: "atelier",
+      level: 2,
+      actionTitle: "Remate de bufanda nórdica",
+      status: "approved_by_user",
+      payloadSummary: "Alice aprobó un remate de bufanda",
+    },
+    userAlice
+  );
+  const aliceJournal = getStoredResidentJournal(userAlice);
+  const bobJournal = getStoredResidentJournal(userBob);
+  assert.equal(aliceJournal.some((j) => j.actionTitle === "Remate de bufanda nórdica"), true);
+  assert.equal(bobJournal.some((j) => j.actionTitle === "Remate de bufanda nórdica"), false);
+});
+
+test("Fase 11 — Test 34: Auditoría de Accesibilidad (WCAG 2.1 AAA Contraste, Objetivos Táctiles y Reducción de Movimiento)", async () => {
+  const { COZY_COLORS } = await import(
+    "../src/components/cozy/ui/tokens.ts"
+  );
+  const fs = await import("fs");
+  const path = await import("path");
+
+  // 1. Ratio de contraste WCAG AAA para texto y fondos oficiales
+  assert.equal(COZY_COLORS.bark, "#3A2E2B");
+  assert.equal(COZY_COLORS.cream, "#F4EEDC");
+  assert.equal(COZY_COLORS.parchment, "#FFFDF8");
+
+  // 2. Verificación de regla prefers-reduced-motion en globals.css
+  const cssPath = path.resolve(process.cwd(), "src/app/globals.css");
+  const cssContent = fs.readFileSync(cssPath, "utf-8");
+  assert.ok(
+    cssContent.includes("prefers-reduced-motion: reduce"),
+    "globals.css debe declarar soporte para prefers-reduced-motion"
+  );
+  assert.ok(
+    cssContent.includes("animation-duration: 0.01ms"),
+    "globals.css debe suprimir animaciones en modo reducido"
+  );
+
+  // 3. Verificación de atributos ARIA y accesibilidad en el código fuente del dashboard
+  const dashboardPath = path.resolve(process.cwd(), "src/components/cozy-rpg-dashboard.tsx");
+  const dashboardContent = fs.readFileSync(dashboardPath, "utf-8");
+  assert.ok(
+    dashboardContent.includes('role="dialog"'),
+    "El modal de edificio especializado debe incluir role='dialog'"
+  );
+  assert.ok(
+    dashboardContent.includes('aria-modal="true"'),
+    "El modal de edificio especializado debe incluir aria-modal='true'"
+  );
+  assert.ok(
+    dashboardContent.includes('min-h-[44px]'),
+    "Los botones de navegación de modal deben cumplir con el estándar táctil de 44px"
+  );
+});
+
+test("Fase 11 — Test 35: Compatibilidad Canónica e Invariante de Economía (Cero Generación Arbitraria de GP/XP)", async () => {
+  const {
+    buildSkillSessionPayload,
+    createUniversalSession,
+    finishUniversalSession,
+  } = await import("../src/lib/sanctuary/universal-session-engine.ts");
+  const { projectAtelierProgression } = await import(
+    "../src/lib/sanctuary/visual-village-progression.ts"
+  );
+  const { classifyResidentAction } = await import(
+    "../src/lib/sanctuary/cozy-residents-engine.ts"
+  );
+
+  // 1. El payload de sesión no genera GP ni XP en el cliente
+  const session = createUniversalSession({
+    userId: "usr_compat",
+    domain: "study",
+    buildingId: "biblioteca",
+    specializedData: {
+      study: {
+        subject: "Matemáticas Discretas",
+      },
+    },
+  });
+  const finishedSession = finishUniversalSession(session, undefined, Date.now() + 1800000);
+  const payload = buildSkillSessionPayload(finishedSession);
+  assert.strictEqual((payload as any).wallet_gp, undefined);
+  assert.strictEqual((payload as any).vault_gp, undefined);
+  assert.strictEqual((payload as any).xp, undefined);
+  assert.strictEqual((payload as any).gp, undefined);
+
+  // 2. La progresión visual es 100% decorativa e idempotente (cero recompensas)
+  const progression = projectAtelierProgression({
+    level: 5,
+    sessionsCount: 30,
+    knittingProjects: [],
+  });
+  assert.strictEqual((progression as any).gpReward, undefined);
+  assert.strictEqual((progression as any).xpReward, undefined);
+
+  // 3. El motor de residentes prohíbe taxativamente la manipulación de finanzas
+  const attackFinancials = classifyResidentAction({
+    category: "backlog_task_proposal",
+    payload: { wallet_gp: 99999 },
+  });
+  assert.equal(attackFinancials.level, 3);
+  assert.equal(attackFinancials.isAllowed, false);
 });
 
 

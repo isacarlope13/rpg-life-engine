@@ -311,6 +311,37 @@ export function CozyRpgDashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  // Accesibilidad de teclado: tecla Escape para cerrar modales activos
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (activeBuildingModal) {
+          setActiveBuildingModal(null);
+        } else if (selectedResident) {
+          setSelectedResident(null);
+        } else if (isQuickCaptureOpen) {
+          setIsQuickCaptureOpen(false);
+        } else if (isVillageQuestsOpen) {
+          setIsVillageQuestsOpen(false);
+        } else if (isSoundscapeOpen) {
+          setIsSoundscapeOpen(false);
+        } else if (isScrapbookOpen) {
+          setIsScrapbookOpen(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    activeBuildingModal,
+    selectedResident,
+    isQuickCaptureOpen,
+    isVillageQuestsOpen,
+    isSoundscapeOpen,
+    isScrapbookOpen,
+  ]);
+
   // Agregar nota con persistencia
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
@@ -488,7 +519,8 @@ export function CozyRpgDashboard() {
               <button
                 type="button"
                 onClick={() => setActiveBuildingModal(null)}
-                className="rounded-xl border-2 border-[#5C4033] bg-[#E9C46A] px-3 py-1 text-xs font-black text-[#3A2E2B] hover:bg-[#F4A261] cursor-pointer"
+                aria-label="Volver al pueblo y cerrar interior"
+                className="rounded-xl border-2 border-[#5C4033] bg-[#E9C46A] px-4 py-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-xs font-black text-[#3A2E2B] hover:bg-[#F4A261] cursor-pointer transition-colors"
               >
                 Volver al Pueblo ✕
               </button>
