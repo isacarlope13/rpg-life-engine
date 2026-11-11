@@ -69,6 +69,7 @@ import { BentoDailyDashboard } from "@/components/cozy/bento-daily-dashboard";
 import { ResidentModal } from "@/components/cozy/resident-modal";
 import { CozySoundscapeModal } from "@/components/cozy/cozy-soundscape-modal";
 import { VillageQuestsModal } from "@/components/cozy/village-quests-modal";
+import { CozyQuickCaptureModal } from "@/components/cozy/cozy-quick-capture-modal";
 import {
   queueOfflineAction,
   processOfflineQueue,
@@ -140,6 +141,7 @@ export function CozyRpgDashboard() {
   const [isScrapbookOpen, setIsScrapbookOpen] = useState(false);
   const [isSoundscapeOpen, setIsSoundscapeOpen] = useState(false);
   const [isVillageQuestsOpen, setIsVillageQuestsOpen] = useState(false);
+  const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [notesList, setNotesList] = useState<string[]>([
     "Recoger lana de alpaca para la bufanda nórdica.",
     "Completar 20 páginas del libro de arquitectura.",
@@ -403,6 +405,7 @@ export function CozyRpgDashboard() {
               }}
               onOpenScrapbook={() => setIsScrapbookOpen(true)}
               onOpenSoundscape={() => setIsSoundscapeOpen(true)}
+              onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
               walletGp={walletGp}
               vaultGp={vaultGp}
               isOffline={isOffline}
@@ -442,6 +445,8 @@ export function CozyRpgDashboard() {
                 knittingProjects={knittingProjects}
                 rubikCubes={rubikCubes}
                 residents={COZY_VILLAGE_RESIDENTS}
+                skillSummaries={state?.skill_summaries || []}
+                currentDate={currentDate}
                 quickNote={quickNote}
                 notesList={notesList}
                 onQuickNoteChange={setQuickNote}
@@ -451,6 +456,8 @@ export function CozyRpgDashboard() {
                 onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
                 onSelectResident={(resident) => setSelectedResident(resident)}
                 onOpenQuestsModal={() => setIsVillageQuestsOpen(true)}
+                onOpenScrapbook={() => setIsScrapbookOpen(true)}
+                onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
                 onSubmitSkillSession={handleSubmitSkillSession}
               />
             )}
@@ -677,6 +684,13 @@ export function CozyRpgDashboard() {
         onSubmitSkillSession={handleSubmitSkillSession}
         skillSummaries={state?.skill_summaries || []}
         recentSessions={recentSessions}
+      />
+
+      {/* CAPTURA RÁPIDA OMNI INTELIGENTE */}
+      <CozyQuickCaptureModal
+        isOpen={isQuickCaptureOpen}
+        onClose={() => setIsQuickCaptureOpen(false)}
+        onSuccess={fetchState}
       />
     </div>
   );

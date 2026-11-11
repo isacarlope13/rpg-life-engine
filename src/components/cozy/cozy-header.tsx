@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { LayoutGrid, Compass, Coins, WifiOff, RefreshCw } from "lucide-react";
+import { LayoutGrid, Compass, Coins, WifiOff, RefreshCw, Zap } from "lucide-react";
 
 interface CozyHeaderProps {
   currentDate: string;
@@ -10,6 +10,7 @@ interface CozyHeaderProps {
   onViewModeChange: (mode: "bento" | "village_map") => void;
   onOpenScrapbook: () => void;
   onOpenSoundscape?: () => void;
+  onOpenQuickCapture?: () => void;
   walletGp: number;
   vaultGp: number;
   isOffline?: boolean;
@@ -24,6 +25,7 @@ export function CozyHeader({
   onViewModeChange,
   onOpenScrapbook,
   onOpenSoundscape,
+  onOpenQuickCapture,
   walletGp,
   vaultGp,
   isOffline = false,
@@ -115,6 +117,19 @@ export function CozyHeader({
             </span>
           </button>
         ) : null}
+
+        {/* Botón de Captura Rápida Omnicanal */}
+        {onOpenQuickCapture && (
+          <button
+            type="button"
+            onClick={onOpenQuickCapture}
+            className="flex items-center gap-1.5 rounded-2xl border-[3px] border-[#3A2E2B] bg-[#E76F51] px-3.5 py-2 text-[#FFFDF8] shadow-[0_3px_0_#3A2E2B] hover:bg-[#D55F41] hover:-translate-y-0.5 transition cursor-pointer"
+            title="Abrir captura rápida omnicanal (gastos, hábitos o ideas)"
+          >
+            <Zap className="h-4 w-4 fill-current text-amber-200" />
+            <span className="text-xs font-black">Captura Rápida</span>
+          </button>
+        )}
 
         <div
           className="flex items-center gap-2 rounded-2xl border-[3px] border-[#3A2E2B] bg-[#E9C46A] px-3.5 py-2 text-[#3A2E2B] shadow-[0_3px_0_#3A2E2B]"

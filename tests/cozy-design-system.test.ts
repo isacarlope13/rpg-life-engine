@@ -57,3 +57,18 @@ test("Cozy Design System 4: Ambientación Sonora y Presets de Oakhaven", async (
   const presetIds = SOUNDSCAPE_PRESETS.map((p) => p.id);
   assert.deepEqual(presetIds, ["off", "rain", "fireplace", "breeze", "chimes"]);
 });
+
+test("Cozy Dashboard 5: Residentes de Oakhaven y Cálculo Progresivo de Tiers", async () => {
+  const { COZY_VILLAGE_RESIDENTS, calculateBuildingTier } = await import("../src/lib/sanctuary/village-tiers.ts");
+  assert.equal(COZY_VILLAGE_RESIDENTS.length, 8, "Deben existir exactamente 8 residentes del pueblo");
+  
+  // Test tier thresholds
+  assert.equal(calculateBuildingTier({ level: 1, sessionsCount: 0 }).tier, 1, "Nivel 1 con 0 sesiones debe ser Tier 1");
+  assert.equal(calculateBuildingTier({ level: 2, sessionsCount: 4 }).tier, 2, "Nivel 2 con 4 sesiones debe ser Tier 2");
+  assert.equal(calculateBuildingTier({ level: 5, sessionsCount: 12 }).tier, 3, "Nivel 5 con 12 sesiones debe ser Tier 3");
+});
+
+test("Cozy Dashboard 6: Resiliencia Offline y Cola PWA", async () => {
+  const { getOfflineQueue, queueOfflineAction } = await import("../src/lib/offline-sync.ts");
+  assert.ok(Array.isArray(getOfflineQueue()), "La cola offline debe retornar un arreglo");
+});
