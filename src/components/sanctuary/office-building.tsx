@@ -25,6 +25,8 @@ import { useUniversalSession, formatStopwatchTime } from "@/lib/sanctuary/use-un
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
+import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
 
 interface OfficeBuildingProps {
   playerLevel: number;
@@ -405,6 +407,27 @@ export function OfficeBuilding({
                 </p>
               </div>
             </div>
+
+            {/* Smart Capture para Trabajo */}
+            <SmartCaptureWidget
+              domain="work"
+              context={{
+                domain: "work",
+                activeWorkProject: {
+                  id: activeProject.id,
+                  name: activeProject.name,
+                  currentStage: "Sprint Activo",
+                  nextPendingTask: activeProject.deliverable || "Revisión de entregables",
+                },
+              }}
+              notes={sessionNotes}
+              onNotesChange={setSessionNotes}
+              onApplySuggestedValues={(vals) => {
+                if (vals.notes) {
+                  setSessionNotes((prev) => (prev ? `${prev} • ${vals.notes}` : vals.notes || ""));
+                }
+              }}
+            />
           </div>
         </div>
       )}
@@ -453,6 +476,11 @@ export function OfficeBuilding({
               )}
             </div>
           ))}
+
+          {/* BÓVEDA DE RECURSOS, ESPECIFICACIONES & REPOSITORIOS */}
+          <div className="sm:col-span-3 pt-4 border-t-2 border-[#D8B48A]/40">
+            <SkillResourceHubPanel domain="work" />
+          </div>
         </div>
       )}
 

@@ -25,6 +25,8 @@ import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
+import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
 
 interface BibliotecaBuildingProps {
   cards: SpacedRepetitionCard[];
@@ -62,6 +64,7 @@ export function BibliotecaBuilding({
   >("Deep Study 50/10");
   const [studyMinutes, setStudyMinutes] = useState<number>(50);
   const [comprehensionRating, setComprehensionRating] = useState<number>(4);
+  const [exercisesCount, setExercisesCount] = useState<number>(0);
   const [sessionNotes, setSessionNotes] = useState<string>("");
   const [notification, setNotification] = useState<{
     type: "success" | "error" | "warning";
@@ -118,6 +121,7 @@ export function BibliotecaBuilding({
         duration_minutes: minutesToLog,
         notes: sessionNotes,
         comprehension_rating: comprehensionRating,
+        exercises_completed: exercisesCount > 0 ? exercisesCount : undefined,
       });
 
       if (result) {
@@ -126,6 +130,7 @@ export function BibliotecaBuilding({
           message: `✨ ¡Bloque de estudio completado! Se registraron ${minutesToLog}m en "${studySubject}".`,
         });
         setSessionNotes("");
+        setExercisesCount(0);
         await onRefreshState();
       }
     } catch (err) {
@@ -370,7 +375,60 @@ export function BibliotecaBuilding({
                   ))}
                 </div>
               </div>
+
+              {/* Contador de Ejercicios Resueltos */}
+              <div className="pt-2 border-t border-[#3A2E2B]/15 space-y-2">
+                <div className="flex justify-between items-center text-xs font-bold text-[#795548]">
+                  <span>Ejercicios / Problemas Resueltos:</span>
+                  <span className="font-mono text-sm font-black text-[#3A2E2B]">
+                    {exercisesCount}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExercisesCount((prev) => Math.max(0, prev - 1))}
+                    className="flex-1 rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] py-1 text-xs font-bold text-[#3A2E2B] hover:bg-[#E7D69C]"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExercisesCount((prev) => prev + 1)}
+                    className="flex-1 rounded-xl border-2 border-[#3A2E2B] bg-[#314C3C] py-1 text-xs font-bold text-white hover:bg-[#3E5F4C]"
+                  >
+                    +1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExercisesCount((prev) => prev + 5)}
+                    className="flex-1 rounded-xl border-2 border-[#3A2E2B] bg-[#E7D69C] py-1 text-xs font-bold text-[#3A2E2B] hover:bg-[#F2E3B3]"
+                  >
+                    +5
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* Smart Capture para Estudio */}
+            <SmartCaptureWidget
+              domain="study"
+              context={{
+                domain: "study",
+                activeStudy: {
+                  subject: studySubject,
+                  topic: studyMethod,
+                  spacedCardsDueCount: cards.length,
+                },
+              }}
+              notes={sessionNotes}
+              onNotesChange={setSessionNotes}
+              onApplySuggestedValues={(vals) => {
+                if (vals.notes) {
+                  setSessionNotes((prev) => (prev ? `${prev} • ${vals.notes}` : vals.notes || ""));
+                }
+              }}
+            />
           </div>
         </div>
       )}
@@ -483,6 +541,11 @@ export function BibliotecaBuilding({
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* BÓVEDA DE RECURSOS, GUÍAS & PAPERS DE ESTUDIO */}
+          <div className="pt-4 border-t-2 border-[#D8B48A]/40">
+            <SkillResourceHubPanel domain="study" />
           </div>
         </div>
       )}

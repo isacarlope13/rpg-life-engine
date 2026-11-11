@@ -60,6 +60,8 @@ export function AtelierBuilding({
   const [sessionRows, setSessionRows] = useState<number>(0);
   const [stitchesNotes, setStitchesNotes] = useState<string>("");
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
+  const [showPatternViewer, setShowPatternViewer] = useState(false);
+  const [activePatternName, setActivePatternName] = useState<string>("Patrón Gráfico V-Stitch");
   const [notification, setNotification] = useState<{
     type: "success" | "error" | "warning";
     message: string;
@@ -267,6 +269,44 @@ export function AtelierBuilding({
                   />
                 </div>
               )}
+
+              {/* Visor de Patrón Activo */}
+              <div className="rounded-2xl border-2 border-[#D8B48A] bg-[#FFFBF2] p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <BookOpen className="h-4 w-4 text-[#C88973]" />
+                    <span className="text-xs font-bold text-[#3A2E2B]">Patrón Activo:</span>
+                    <span className="text-xs font-bold text-[#77936A]">
+                      {activePatternName}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPatternViewer(!showPatternViewer)}
+                    className="text-[11px] font-bold text-[#77936A] hover:underline cursor-pointer"
+                  >
+                    {showPatternViewer ? "Ocultar Guía ▲" : "Ver Guía de Puntos ▼"}
+                  </button>
+                </div>
+
+                {showPatternViewer && (
+                  <div className="pt-2 border-t border-[#D8B48A]/40 text-xs text-[#3A2E2B] space-y-2 bg-[#FFFDF8] rounded-xl p-3">
+                    <p className="font-bold text-[#795548] text-[11px]">
+                      Diagrama de Lazada y Repetición:
+                    </p>
+                    <div className="font-mono bg-[#F4EEDC] p-2.5 rounded-lg border border-[#D8B48A] text-[11px] text-[#3A2E2B] overflow-x-auto">
+                      {"[Fila Base]: 1 cad, saltar 2 pts, (1 pb, 3 cad, 1 pb) en el sig pt."}
+                      <br />
+                      {"[Fila 2]: 3 cad, girar, 3 pa en cada arco de cadeneta hasta el final."}
+                      <br />
+                      {"[Repetición]: Alternar vueltas 1 y 2 hasta alcanzar la longitud deseada."}
+                    </div>
+                    <p className="text-[10px] text-[#795548]">
+                      💡 Puedes subir el PDF o imagen de tu patrón en la pestaña <strong>Proyectos & Patrones</strong>.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* Cronómetro Universal */}
               <div className="rounded-2xl border-3 border-[#3A2E2B] bg-[#F4EEDC] p-4 text-center space-y-3">

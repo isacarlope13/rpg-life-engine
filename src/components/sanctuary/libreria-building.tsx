@@ -81,6 +81,7 @@ export function LibreriaBuilding({
   const [newTotalPages, setNewTotalPages] = useState(250);
   const [newCategory, setNewCategory] = useState("No Ficción / Desarrollo");
   const [newPrice, setNewPrice] = useState(45000);
+  const [isSearchingMetadata, setIsSearchingMetadata] = useState(false);
 
   // Motor Universal de Sesiones
   const {
@@ -234,6 +235,53 @@ export function LibreriaBuilding({
         type: "error",
         message: "No se pudo catalogar el libro.",
       });
+    }
+  };
+
+  const handleSearchMetadata = async () => {
+    if (!newTitle.trim()) {
+      setNotification({
+        type: "warning",
+        message: "Escribe el título o ISBN del libro para buscar sus metadatos.",
+      });
+      return;
+    }
+    setIsSearchingMetadata(true);
+    triggerHaptic("medium");
+    try {
+      const res = await fetch("/api/shortcuts/skill-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "extract_book_specs",
+          raw_query: newTitle.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data && data.extracted_specs) {
+        const specs = data.extracted_specs;
+        if (specs.title) setNewTitle(specs.title);
+        if (specs.author) setNewAuthor(specs.author);
+        if (specs.total_pages) setNewTotalPages(specs.total_pages);
+        if (specs.category) setNewCategory(specs.category);
+        triggerHaptic("success");
+        setNotification({
+          type: "success",
+          message: `✨ Metadatos encontrados: "${specs.title}" por ${specs.author} (${specs.total_pages} págs).`,
+        });
+      } else {
+        setNotification({
+          type: "warning",
+          message: "No se encontraron metadatos exactos. Puedes completarlos manualmente.",
+        });
+      }
+    } catch {
+      setNotification({
+        type: "error",
+        message: "Error al consultar metadatos del libro.",
+      });
+    } finally {
+      setIsSearchingMetadata(false);
     }
   };
 
@@ -610,14 +658,25 @@ export function LibreriaBuilding({
           {/* Formulario para agregar libro */}
           {isAddingBook && (
             <form onSubmit={handleCreateNewBook} className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_4px_0_#3A2E2B] space-y-3">
-              <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
-                Registrar Nuevo Libro en la Colección
-              </h4>
+              <div className="flex items-center justify-between border-b border-[#D8B48A]/40 pb-2">
+                <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+                  Registrar Nuevo Libro en la Colección
+                </h4>
+                <button
+                  type="button"
+                  disabled={isSearchingMetadata}
+                  onClick={handleSearchMetadata}
+                  className="inline-flex items-center gap-1 rounded-xl bg-[#E7D69C] px-2.5 py-1 text-[11px] font-black text-[#3A2E2B] shadow-[0_2px_0_#3A2E2B] hover:bg-[#F2E3B3] disabled:opacity-50 cursor-pointer"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  <span>{isSearchingMetadata ? "Buscando..." : "Buscar Metadatos ✨"}</span>
+                </button>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input
                   type="text"
                   required
-                  placeholder="Título del libro *"
+                  placeholder="Título o ISBN del libro *"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-1.5 text-xs font-bold text-[#3A2E2B] outline-none"
