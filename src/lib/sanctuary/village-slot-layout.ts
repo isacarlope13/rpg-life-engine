@@ -6,7 +6,10 @@
  * 2. Cuadrantes despejados por distritos con distancias mínimas garantizadas:
  *    |Delta X| >= 14% en misma fila, o |Delta Y| >= 18% en misma columna.
  * 3. Verificador matemático determinista de no-colisión.
+ * 4. Persistencia de distribución personalizada de edificios por usuario (Modo Edición).
  */
+
+import { safeLocalStorage } from "../storage-safe.ts";
 
 export interface MapCoordinates {
   x: number; // Porcentaje 0-100% horizontal
@@ -105,4 +108,112 @@ export function validateNoCollisions(
     hasCollisions: collisionPairs.length > 0,
     collisionPairs,
   };
+}
+
+export const STORAGE_KEY_CUSTOM_POSITIONS = "oakhaven_custom_building_positions_v1";
+
+export type CustomPositionsMap = Record<string, { x: number; y: number }>;
+
+/**
+ * Carga las coordenadas personalizadas del usuario desde safeLocalStorage.
+ */
+export function loadCustomVillageCoordinates(): CustomPositionsMap {
+  try {
+    const raw = safeLocalStorage.getItem(STORAGE_KEY_CUSTOM_POSITIONS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null) {
+        return parsed as CustomPositionsMap;
+      }
+    }
+  } catch {}
+  return {};
+}
+
+/**
+ * Guarda las coordenadas personalizadas en safeLocalStorage.
+ */
+export function saveCustomVillageCoordinates(coords: CustomPositionsMap): void {
+  try {
+    safeLocalStorage.setItem(STORAGE_KEY_CUSTOM_POSITIONS, JSON.stringify(coords));
+  } catch {}
+}
+
+/**
+ * Restablece las coordenadas personalizadas eliminando la clave de safeLocalStorage.
+ */
+export function resetCustomVillageCoordinates(): void {
+  try {
+    safeLocalStorage.removeItem(STORAGE_KEY_CUSTOM_POSITIONS);
+  } catch {}
+}
+
+/**
+ * Obtiene la coordenada efectiva de un edificio (personalizada si existe, o canónica optimizada).
+ */
+export function getEffectiveCoordinates(
+  buildingId: string,
+  customCoords?: CustomPositionsMap
+): MapCoordinates {
+  if (customCoords && customCoords[buildingId]) {
+    const custom = customCoords[buildingId];
+    const canonical = getOptimizedCoordinates(buildingId);
+    return {
+      x: custom.x,
+      y: custom.y,
+      row: canonical.row,
+      col: canonical.col,
+    };
+  }
+  return getOptimizedCoordinates(buildingId);
+}
+
+/**
+ * Valida si colocar un edificio en (targetX, targetY) generaría colisión con los otros edificios activos.
+ */
+export function validateBuildingPlacement(
+  buildingId: string,
+  targetX: number,
+  targetY: number,
+  activeBuildingIds: string[],
+  customCoords?: CustomPositionsMap,
+  minDeltaX = 13.5,
+  minDeltaY = 17.0
+): {
+  isValid: boolean;
+  collidingWith?: string;
+  dx?: number;
+  dy?: number;
+} {
+  // Limites del mapa (8% a 92% en X, 12% a 88% en Y para no salir del borde visual)
+  if (targetX < 8 || targetX > 92 || targetY < 12 || targetY > 88) {
+    return { isValid: false };
+  }
+
+  for (const otherId of activeBuildingIds) {
+    if (otherId === buildingId) continue;
+    // Ignorar alias del mismo edificio
+    if (
+      (buildingId === "banco" && otherId === "banco_oakhaven") ||
+      (buildingId === "banco_oakhaven" && otherId === "banco") ||
+      (buildingId === "invernadero" && otherId === "pabellon_gardening")
+    ) {
+      continue;
+    }
+
+    const otherCoord = getEffectiveCoordinates(otherId, customCoords);
+    const dx = Math.abs(targetX - otherCoord.x);
+    const dy = Math.abs(targetY - otherCoord.y);
+
+    if (dx < minDeltaX && dy < minDeltaY) {
+      return {
+        isValid: false,
+        collidingWith: otherId,
+        dx,
+        dy,
+      };
+    }
+  }
+
+  return { isValid: true };
 }

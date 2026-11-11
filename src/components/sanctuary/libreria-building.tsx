@@ -25,6 +25,7 @@ import {
 import type { ReadingBook, SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyProgress, CozyNotification, CozyCard } from "@/components/cozy/ui";
+import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
@@ -60,7 +61,7 @@ export function LibreriaBuilding({
   onClose,
 }: LibreriaBuildingProps) {
   // Pestañas del interior
-  const [activeTab, setActiveTab] = useState<"lectura" | "catalogo" | "citas" | "historial" | "evolucion">("lectura");
+  const [activeTab, setActiveTab] = useState<"lectura" | "catalogo" | "citas" | "historial" | "eldrin" | "evolucion">("lectura");
 
   // Estado de libro seleccionado y filtros
   const [selectedBookId, setSelectedBookId] = useState<string>(() => books[0]?.id || "");
@@ -296,19 +297,67 @@ export function LibreriaBuilding({
     }
   };
 
+  const stations: InteriorStationDefinition[] = [
+    {
+      id: "lectura",
+      name: "Sillón de Lectura & Cronómetro",
+      shortName: "Lectura Activa",
+      icon: "📖",
+      badge: isActive ? (isPaused ? "⏸️" : "⏱️") : undefined,
+      badgeVariant: isRunning ? "success" : "info",
+      hotkey: "1",
+      description: "Sillón orejero: cronómetro de lectura serena, contador de páginas y notas.",
+    },
+    {
+      id: "catalogo",
+      name: "Estantes & Catálogo de Libros",
+      shortName: "Catálogo",
+      icon: "📚",
+      badge: books.length,
+      hotkey: "2",
+      description: "Estantes de roble: libros activos, lectura pendiente y registro de tomos.",
+    },
+    {
+      id: "citas",
+      name: "Fichero de Citas & Extractos",
+      shortName: "Notas & Citas",
+      icon: "📜",
+      badge: sessionQuotes.length > 0 ? sessionQuotes.length : undefined,
+      hotkey: "3",
+      description: "Fichero de madera: captura de citas memorables, dictado y reflexiones.",
+    },
+    {
+      id: "historial",
+      name: "Archivo Histórico & Resúmenes",
+      shortName: "Historial",
+      icon: "🏛️",
+      badge: readingSessions.length > 0 ? readingSessions.length : undefined,
+      hotkey: "4",
+      description: "Bitácora histórica: tomos concluidos, páginas leídas y evolución visual.",
+    },
+    {
+      id: "eldrin",
+      name: "Despacho de Eldrin el Sabio",
+      shortName: "Consejo Eldrin",
+      icon: "🦉",
+      hotkey: "5",
+      description: "Diálogos de sabiduría literaria, sugerencias de lectura y misiones vecinales.",
+    },
+  ];
+
   return (
-    <BuildingInteriorShell
+    <LivingInteriorRoom
       buildingId="libreria"
       buildingName="La Librería & Archivo Antiguo"
       domain="reading"
       districtName="Distrito del Saber"
       icon="📚"
       tagline="Estantes de roble con historias vivas, citas memorables y progreso página a página."
-      playerLevel={playerLevel}
-      skillLevel={skillLevel}
-      totalGpEarned={totalGpEarned}
       resident={COZY_VILLAGE_RESIDENTS.find((r) => r.id === "eldrin")}
-      sessionsCount={readingSessions.length}
+      stations={stations}
+      activeStationId={activeTab}
+      onSelectStation={(id) => setActiveTab(id as typeof activeTab)}
+      onClose={onClose}
       activeSessionBanner={{
         isActive,
         isPaused,
@@ -316,52 +365,17 @@ export function LibreriaBuilding({
         label: activeBook ? `Leyendo "${activeBook.title}"` : "Lectura serena en curso",
         onViewSession: () => setActiveTab("lectura"),
       }}
-      specificMetrics={[
+      metrics={[
         { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Libros Activos", value: readingBooksCount },
         { label: "Páginas Leídas", value: totalPagesReadEver.toLocaleString("es-CO") },
         { label: "Libros Terminados", value: completedBooksCount },
       ]}
-      lastSessionSummary={
-        activeBook
-          ? `Continuar leyendo "${activeBook.title}" (pág. ${activeBook.pages_read || 0} de ${activeBook.total_pages || 250})`
-          : undefined
-      }
-      continueActionLabel="Continuar lectura"
-      onContinueLastSession={() => {
-        setActiveTab("lectura");
-        handleStartReading();
+      roomTheme={{
+        wallColor: "#22382E",
+        floorPattern: "wood",
+        ambientWarmth: "candlelight",
       }}
-      activeTab={activeTab}
-      tabs={[
-        { id: "lectura", label: "Lectura Activa", icon: <BookOpen className="h-3.5 w-3.5" /> },
-        {
-          id: "catalogo",
-          label: "Catálogo & Pendientes",
-          icon: <Layers className="h-3.5 w-3.5" />,
-          badge: books.length,
-        },
-        {
-          id: "evolucion",
-          label: "Evolución & Colección",
-          icon: <Sparkles className="h-3.5 w-3.5" />,
-          badge: progression.tierBadge,
-        },
-        {
-          id: "citas",
-          label: "Notas & Citas",
-          icon: <Quote className="h-3.5 w-3.5" />,
-          badge: sessionQuotes.length > 0 ? sessionQuotes.length : undefined,
-        },
-        {
-          id: "historial",
-          label: "Historial de Lectura",
-          icon: <History className="h-3.5 w-3.5" />,
-          badge: readingSessions.length > 0 ? readingSessions.length : undefined,
-        },
-      ]}
-      onTabChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-      onClose={onClose}
     >
       {/* NOTIFICACIÓN COZY */}
       {notification && (
@@ -927,6 +941,32 @@ export function LibreriaBuilding({
       )}
 
       {/* =======================================================================
+          ESTACIÓN 5: DESPACHO DE ELDRIN EL SABIO
+         ======================================================================= */}
+      {activeTab === "eldrin" && (
+        <div className="space-y-4">
+          <ResidentAssistantWidget
+            context={{
+              residentId: "eldrin",
+              buildingId: "libreria",
+              domain: "reading",
+              readingBooks: books,
+              recentSessions: readingSessions,
+            }}
+            onPrepareSession={(prepared) => {
+              if (prepared.resourceId) {
+                setSelectedBookId(prepared.resourceId);
+              }
+              if (prepared.metadata?.targetPages) {
+                setPagesReadInput(Number(prepared.metadata.targetPages));
+              }
+              setActiveTab("lectura");
+            }}
+          />
+        </div>
+      )}
+
+      {/* =======================================================================
           TAB 5: EVOLUCIÓN VISUAL & COLECCIONES DE LIBROS (FASE 9)
          ======================================================================= */}
       {activeTab === "evolucion" && (
@@ -935,6 +975,6 @@ export function LibreriaBuilding({
           buildingName="La Librería & Archivo Antiguo"
         />
       )}
-    </BuildingInteriorShell>
+    </LivingInteriorRoom>
   );
 }

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useUniversalSession, formatStopwatchTime } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
+import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
@@ -98,7 +99,7 @@ export function OfficeBuilding({
   const { session, isRunning, isPaused, isActive, formattedTime, startSession, pauseSession, resumeSession, resetSession } =
     useUniversalSession("work", "oficina");
 
-  const [activeTab, setActiveTab] = useState<"timer" | "projects" | "meetings" | "deliverables" | "evolucion">("timer");
+  const [activeTab, setActiveTab] = useState<"timer" | "projects" | "deliverables" | "metrics" | "aura" | "meetings" | "evolucion">("timer");
   const [sessionNotes, setSessionNotes] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("proj-1");
   const [manualDuration, setManualDuration] = useState(25);
@@ -223,43 +224,84 @@ export function OfficeBuilding({
     }
   };
 
+  const stations: InteriorStationDefinition[] = [
+    {
+      id: "timer",
+      name: "Escritorio de Foco & Pomodoro",
+      shortName: "Sprint Foco",
+      icon: "💻",
+      badge: isActive ? (isPaused ? "⏸️" : "⏱️") : undefined,
+      badgeVariant: isRunning ? "success" : "info",
+      hotkey: "1",
+      description: "Terminal de concentración: cronómetro Pomodoro (25/45/60 min), notas y entregables.",
+    },
+    {
+      id: "projects",
+      name: "Tablero Kanban de Proyectos",
+      shortName: "Proyectos",
+      icon: "📊",
+      badge: DEFAULT_PROJECTS.length,
+      hotkey: "2",
+      description: "Backlog ágil: proyectos estratégicos vs tareas operativas y barras de avance.",
+    },
+    {
+      id: "deliverables",
+      name: "Archivador de Entregables & Minutas",
+      shortName: "Entregables",
+      icon: "📁",
+      hotkey: "3",
+      description: "Registro formal de entregas, minutas de sincronización y bitácoras de avance.",
+    },
+    {
+      id: "metrics",
+      name: "Monitor de Productividad & Foco",
+      shortName: "Productividad",
+      icon: "📈",
+      hotkey: "4",
+      description: "Horas de foco semanal, consistencia y panel informativo de relación con ingresos.",
+    },
+    {
+      id: "aura",
+      name: "Rincón de Aura la Ágil",
+      shortName: "Estrategia",
+      icon: "🦊",
+      hotkey: "5",
+      description: "Priorización ágil de Eisenhower, mitigación de fatiga mental y foco sin sobrecarga.",
+    },
+  ];
+
   return (
-    <BuildingInteriorShell
+    <LivingInteriorRoom
       buildingId="oficina"
       buildingName="Torre de Gestión & Oficina"
       domain="work"
       districtName="Plaza & Gestión"
       icon="💼"
       tagline="Centro de mando ágil: sprints Pomodoro, backlog de proyectos, reuniones y entregables de alto impacto."
-      playerLevel={playerLevel}
-      skillLevel={skillLevel}
-      totalGpEarned={totalGpEarned}
       resident={COZY_VILLAGE_RESIDENTS.find((r) => r.id === "aura")}
-      specificMetrics={[
+      stations={stations}
+      activeStationId={activeTab}
+      onSelectStation={(id) => setActiveTab(id as typeof activeTab)}
+      onClose={onClose}
+      activeSessionBanner={{
+        isActive,
+        isPaused,
+        formattedTime,
+        label: activeProject
+          ? `Sprint activo en "${activeProject.name}"`
+          : "Sesión de oficina activa",
+        onViewSession: () => setActiveTab("timer"),
+      }}
+      metrics={[
         { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Proyectos Activos", value: DEFAULT_PROJECTS.length },
         { label: "Entregables", value: `${progression.creationsExhibition.length} concluidos` },
       ]}
-      lastSessionSummary={
-        activeProject
-          ? `Continuar sprint en "${activeProject.name}" (${activeProject.progressPercent}% completado)`
-          : undefined
-      }
-      continueActionLabel="Iniciar Sprint Pomodoro"
-      onContinueLastSession={() => {
-        setActiveTab("timer");
-        handleStartTimer(25);
+      roomTheme={{
+        wallColor: "#2A364F",
+        floorPattern: "wood",
+        ambientWarmth: "sunny",
       }}
-      activeTab={activeTab}
-      tabs={[
-        { id: "timer", label: "Sprints & Pomodoro", icon: <Clock className="h-3.5 w-3.5" /> },
-        { id: "projects", label: "Proyectos & Tareas", icon: <FolderGit2 className="h-3.5 w-3.5" />, badge: DEFAULT_PROJECTS.length },
-        { id: "evolucion", label: "Evolución & Hitos", icon: <Sparkles className="h-3.5 w-3.5" />, badge: progression.tierBadge },
-        { id: "meetings", label: "Reuniones & Minutas", icon: <Users2 className="h-3.5 w-3.5" /> },
-        { id: "deliverables", label: "Entregables & Registro", icon: <FileCheck2 className="h-3.5 w-3.5" /> },
-      ]}
-      onTabChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-      onClose={onClose}
     >
       {notification && (
         <div className="mb-4">
@@ -634,6 +676,116 @@ export function OfficeBuilding({
       )}
 
       {/* =======================================================================
+          ESTACIÓN 4: MONITOR DE PRODUCTIVIDAD & RELACIÓN INFORMATIVA CON INGRESOS
+         ======================================================================= */}
+      {activeTab === "metrics" && (
+        <div className="space-y-4">
+          <div className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_4px_0_#3A2E2B] space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
+              <div>
+                <span className="text-[10px] font-black uppercase text-[#795548]">
+                  Métricas de Desempeño
+                </span>
+                <h4 className="text-sm font-black text-[#3A2E2B]">
+                  Foco Estratégico & Consistencia Profesional
+                </h4>
+              </div>
+              <span className="text-xs font-black text-[#314C3C] bg-[#C4DC9C] px-3 py-1 rounded-xl border border-[#314C3C]">
+                Nivel {skillLevel} de Gestión
+              </span>
+            </div>
+
+            {/* Cuadrícula de KPIs de foco */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-4 text-center space-y-1">
+                <span className="text-[10px] font-bold text-[#795548] uppercase block">
+                  Horas de Foco Estimadas
+                </span>
+                <span className="text-xl font-black text-[#3A2E2B] font-mono">
+                  8.5 hrs
+                </span>
+                <span className="text-[10px] text-[#314C3C] font-bold block">
+                  ↗ +1.5h vs semana previa
+                </span>
+              </div>
+
+              <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-4 text-center space-y-1">
+                <span className="text-[10px] font-bold text-[#795548] uppercase block">
+                  Sprints Pomodoro
+                </span>
+                <span className="text-xl font-black text-[#3A2E2B] font-mono">
+                  17 bloques
+                </span>
+                <span className="text-[10px] text-[#795548] font-bold block">
+                  Promedio de 25 min/bloque
+                </span>
+              </div>
+
+              <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-4 text-center space-y-1">
+                <span className="text-[10px] font-bold text-[#795548] uppercase block">
+                  GP Forjados en Oficina
+                </span>
+                <span className="text-xl font-black text-[#314C3C] font-mono">
+                  +{totalGpEarned.toLocaleString("es-CO")} GP
+                </span>
+                <span className="text-[10px] text-[#795548] font-bold block">
+                  Recompensas por disciplina
+                </span>
+              </div>
+            </div>
+
+            {/* BANNER ÉTICO DE OAKHAVEN: RELACIÓN INFORMATIVA CON INGRESOS */}
+            <div className="rounded-2xl border-2 border-[#D4AF37] bg-[#FFF8E7] p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">⚖️</span>
+                <h5 className="text-xs font-black text-[#5C4033] uppercase tracking-wide">
+                  Relación Informativa con Ingresos Reales
+                </h5>
+              </div>
+              <p className="text-xs text-[#5C4033] leading-relaxed">
+                El trabajo en tus proyectos estratégicos incrementa tu capital profesional, habilidad y enfoque.
+              </p>
+              <div className="rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF8] p-3 text-xs text-[#795548] space-y-1">
+                <span className="font-black text-[#3A2E2B] block">
+                  🛡️ Invariante Ética de RPG Life-Engine:
+                </span>
+                <p>
+                  Las sesiones de trabajo asalariadas forjan <strong>XP y GP del juego</strong> para el desarrollo de tu personaje, pero <strong>NO crean dinero fiat ni generan depósitos mágicos en tus cuentas en COP</strong>. Los ingresos de tu economía real se administran y auditan exclusivamente mediante transacciones reales verificadas en el <strong>Banco de OakHaven</strong>.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =======================================================================
+          ESTACIÓN 5: RINCÓN DE AURA LA ÁGIL
+         ======================================================================= */}
+      {activeTab === "aura" && (
+        <div className="space-y-4">
+          <ResidentAssistantWidget
+            context={{
+              residentId: "marcus_lead",
+              buildingId: "oficina",
+              domain: "work",
+              workProjects: DEFAULT_PROJECTS.map((p) => ({
+                id: p.id,
+                name: p.name,
+                progressPercent: p.progressPercent,
+                pendingTasks: [p.deliverable || "Sprint de trabajo enfocado"],
+              })),
+            }}
+            onPrepareSession={(prepared) => {
+              if (prepared.objective) {
+                setSessionNotes((prev) => (prev ? `${prev} • ${prepared.objective}` : prepared.objective));
+              }
+              setActiveTab("timer");
+            }}
+          />
+        </div>
+      )}
+
+      {/* =======================================================================
           TAB 5: EVOLUCIÓN VISUAL & HITOS ESTRATÉGICOS (FASE 9)
          ======================================================================= */}
       {activeTab === "evolucion" && (
@@ -642,6 +794,6 @@ export function OfficeBuilding({
           buildingName="Torre de Gestión & Oficina"
         />
       )}
-    </BuildingInteriorShell>
+    </LivingInteriorRoom>
   );
 }

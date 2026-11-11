@@ -205,6 +205,17 @@ export function filterVisibleBuildings(
 }
 
 /**
+ * Obtiene la lista de dominios de habilidad estrictamente activos para la generación de misiones.
+ * Excluye explícitamente dominios pausados o archivados para no saturar al usuario ni inducir culpa.
+ */
+export function getActiveSkillDomains(config: VillageWorldConfig): SkillDomain[] {
+  return ALL_SKILL_DOMAINS.filter((dom) => {
+    const pref = config.skills[dom];
+    return pref ? pref.status === "active" : true;
+  });
+}
+
+/**
  * Obtiene métricas del estado del mundo del usuario (activas, pausadas, archivadas).
  */
 export function getSkillLifecycleMetrics(config: VillageWorldConfig): {

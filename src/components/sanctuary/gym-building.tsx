@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import type { SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
+import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
+import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 import { CozyButton, CozyCard } from "@/components/cozy/ui";
@@ -114,6 +116,7 @@ export function GymBuilding({
     elapsedSeconds,
     formattedTime,
     isActive,
+    isRunning,
     isPaused,
     prepareSession,
     startSession,
@@ -346,20 +349,73 @@ export function GymBuilding({
 
   const activeRoutine = GYM_ROUTINES_CATALOG[selectedRoutineKey];
 
+  const stations: InteriorStationDefinition[] = [
+    {
+      id: "session",
+      name: "Sala de Fuerza & Cronómetro",
+      shortName: "Entrenamiento",
+      icon: "🏋️",
+      badge: isActive ? (isPaused ? "⏸️" : "⏱️") : undefined,
+      badgeVariant: isRunning ? "success" : "info",
+      hotkey: "1",
+      description: "Área de pesas: cronómetro de series, descansos, repeticiones y control de hidratación.",
+    },
+    {
+      id: "routines",
+      name: "Pizarra de Rutinas & Ejercicios",
+      shortName: "Rutinas",
+      icon: "📋",
+      hotkey: "2",
+      description: "Planes de entrenamiento: Push/Pull/Legs, Hipertrofia, Calistenia y series recomendadas.",
+    },
+    {
+      id: "resources",
+      name: "Guía Técnica & Escala RPE",
+      shortName: "Guía & RPE",
+      icon: "📊",
+      hotkey: "3",
+      description: "Escala de esfuerzo percibido, técnica limpia, respiración y sobrecarga progresiva.",
+    },
+    {
+      id: "history",
+      name: "Historial de Tonelaje & Logros",
+      shortName: "Historial",
+      icon: "🏆",
+      badge: sportsSessions.length,
+      hotkey: "4",
+      description: "Bitácora de entrenamientos: volumen total levantado, sesiones y GP forjados.",
+    },
+    {
+      id: "boran",
+      name: "Rincón de Boran el Guardián",
+      shortName: "Consejo Boran",
+      icon: "🦡",
+      hotkey: "5",
+      description: "Asesoría de fuerza de Boran el Tejón, calentamiento articular y descanso consciente.",
+    },
+  ];
+
   return (
-    <BuildingInteriorShell
+    <LivingInteriorRoom
       buildingId="gimnasio"
       buildingName="Gimnasio de Fuerza & Resistencia"
       domain="sports"
       districtName="Naturaleza & Vitalidad"
       icon="🏋️"
       tagline="Entrenamiento Funcional, Sobrecarga Progresiva & Fortaleza Corporal"
-      playerLevel={playerLevel}
-      skillLevel={skillLevel}
-      totalGpEarned={totalGpEarned}
       resident={brunoResident}
-      sessionsCount={sportsSessions.length}
-      specificMetrics={[
+      stations={stations}
+      activeStationId={activeTab}
+      onSelectStation={(id) => setActiveTab(id)}
+      onClose={onClose}
+      activeSessionBanner={{
+        isActive,
+        isPaused,
+        formattedTime,
+        label: `${activeRoutine.name} • ${selectedExerciseName}`,
+        onViewSession: () => setActiveTab("session"),
+      }}
+      metrics={[
         { label: "Entrenamientos", value: sportsSessions.length, icon: "🏋️" },
         { label: "Tiempo Activo", value: `${totalMinutes} min`, icon: "⏱️" },
         {
@@ -369,39 +425,11 @@ export function GymBuilding({
         },
         { label: "Hidratación", value: `${waterGlasses} vasos`, icon: "💧" },
       ]}
-      activeSessionBanner={{
-        isActive,
-        isPaused,
-        formattedTime,
-        label: `${activeRoutine.name} • ${selectedExerciseName}`,
-        onViewSession: () => setActiveTab("session"),
+      roomTheme={{
+        wallColor: "#3B2D26",
+        floorPattern: "wood",
+        ambientWarmth: "fireplace",
       }}
-      activeTab={activeTab}
-      tabs={[
-        {
-          id: "session",
-          label: "Entrenamiento & Esfuerzo",
-          icon: <Dumbbell className="h-4 w-4" />,
-        },
-        {
-          id: "routines",
-          label: "Rutinas & Ejercicios",
-          icon: <HeartPulse className="h-4 w-4" />,
-        },
-        {
-          id: "resources",
-          label: "Guía & RPE",
-          icon: <BookOpen className="h-4 w-4" />,
-        },
-        {
-          id: "history",
-          label: "Historial & Tonelaje",
-          icon: <Calendar className="h-4 w-4" />,
-          badge: sportsSessions.length,
-        },
-      ]}
-      onTabChange={setActiveTab}
-      onClose={onClose}
     >
       {/* =========================================================================
           TAB 1: ENTRENAMIENTO & ESFUERZO ACTIVO
@@ -1119,6 +1147,24 @@ export function GymBuilding({
           </div>
         </div>
       )}
-    </BuildingInteriorShell>
+      {/* =========================================================================
+          ESTACIÓN 5: RINCÓN DE BORAN EL GUARDIÁN
+         ========================================================================= */}
+      {activeTab === "boran" && (
+        <div className="space-y-4">
+          <ResidentAssistantWidget
+            context={{
+              residentId: "bruno",
+              buildingId: "gimnasio",
+              domain: "sports",
+              recentSessions: sportsSessions,
+            }}
+            onPrepareSession={(prepared) => {
+              setActiveTab("session");
+            }}
+          />
+        </div>
+      )}
+    </LivingInteriorRoom>
   );
 }

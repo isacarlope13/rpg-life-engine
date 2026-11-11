@@ -36,6 +36,7 @@ import {
   Clock,
 } from "lucide-react";
 import type { FinancialMovementRecord, DebtStrategy } from "@/types/rpg";
+import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 import {
@@ -410,20 +411,68 @@ export function BankBuilding({
     }
   };
 
+  const stations: InteriorStationDefinition[] = [
+    {
+      id: "accounts",
+      name: "Ventanilla de Tesorería & Cuentas",
+      shortName: "Cuentas COP",
+      icon: "🏦",
+      badge: `$${totalConsolidatedCop.toLocaleString("es-CO")}`,
+      hotkey: "1",
+      description: "Saldos bancarios reales (Nu, Nequi), libro mayor y transferencias soberanas.",
+    },
+    {
+      id: "calendar",
+      name: "Libro Quincenal & Flujo de Caja",
+      shortName: "Quincenas 3.9",
+      icon: "📅",
+      badge: cashflowPlan.freeMoneyCop === 0 ? "Alerta" : undefined,
+      badgeVariant: "warning",
+      hotkey: "2",
+      description: "Cálculo determinista: ingresos fijos, obligaciones comprometidas y margen libre.",
+    },
+    {
+      id: "debts",
+      name: "Muro de Batalla contra Deudas (Bosses)",
+      shortName: "Debt Bosses",
+      icon: "⚔️",
+      badge: debts.filter((d) => d.status === "vencida").length || undefined,
+      badgeVariant: "warning",
+      hotkey: "3",
+      description: "Simulación matemática avalancha vs bola de nieve, abonos a capital y acuerdos.",
+    },
+    {
+      id: "wishlist",
+      name: "Bóveda Real & Wishlist Dual",
+      shortName: "Bóveda & Wishlist",
+      icon: "🎁",
+      hotkey: "4",
+      description: "Wishlist con doble candado (días de enfriamiento + saldo real libre) y reservas GP.",
+    },
+    {
+      id: "advisor",
+      name: "Despacho de Silas Vance",
+      shortName: "Consejo Silas",
+      icon: "🦉",
+      hotkey: "5",
+      description: "Guardián Financiero HITL Nivel 3: diagnósticos objetivos y cero transferencias autónomas.",
+    },
+  ];
+
   return (
-    <BuildingInteriorShell
+    <LivingInteriorRoom
       buildingId="banco_oakhaven"
       buildingName="Banco de OakHaven & Real Tesorería"
       domain="work"
       districtName="Plaza Central & Tesorería"
       icon="🏦"
       tagline="Financial & Life Intelligence 3.9 — Planificador de Quincenas, Deudas Reales y Bienestar"
-      playerLevel={playerLevel}
-      skillLevel={skillLevel}
-      totalGpEarned={totalGpEarned}
       resident={silasResident}
-      sessionsCount={movements.length}
-      specificMetrics={[
+      stations={stations}
+      activeStationId={activeTab === "transactions" ? "accounts" : activeTab === "analytics" ? "calendar" : activeTab}
+      onSelectStation={(id) => setActiveTab(id)}
+      onClose={onClose}
+      metrics={[
         {
           label: "Liquidez Declarada",
           value: `$${totalConsolidatedCop.toLocaleString("es-CO")}`,
@@ -445,50 +494,11 @@ export function BankBuilding({
           icon: "⚔️",
         },
       ]}
-      activeTab={activeTab}
-      tabs={[
-        {
-          id: "calendar",
-          label: "Quincenas 3.9",
-          icon: <Calendar className="h-4 w-4" />,
-          badge: cashflowPlan.freeMoneyCop === 0 ? "Alerta" : undefined,
-        },
-        {
-          id: "debts",
-          label: "Deudas & Simulador",
-          icon: <Swords className="h-4 w-4" />,
-          badge: debts.filter((d) => d.status === "vencida").length || undefined,
-        },
-        {
-          id: "advisor",
-          label: "Silas & Negociación",
-          icon: <ShieldAlert className="h-4 w-4" />,
-        },
-        {
-          id: "wishlist",
-          label: "Wishlist Dual",
-          icon: <ShoppingBag className="h-4 w-4" />,
-        },
-        {
-          id: "accounts",
-          label: "Cuentas & Tesoro",
-          icon: <Landmark className="h-4 w-4" />,
-          badge: accounts.length,
-        },
-        {
-          id: "transactions",
-          label: "Libro Contable",
-          icon: <BookOpen className="h-4 w-4" />,
-          badge: movements.length,
-        },
-        {
-          id: "rpg_vault",
-          label: "Economía Dual & GP",
-          icon: <Coins className="h-4 w-4" />,
-        },
-      ]}
-      onTabChange={setActiveTab}
-      onClose={onClose}
+      roomTheme={{
+        wallColor: "#3D2B1F",
+        floorPattern: "stone",
+        ambientWarmth: "candlelight",
+      }}
     >
       {/* NOTIFICACIÓN FLOTANTE */}
       {notification && (
@@ -1653,6 +1663,6 @@ export function BankBuilding({
           </div>
         </div>
       )}
-    </BuildingInteriorShell>
+    </LivingInteriorRoom>
   );
 }

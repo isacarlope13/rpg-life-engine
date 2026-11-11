@@ -12,6 +12,7 @@ interface VillagePixelBuildingProps {
   resident?: VillageResident;
   isHovered: boolean;
   isSelected?: boolean;
+  isSessionActive?: boolean;
   onInspect: () => void;
   onEnter: () => void;
   onSelectResident?: (resident: VillageResident) => void;
@@ -21,6 +22,7 @@ interface VillagePixelBuildingProps {
  * EDIFICIOS PIXEL ART DE OAKHAVEN (FASE 4.0 LIVING WORLD & DESATURATION)
  * Arquitectura visual limpia sin solapamientos ni etiquetas permanentes truncadas.
  * Muestra información completa al seleccionar o posar el cursor, respetando movimiento reducido.
+ * Reacciona en tiempo real a sesiones activas encendiendo sus luces y faroles sin alterar GP/XP.
  */
 export function VillagePixelBuilding({
   building,
@@ -29,6 +31,7 @@ export function VillagePixelBuilding({
   resident,
   isHovered,
   isSelected = false,
+  isSessionActive = false,
   onInspect,
   onEnter,
   onSelectResident,
@@ -113,25 +116,33 @@ export function VillagePixelBuilding({
           isHovered || isSelected ? "-translate-y-2 scale-105" : ""
         } ${isSelected ? "ring-4 ring-[#FDDA24] ring-offset-2 rounded-3xl" : ""}`}
       >
-        {/* Luz Cálida / Beacon Sutil de Actividad Pendiente */}
-        {pending.hasPending && (
+        {/* Luz Cálida / Beacon Sutil de Actividad Pendiente o Sesión Activa */}
+        {isSessionActive ? (
+          <span
+            className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-full border-2 border-[#3A2E2B] bg-[#FDDA24] px-2 py-0.5 text-[8px] font-black text-[#1A2B20] shadow-[0_2px_0_#3A2E2B] animate-pulse whitespace-nowrap"
+            title="Sesión en curso en este edificio"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-ping" />
+            <span>⏱️ En Sesión</span>
+          </span>
+        ) : pending.hasPending ? (
           <span
             className="absolute -top-1 -right-1 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 border border-[#3A2E2B] text-[8px] shadow-sm animate-pulse"
             title={pending.label || "Actividad disponible"}
           >
             ⚡
           </span>
-        )}
+        ) : null}
 
-        {/* Chimenea o Cúpula de Ventilación */}
+        {/* Chimenea o Cúpula de Ventilación con Humo Cozy */}
         {isGreenhouse ? (
           <div className="absolute top-1 left-6 z-0 flex flex-col items-center">
-            <span className="text-[10px] opacity-75">🌱</span>
+            <span className={`text-[10px] ${isSessionActive ? "animate-bounce" : "opacity-75"}`}>🌱</span>
             <div className="w-4 h-4 bg-[#4E6E58] border-2 border-[#3A2E2B] rounded-full shadow-sm" />
           </div>
         ) : (
           <div className="absolute top-1 left-4 z-0 flex flex-col items-center">
-            <span className="text-[10px] opacity-75">💭</span>
+            <span className={`text-[10px] ${isSessionActive ? "animate-bounce text-amber-200" : "opacity-75"}`}>💭</span>
             <div className="w-3.5 h-6 bg-[#6E4B38] border-2 border-[#3A2E2B] rounded-t-sm shadow-sm" />
           </div>
         )}
@@ -213,24 +224,36 @@ export function VillagePixelBuilding({
             <div className="flex items-center justify-between px-1 pt-1">
               {isGreenhouse ? (
                 <div
-                  className="flex h-5 w-6 items-center justify-center rounded-lg border-2 border-[#3A2E2B] bg-[#A7D7B5] shadow-inner text-xs"
-                  title="Plantas interiores"
+                  className={`flex h-5 w-6 items-center justify-center rounded-lg border-2 border-[#3A2E2B] transition-all text-xs ${
+                    isSessionActive
+                      ? "bg-[#C4E8C2] shadow-[0_0_12px_rgba(196,232,194,0.9)] animate-pulse"
+                      : "bg-[#A7D7B5] shadow-inner"
+                  }`}
+                  title={isSessionActive ? "Invernadero con sesión botánica activa" : "Plantas interiores"}
                 >
                   <span>🌿</span>
                 </div>
               ) : isBank ? (
                 <div
-                  className="flex h-5 w-6 items-center justify-center rounded-lg border-2 border-[#3A2E2B] bg-[#F9E79F] shadow-inner text-xs"
-                  title="Ventanilla del Banco"
+                  className={`flex h-5 w-6 items-center justify-center rounded-lg border-2 border-[#3A2E2B] transition-all text-xs ${
+                    isSessionActive
+                      ? "bg-[#FFF176] shadow-[0_0_12px_rgba(255,241,118,0.9)] animate-pulse"
+                      : "bg-[#F9E79F] shadow-inner"
+                  }`}
+                  title={isSessionActive ? "Bóveda y asesoría activa con Silas Vance" : "Ventanilla del Banco"}
                 >
                   <span>🪙</span>
                 </div>
               ) : (
                 <div
-                  className={`flex h-5 w-5 items-center justify-center rounded-lg border-2 border-[#3A2E2B] shadow-inner ${
-                    pending.hasPending ? "bg-[#FFF176]" : "bg-[#FFEAA7]"
+                  className={`flex h-5 w-5 items-center justify-center rounded-lg border-2 border-[#3A2E2B] transition-all ${
+                    isSessionActive
+                      ? "bg-[#FFE082] shadow-[0_0_12px_rgba(255,224,130,0.95)] animate-pulse"
+                      : pending.hasPending
+                      ? "bg-[#FFF176] shadow-inner"
+                      : "bg-[#FFEAA7] shadow-inner"
                   }`}
-                  title="Taller iluminado"
+                  title={isSessionActive ? "Luz cálida: Sesión de trabajo activa" : "Taller iluminado"}
                 >
                   <div className="h-full w-0.5 bg-[#3A2E2B]/40" />
                 </div>
@@ -282,8 +305,10 @@ export function VillagePixelBuilding({
                 onSelectResident(resident);
               }
             }}
-            className="absolute -bottom-1 -right-2 z-30 flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#3A2E2B] bg-[#FFFDF8] text-sm shadow-[0_2px_0_#3A2E2B] hover:scale-125 transition-transform"
-            title={`Hablar con ${resident.name} (${resident.species})`}
+            className={`absolute -bottom-1 -right-2 z-30 flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#3A2E2B] bg-[#FFFDF8] text-sm shadow-[0_2px_0_#3A2E2B] hover:scale-125 transition-transform ${
+              isSessionActive ? "ring-2 ring-amber-400 animate-bounce" : ""
+            }`}
+            title={`Hablar con ${resident.name} (${resident.species})${isSessionActive ? " — ¡Acompañándote en tu sesión!" : ""}`}
           >
             {resident.avatar}
           </span>

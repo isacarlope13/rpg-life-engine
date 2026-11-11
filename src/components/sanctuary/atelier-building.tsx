@@ -21,6 +21,7 @@ import {
 import type { KnittingProject, SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyProgress, CozyNotification } from "@/components/cozy/ui";
+import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
@@ -53,7 +54,7 @@ export function AtelierBuilding({
   onSubmitDirectSkillSession,
   onClose,
 }: AtelierBuildingProps) {
-  const [activeTab, setActiveTab] = useState<"taller" | "proyectos" | "evolucion" | "materiales" | "galeria">("taller");
+  const [activeTab, setActiveTab] = useState<"taller" | "patrones" | "materiales" | "proyectos" | "clara" | "evolucion" | "galeria">("taller");
 
   // Proyecto seleccionado
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
@@ -184,19 +185,65 @@ export function AtelierBuilding({
     }
   };
 
+  const stations: InteriorStationDefinition[] = [
+    {
+      id: "taller",
+      name: "Mesa de Tejido & Telar",
+      shortName: "Telar Activo",
+      icon: "🧶",
+      badge: isActive ? (isPaused ? "⏸️" : "⏱️") : undefined,
+      badgeVariant: isRunning ? "success" : "info",
+      hotkey: "1",
+      description: "Mesa de trabajo: cronómetro de bastidor, contador táctil gigante de vueltas y notas.",
+    },
+    {
+      id: "patrones",
+      name: "Atril de Patrones & Guías",
+      shortName: "Patrones",
+      icon: "📜",
+      hotkey: "2",
+      description: "Diagramas gráficos de puntadas, instrucciones de lazada y paso a paso vuelta a vuelta.",
+    },
+    {
+      id: "materiales",
+      name: "Cofre de Madejas & Fibras",
+      shortName: "Lanas & Insumos",
+      icon: "🗄️",
+      hotkey: "3",
+      description: "Inventario de lanas nobles, calibres (DK, Fingering, Aran), composición y stock.",
+    },
+    {
+      id: "proyectos",
+      name: "Muro de Proyectos & Obras",
+      shortName: "Proyectos",
+      icon: "🧵",
+      badge: projects.length,
+      hotkey: "4",
+      description: "Catálogo de proyectos activos, montaje de nuevos puntos e historial de piezas terminadas.",
+    },
+    {
+      id: "clara",
+      name: "Rincón de Clara",
+      shortName: "Consejo Artesanal",
+      icon: "🐰",
+      hotkey: "5",
+      description: "Sabiduría artesanal de Clara la Liebre, calibración de tensión y misiones vecinales.",
+    },
+  ];
+
   return (
-    <BuildingInteriorShell
+    <LivingInteriorRoom
       buildingId="atelier"
       buildingName="El Atelier de Hilados & Textil"
       domain="knitting"
       districtName="Artes & Oficios"
       icon="🧶"
       tagline="Cestas de lana noble, telares ritmados y paciencia que forja prendas únicas punto a punto."
-      playerLevel={playerLevel}
-      skillLevel={skillLevel}
-      totalGpEarned={totalGpEarned}
       resident={COZY_VILLAGE_RESIDENTS.find((r) => r.id === "clara")}
-      sessionsCount={knittingSessions.length}
+      stations={stations}
+      activeStationId={activeTab}
+      onSelectStation={(id) => setActiveTab(id as typeof activeTab)}
+      onClose={onClose}
       activeSessionBanner={{
         isActive,
         isPaused,
@@ -206,32 +253,17 @@ export function AtelierBuilding({
           : "Sesión de telar activa",
         onViewSession: () => setActiveTab("taller"),
       }}
-      specificMetrics={[
+      metrics={[
         { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Proyectos en Curso", value: projects.length },
         { label: "Vueltas Tejidas", value: totalCompletedRows.toLocaleString("es-CO") },
         { label: "Creaciones Listas", value: progression.creationsExhibition.length },
       ]}
-      lastSessionSummary={
-        activeProject
-          ? `Continuar "${activeProject.name}" (vuelta ${activeProject.completed_rows || 0} de ${activeProject.total_rows_target || 60})`
-          : undefined
-      }
-      continueActionLabel="Reanudar tejido"
-      onContinueLastSession={() => {
-        setActiveTab("taller");
-        handleStartSession();
+      roomTheme={{
+        wallColor: "#5C381E",
+        floorPattern: "wood",
+        ambientWarmth: "fireplace",
       }}
-      activeTab={activeTab}
-      tabs={[
-        { id: "taller", label: "Telar Activo", icon: <Scissors className="h-3.5 w-3.5" /> },
-        { id: "proyectos", label: "Proyectos & Patrones", icon: <Layers className="h-3.5 w-3.5" />, badge: projects.length },
-        { id: "evolucion", label: "Evolución & Creaciones", icon: <Sparkles className="h-3.5 w-3.5" />, badge: progression.tierBadge },
-        { id: "materiales", label: "Lanas & Materiales", icon: <BookOpen className="h-3.5 w-3.5" /> },
-        { id: "galeria", label: "Galería & Historial", icon: <ImageIcon className="h-3.5 w-3.5" />, badge: knittingSessions.length },
-      ]}
-      onTabChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-      onClose={onClose}
     >
       {notification && (
         <div className="mb-4">
@@ -742,6 +774,137 @@ export function AtelierBuilding({
       )}
 
       {/* =======================================================================
+          ESTACIÓN 2: ATRIL DE PATRONES & GUÍAS DE PUNTADAS
+         ======================================================================= */}
+      {activeTab === "patrones" && (
+        <div className="space-y-4">
+          <div className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_4px_0_#3A2E2B] space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-black uppercase text-[#795548]">
+                  Atril de Trabajo
+                </span>
+                <h4 className="text-sm font-black text-[#3A2E2B]">
+                  Guía Visual de Lazadas & Puntos
+                </h4>
+              </div>
+
+              {/* Selector de patrón interactivo */}
+              <select
+                value={activePatternName}
+                onChange={(e) => setActivePatternName(e.target.value)}
+                className="rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-1.5 text-xs font-bold text-[#3A2E2B] outline-none"
+              >
+                <option value="Patrón Gráfico V-Stitch">V-Stitch Textil (Calado)</option>
+                <option value="Granny Square Clásico">Granny Square de 4 Vueltas</option>
+                <option value="Punto Bobo / Santa Clara">Punto Bobo en Dos Agujas</option>
+                <option value="Espiral Amigurumi">Espiral Continua de Punto Bajo</option>
+              </select>
+            </div>
+
+            {/* Diagrama Visual SVG de Puntadas */}
+            <div className="rounded-2xl border-2 border-[#D8B48A] bg-[#FFFBF2] p-4 text-center space-y-3">
+              <span className="text-[10px] font-black text-[#795548] uppercase block">
+                Diagrama de Repetición Gráfica (Patrón de Bastidor)
+              </span>
+
+              <div className="flex items-center justify-center p-3 bg-[#F4EEDC] rounded-xl border border-[#D8B48A]">
+                <svg width="280" height="90" viewBox="0 0 280 90" className="overflow-visible">
+                  {/* Fila 1: Puntos base */}
+                  <g stroke="#8C6239" strokeWidth="2" strokeLinecap="round">
+                    <line x1="20" y1="70" x2="260" y2="70" strokeDasharray="6,4" />
+                    {[30, 60, 90, 120, 150, 180, 210, 240].map((cx, i) => (
+                      <circle key={i} cx={cx} cy="70" r="3" fill="#D8B48A" />
+                    ))}
+                  </g>
+                  {/* Fila 2: Lazadas en V */}
+                  <g stroke="#314C3C" strokeWidth="2.5" strokeLinecap="round" fill="none">
+                    <path d="M 30 70 L 45 35 L 60 70" />
+                    <path d="M 90 70 L 105 35 L 120 70" />
+                    <path d="M 150 70 L 165 35 L 180 70" />
+                    <path d="M 210 70 L 225 35 L 240 70" />
+                  </g>
+                  {/* Fila 3: Cadenetas superiores */}
+                  <g stroke="#C88973" strokeWidth="2" fill="none">
+                    <path d="M 45 35 Q 75 20, 105 35" strokeDasharray="4,3" />
+                    <path d="M 105 35 Q 135 20, 165 35" strokeDasharray="4,3" />
+                    <path d="M 165 35 Q 195 20, 225 35" strokeDasharray="4,3" />
+                  </g>
+                  {/* Destacado de vuelta activa */}
+                  <text x="140" y="15" textAnchor="middle" fill="#314C3C" fontSize="10" fontWeight="900">
+                    ▲ Vuelta de Repetición Activa ▲
+                  </text>
+                </svg>
+              </div>
+
+              <div className="font-mono bg-[#FFFDF8] p-3 rounded-xl border border-[#D8B48A] text-left text-xs text-[#3A2E2B] space-y-1">
+                <p className="font-bold text-[#795548] text-[11px]">Instrucción vuelta a vuelta:</p>
+                <p>• <strong>Vuelta 1:</strong> Montar número par de cadenetas + 2 de subida.</p>
+                <p>• <strong>Vuelta 2 (V-Stitch):</strong> Saltar 1 pt, tejer (1 pa, 1 cad, 1 pa) en el mismo espacio.</p>
+                <p>• <strong>Vuelta 3+:</strong> Repetir el motivo dentro de cada arco de cadeneta de la vuelta previa.</p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#D8B48A]/40">
+                <span className="text-xs font-bold text-[#795548]">
+                  ¿Completaste una vuelta de este patrón?
+                </span>
+                <CozyButton
+                  variant="forest"
+                  size="sm"
+                  onClick={() => {
+                    handleIncrementRows(1);
+                    setNotification({
+                      type: "success",
+                      message: `¡Vuelta registrada en el patrón "${activePatternName}"!`,
+                    });
+                  }}
+                  className="flex items-center gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Anotar +1 Vuelta al Proyecto Activo</span>
+                </CozyButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =======================================================================
+          ESTACIÓN 5: RINCÓN DE CLARA LA ARTESANA
+         ======================================================================= */}
+      {activeTab === "clara" && (
+        <div className="space-y-4">
+          <ResidentAssistantWidget
+            context={{
+              residentId: "clara",
+              buildingId: "atelier",
+              domain: "knitting",
+              knittingProjects: projects,
+              recentSessions: knittingSessions,
+            }}
+            onPrepareSession={(prepared) => {
+              if (prepared.resourceId) {
+                setSelectedProjectId(prepared.resourceId);
+              }
+              if (prepared.metadata?.targetRows) {
+                setSessionRows(Number(prepared.metadata.targetRows));
+              }
+              if (prepared.initialNotes) {
+                setStitchesNotes((prev) => (prev ? `${prev} • ${prepared.initialNotes}` : prepared.initialNotes || ""));
+              }
+              setActiveTab("taller");
+            }}
+            onApplyProposal={(prop) => {
+              if (prop.suggestedPayload?.suggestedRows) {
+                setSessionRows(Number(prop.suggestedPayload.suggestedRows));
+              }
+              setActiveTab("taller");
+            }}
+          />
+        </div>
+      )}
+
+      {/* =======================================================================
           TAB 5: EVOLUCIÓN VISUAL & EXPOSICIÓN DE CREACIONES (FASE 9)
          ======================================================================= */}
       {activeTab === "evolucion" && (
@@ -750,6 +913,6 @@ export function AtelierBuilding({
           buildingName="El Atelier de Hilados & Textil"
         />
       )}
-    </BuildingInteriorShell>
+    </LivingInteriorRoom>
   );
 }
