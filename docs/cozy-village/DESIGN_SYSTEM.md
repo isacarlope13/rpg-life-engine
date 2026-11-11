@@ -2,7 +2,7 @@
 ## Guía de Estilo, Tokens y Catálogo de Componentes Reutilizables
 
 **Proyecto:** RPG Life-Engine / Cozy Living Village (Valle de Oakhaven)  
-**Versión:** v1.0.0 (Design System)  
+**Versión:** v1.2.0 (Design System)  
 **Entorno:** Next.js 15, Tailwind CSS v4, TypeScript, React 19  
 
 ---
@@ -23,23 +23,35 @@ El **Cozy Pixel Design System** provee la identidad visual para la transformaci�
 | Token | Nombre | Código HEX | Rol y Uso Principal | Contraste |
 |---|---|:---:|---|:---:|
 | `forest` | **Forest** | `#314C3C` | Primario bosque. Botones principales, cabeceras y títulos. | Blanco / Crema |
-| `sage` | **Sage** | `#77936A` | Verde salvia. Badges de bienestar, acentos secundarios. | Blanco / Bark |
+| `sage` | **Sage** | `#77936A` | Verde salvia. Badges de bienestar, acentos secundarios y Tier 2. | Blanco / Bark |
 | `meadow` | **Meadow** | `#B8CCA0` | Verde pradera suave. Fondos resaltados y barras de progreso. | Bark |
-| `cream` | **Cream** | `#F4EEDC` | Fondo principal cálido del pueblo y de páginas completas. | Bark |
-| `wood` | **Wood** | `#D8B48A` | Madera clara. Marcos, botones secundarios y barras de título. | Bark |
+| `cream` | **Cream** | `#F4EEDC` | Fondo principal cálido del pueblo y de tarjetas Bento. | Bark |
+| `wood` | **Wood** | `#D8B48A` | Madera clara. Marcos, botones secundarios y Tier 1. | Bark |
 | `clay` | **Clay** | `#C88973` | Terracota. Alertas suaves, estados activos y micro-misiones. | Blanco |
 | `lake` | **Lake** | `#A9C7C7` | Azul lago sereno. Concentración, reflejos y estados de foco. | Bark |
-| `sunlight` | **Sunlight** | `#E7D69C` | Luz dorada. Monedas GP, estrellas, hitos y recompensas. | Bark |
+| `sunlight` | **Sunlight** | `#E7D69C` | Luz dorada. Monedas GP, estrellas, hitos, Tier 3 y maestría. | Bark |
 | `bark` | **Bark** | `#3A2E2B` | Corteza oscura. Borde pixel canónico y texto de alta legibilidad. | Fondo Crema |
 | `parchment` | **Parchment** | `#FFFDF8` | Blanco apergaminado. Tarjetas de lectura y modales. | Bark |
 
 ---
 
-## 3. CATÁLOGO DE COMPONENTES ATÓMICOS (`src/components/cozy/ui/`)
+## 3. PROGRESIÓN VISUAL DE TIERS EN EDIFICIOS
+
+Los edificios de Oakhaven evolucionan de acuerdo con las sesiones y el nivel del jugador:
+
+| Tier | Nombre | Icono | Borde & Acento | Decoración Distintiva |
+|:---:|---|:---:|---|---|
+| **Tier 1** | Cabaña Rústica | `🪵` | Borde `#5C4033`, Badge Wood | Humo de leña, cesta de materiales y mesa exterior. |
+| **Tier 2** | Taller Establecido | `🌿` | Borde 3px `#77936A`, Badge Sage | Toldo de lona artesanal, farol encendido y repisas. |
+| **Tier 3** | Santuario Maestro | `⭐` | Borde 4px `#E7D69C`, Ring Glow | Cúpula iluminada, vidrieras doradas y estandarte. |
+
+---
+
+## 4. CATÁLOGO DE COMPONENTES ATÓMICOS (`src/components/cozy/ui/`)
 
 ### 1. `CozyButton`
 Botón pixelado con relieve táctil y respuesta háptica PWA.
-* **Variantes:** `forest` (primario), `wood` (secundario), `clay` (alerta/cancelar), `sunlight` (oro/forjar), `sage` (bienestar), `ghost`.
+* **Variantes (100% Paleta Oficial):** `forest`, `wood`, `clay`, `sunlight`, `sage`, `lake`, `cream`, `ghost`.
 * **Tamaños:** `sm` (compacto), `md` (estándar), `lg` (llamado a la acción).
 * **Propiedades:** `icon`, `iconPosition`, `disableHaptic`, `disabled`.
 
@@ -80,17 +92,33 @@ Panel interactivo para sesiones de foco o habilidad con reloj digital monospace 
 
 ---
 
-## 4. PÁGINA DE DEMOSTRACIÓN INTERACTIVA
+## 5. COMPONENTES COMPUESTOS DE EXPERIENCIA
 
-Se ha habilitado la ruta:
-```
-/cozy/design-system
-```
-Permite explorar todos los tokens visuales, copiar códigos hexadecimales con un solo clic, interactuar con los botones, probar el temporizador de foco y abrir el modal accesible.
+### 1. `CozySoundscapeModal` (`src/components/cozy/cozy-soundscape-modal.tsx`)
+Selector de ambientación sonoro procedural basado en la **Web Audio API** nativa:
+* 5 presets: Silencio (`off`), Lluvia (`rain`), Fogón (`fireplace`), Brisa (`breeze`) y Campanas (`chimes`).
+* Control lineal de volumen (0 a 100%) con persistencia en `localStorage`.
+* Silencio garantizado por defecto hasta que el usuario decida activarlo.
+
+### 2. `VillageQuestsModal` (`src/components/cozy/village-quests-modal.tsx`)
+Diario Comunitario de Misiones Bento:
+* Presenta a los 8 residentes con medidor de amistad en corazones (`❤️🤍`).
+* Muestra títulos, descripciones y tiempos estimados de cada micro-misión.
+* Permite registrar avances canónicos directamente mediante un botón táctil con resiliencia offline.
 
 ---
 
-## 5. ACCESIBILIDAD & MOVIMIENTO REDUCIDO
+## 6. PÁGINA DE DEMOSTRACIÓN INTERACTIVA
+
+Se encuentra disponible en:
+```
+/cozy/design-system
+```
+Permite explorar todos los tokens visuales, copiar códigos hexadecimales con un solo clic, interactuar con los botones en todas sus variantes, probar el temporizador de foco y abrir el modal accesible.
+
+---
+
+## 7. ACCESIBILIDAD & MOVIMIENTO REDUCIDO
 
 * **WCAG 2.1 AA:** Todo texto garantiza una relación de contraste superior a 4.5:1 sobre sus fondos respectivos.
 * **`prefers-reduced-motion`:** Las utilidades en `src/app/globals.css` aseguran que ante la activación de movimiento reducido en el sistema operativo, las transiciones y animaciones se minimicen instantáneamente a `0.01ms`.

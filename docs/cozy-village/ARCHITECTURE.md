@@ -1,9 +1,9 @@
 # ARQUITECTURA DEL SISTEMA — COZY LIVING VILLAGE
 ## RPG Life-Engine 3.5.0
 **Documento Técnico:** `docs/cozy-village/ARCHITECTURE.md`  
-**Versión:** 1.0.0  
-**Fecha:** 10 de Noviembre de 2026  
-**Estado:** Propuesta de Arquitectura — Pendiente de Aprobación
+**Versión:** 1.2.0  
+**Fecha:** 11 de Noviembre de 2026  
+**Estado:** Implementado & Validado en Producción
 
 ---
 
@@ -15,8 +15,8 @@ Cozy Living Village es la evolución del RPG Life-Engine hacia un simulador pers
 1. **Separación Estricta entre Presentación y Dominio:** La estética Cozy y el pueblo pixel art representan visualmente el progreso real; no alteran fórmulas de GP, XP, niveles, racha ni reglas financieras.
 2. **Cero Economías Paralelas:** No existen "monedas del pueblo", "tokens de decoración" ni costes ocultos. Las recompensas se derivan de la bóveda presupuestaria existente mediante `/api/shortcuts/skill-session`.
 3. **Progresión Visual Determinista y Derivada:** Los niveles de los edificios (Tiers 1, 2 y 3), los trofeos interiores y las postales se calculan en memoria a partir del estado verificado del usuario (`EngineStateData`). Cero columnas o tablas redundantes en base de datos.
-4. **Resiliencia Local First y PWA:** La aplicación debe funcionar sin degradación ante micro-cortes de conectividad mediante encolamiento idempotente (`offline-sync.ts`).
-5. **Accesibilidad y Confort Sensorial:** Paisajes sonoros procedimentales nativos con Web Audio API (silenciados por defecto), soporte para `prefers-reduced-motion` y botón de "Modo Quieto".
+4. **Resiliencia Local First y PWA:** La aplicación funciona sin degradación ante micro-cortes de conectividad mediante encolamiento idempotente (`offline-sync.ts`) y registro en Service Worker.
+5. **Accesibilidad y Confort Sensorial:** Paisajes sonoros procedimentales nativos con Web Audio API (silenciados por defecto), soporte para `prefers-reduced-motion` y controles accesibles por teclado.
 
 ---
 
@@ -25,19 +25,21 @@ Cozy Living Village es la evolución del RPG Life-Engine hacia un simulador pers
 ```mermaid
 flowchart TD
     subgraph PRESENTATION["Capa de Presentación (Frontend Next.js 15 / React 19)"]
-        SHELL["Cozy Shell (Marco de Navegación & Header)"]
-        DASH["Bento Daily Dashboard (Métricas de Calma & Hábitos)"]
-        MAP["Village Renderer (Mapa Interactivo Oakhaven & Clima)"]
-        INTERIORS["Building Interiors (Atelier, Librería, Botánico, etc.)"]
-        DECOR["Interior Decorations Shelf (Trofeos & Mobiliario)"]
+        SHELL["Cozy Shell (Sidebar, Header & Soundscape Trigger)"]
+        DASH["Bento Daily Dashboard (Métricas, Hábitos & Micro-Misión Destacada)"]
+        MAP["Village Renderer (Mapa Interactivo Oakhaven & Fachadas Tiers 1-3)"]
+        INTERIORS["Building Interiors (Atelier, Librería, Botánico, Cocina, etc.)"]
+        DECOR["Interior Decorations Shelf (Trofeos & Mobiliario Cozy)"]
         SCRAP["Scrapbook Modal (Álbum de Postales de Recuerdos)"]
+        QUESTS_MODAL["Village Quests Modal (Diario de Misiones Comunitarias)"]
+        SOUND_MODAL["Cozy Soundscape Modal (Paisajes Sonoros Procedurales)"]
     end
 
     subgraph ADAPTERS["Capa de Adaptación & Sincronización (Local-First)"]
         SESS_ADAPTER["Session Adapter (useUniversalSession)"]
         RES_MGR["Resource Manager (useSkillResources)"]
         OFFLINE_Q["Offline Queue & Sync (offline-sync.ts)"]
-        SOUND_MGR["Cozy Soundscape (Web Audio API Procedural)"]
+        SOUND_ENGINE["Cozy Soundscape Engine (Web Audio API Procedural)"]
         TIER_ENGINE["Visual Progression Engine (village-tiers.ts)"]
     end
 
@@ -56,6 +58,9 @@ flowchart TD
 
     SHELL --> DASH
     SHELL --> MAP
+    SHELL --> SOUND_MODAL
+    DASH --> QUESTS_MODAL
+    MAP --> QUESTS_MODAL
     MAP --> INTERIORS
     INTERIORS --> DECOR
     SHELL --> SCRAP
@@ -63,8 +68,9 @@ flowchart TD
     INTERIORS --> SESS_ADAPTER
     INTERIORS --> RES_MGR
     MAP --> TIER_ENGINE
-    MAP --> SOUND_MGR
+    SOUND_MODAL --> SOUND_ENGINE
     SESS_ADAPTER --> OFFLINE_Q
+    QUESTS_MODAL --> OFFLINE_Q
 
     OFFLINE_Q --> SHORTCUTS_API
     SESS_ADAPTER --> SHORTCUTS_API
@@ -80,211 +86,53 @@ flowchart TD
 
 ## 3. Especificación de Componentes del Sistema
 
-### 3.1. Cozy Shell (`CozyShell`)
-* **Propósito:** Proveer el marco estructural compartido, la barra lateral estilo inventario RPG, el avatar interactivo del reino, el reloj circadiano en vivo y el alternador de vistas.
+### 3.1. Cozy Shell & Header Modular (`CozyHeader`, `CozySidebar`)
+* **Propósito:** Proveer el marco estructural compartido, la navegación semántica y accesos rápidos a utilidades globales.
 * **Componentes clave:**
-  - `CozySidebar`: Menú con navegación semántica: Inicio (`home`), Pueblo Vivo (`village`), Misiones (`quests`), Colecciones (`collections`), Residentes (`party`), Bitácora (`notes`) y Álbum (`scrapbook`).
-  - `CozyHeader`: Reloj digital, saldo visible de billetera GP y bóveda, selector de vista (Bento vs Pueblo) y acceso rápido al Álbum.
+  - `CozySidebar`: Menú inventario RPG con rutas a Inicio (`home`), Pueblo Vivo (`village`), Misiones (`quests`), Colecciones (`collections`), Residentes (`party`), Bitácora (`notes`) y Álbum (`scrapbook`).
+  - `CozyHeader`: Reloj circadiano digital, balances visibles de billetera y bóveda, indicador offline PWA con sync pill, acceso rápido al Álbum de Postales (`📷 Álbum`) y al selector de paisajes sonoros (`🎵 Audio`).
 
-### 3.2. Dashboard Diario (`BentoDailyDashboard`)
-* **Propósito:** Presentación de la jornada diaria en formato Bento sin estrés punitivo ni sobrecarga financiera.
+### 3.2. Dashboard Diario Bento (`BentoDailyDashboard`)
+* **Propósito:** Presentación de la jornada diaria en formato Bento modular sin estrés punitivo ni sobrecarga financiera.
 * **Secciones:**
-  - Resumen de racha y multiplicador de gracia.
-  - Cantero de Hábitos Vivos (estado de riego del día).
-  - Actividades y misiones activas recomendadas por el Consejo de Residentes.
-  - Citas inspiradoras de bienestar y balance de esfuerzo.
+  - **Estado del Reino (Översikt, 7 cols):** Racha de constancia, XP y desglose de billetera/bóveda.
+  - **Mini Previa del Pueblo (5 cols):** Coordenadas y acceso directo al mapa interactivo.
+  - **Micro-Misión Destacada de Oakhaven (12 cols, Novedad v1.2):** Tarea del día sugerida por el residente de turno con botón directo de guardado (`Registrar Avance`) y acceso al diario completo.
+  - **Registro de Misiones Diarias (7 cols) & Colecciones del Santuario (5 cols).**
+  - **Compañeros del Pueblo (12 cols):** Acceso a los 8 residentes asistentes.
+  - **Bitácora de Notas Rápidas (12 cols):** Almacenamiento local-first de recordatorios.
 
-### 3.3. Village Renderer (`CozyVillageMap`)
-* **Propósito:** Renderizar el plano topológico del Valle de Oakhaven con estética cozy pixel art.
-* **Responsabilidades:**
-  - Selector de distritos: Distrito del Saber (`saber`), Artes & Oficios (`artes`), Naturaleza (`naturaleza`) y Plaza Central (`plaza`).
-  - Atmósferas climáticas dinámicas (☀️ Día, 🌧️ Lluvia, 🍂 Otoño, 🌌 Noche) con adaptación de partículas CSS e iluminación de fachadas.
-  - Control de paisajes sonoros procedimentales nativos mediante `cozySoundscape`.
-  - Transición a pantalla completa y modal de interiores.
+### 3.3. Village Renderer & Progresión de Tiers (`CozyVillageMap`)
+* **Propósito:** Renderizar el plano topológico de Oakhaven con estética cozy pixel art y evolución de fachadas.
+* **Niveles Constructivos (Tiers):**
+  - **Tier 1 (Cabaña Rústica 🪵):** Borde de madera `#5C4033`, chimenea con humo suave y cesta de materiales básicos.
+  - **Tier 2 (Taller Establecido 🌿):** Borde verde salvia `#77936A`, toldo de lona artesanal y farol exterior cálido.
+  - **Tier 3 (Santuario Maestro ⭐):** Marco dorado reforzado `#E7D69C`, cúpula de maestría, vidrieras policromadas e iluminación nocturna.
+* **Herramientas de Mapa:**
+  - Filtros por distritos (`artes`, `saber`, `naturaleza`, `plaza`).
+  - Clima dinámico (`sunny`, `rain`, `autumn`, `night`).
+  - Botón directo para la Bitácora del Alcalde (`MayorsLedgerModal`) y el Diario de Misiones (`VillageQuestsModal`).
 
-### 3.4. Building Registry (`buildings-registry.ts`)
-* **Propósito:** Registro canónico desacoplado que asocia cada dominio de habilidad (`SkillDomain`) con su edificio, metadata visual, lore e interfaz correspondiente.
+### 3.4. Motor de Audio Procedural (`cozy-soundscape.ts`)
+* **Propósito:** Generar paisajes sonoros envolventes y relajantes sin archivos MP3 pesados, 100% offline y en tiempo real usando **Web Audio API**.
+* **Presets:**
+  - `off`: Silencio absoluto (por defecto).
+  - `rain`: Ruido rosa filtrado paso-bajo (`lowpass` a 800 Hz) que simula lluvia suave.
+  - `fireplace`: Ruido de baja frecuencia con chasquidos y brasas aleatorias.
+  - `breeze`: Ráfagas de viento moduladas por oscilador LFO (`0.15 Hz`).
+  - `chimes`: Campanas zen con notas pentatónicas afinadas (A4, B4, C#5, E5, F#5, A5).
 
-```typescript
-export interface SanctuaryBuildingDefinition {
-  id: string;
-  domain: SkillDomain;
-  name: string;
-  subtitle: string;
-  category: "artesania" | "intelecto" | "enfoque" | "maestria" | "bienestar";
-  badge: string;
-  pixelArtIcon: string;
-  route: string;
-  defaultMinutes: number;
-  lore: string;
-  specializedFeatures: string[];
-  colorTheme: {
-    bgMuted: string;
-    borderMuted: string;
-    accentSage: string;
-    goldText: string;
-  };
-}
-```
-
-### 3.5. Building Interiors (`BuildingInteriors`)
-* **Propósito:** Espacios especializados donde el usuario realiza y registra actividades reales. Cada edificio cuenta con un componente React dedicado e interactivo:
-  - `AtelierBuilding`: Contador de vueltas de tejido, cálculo fraccionario de proyecto y tipos de lana.
-  - `LibreriaBuilding`: Catálogo de libros, portadas, páginas leídas y frases célebres.
-  - `BibliotecaBuilding`: Deep Study 50/10, materias y repetición espaciada SM-2.
-  - `ClubPuzzlesBuilding`: Cronómetro WCA con retención de espacio, scrambles y Ao5/Ao12.
-  - `ObservatorioBuilding`: Deep work, minimización de distracciones y sincronización Notion.
-  - `BotanicalGardenBuilding`: Cantero de hábitos vivos regables y cuaderno de campo.
-  - `HikingOutpostBuilding`: Bitácora de senderos (km/desnivel), checklist de mochila y cronómetro de marcha.
-  - `KitchenBuilding`: Recetario consciente, tiempos de reposo y fermentación a fuego lento.
-
-### 3.6. Session Adapter (`useUniversalSession`)
-* **Propósito:** Conectar el cronómetro interactivo de cualquier edificio con el endpoint oficial `/api/shortcuts/skill-session` sin duplicación de lógica ni riesgo de desincronización.
-
-```typescript
-export interface UniversalSessionHookReturn {
-  session: UniversalSessionState | null;
-  isRunning: boolean;
-  isPaused: boolean;
-  isActive: boolean;
-  elapsedSeconds: number;
-  formattedTime: string;
-  elapsedMinutes: number;
-  startSession: (params?: Partial<StartSessionParams>) => void;
-  pauseSession: () => void;
-  resumeSession: () => void;
-  resetSession: () => void;
-  updateNotes: (notes: string) => void;
-  finishSession: (params?: FinishSessionParams) => Promise<unknown>;
-  submitting: boolean;
-}
-```
-
-### 3.7. Resource Manager (`useSkillResources`)
-* **Propósito:** Centralizar el acceso a colecciones y recursos por habilidad (libros en lectura, proyectos de tejido, arsenal de cubos Rubik, esquejes botánicos y recetas) proporcionando mutaciones optimistas y guardado seguro.
-
-### 3.8. Visual Progression Engine (`village-tiers.ts`)
-* **Propósito:** Calcular determinísticamente en memoria el Tier Visual del edificio (Tier 1 Cabaña Rústica, Tier 2 Taller Establecido, Tier 3 Santuario Maestro) y el estado desbloqueado/bloqueado del mobiliario interior a partir del esfuerzo comprobado.
-
-```typescript
-export interface BuildingVisualTier {
-  tierNumber: 1 | 2 | 3;
-  tierName: string;
-  badge: string;
-  facadeDescription: string;
-  decorations: string[];
-  nextMilestonePrompt?: string;
-  requiredSessions: number;
-}
-```
-
-### 3.9. Resident Assistant (`COZY_VILLAGE_RESIDENTS`)
-* **Propósito:** Dotar de personalidad y compañía a cada espacio mediante residentes asistentes que ofrecen retroalimentación contextual y micro-misiones no punitivas con confirmación explícita (Human-in-the-Loop).
+### 3.5. Diario de Misiones Comunitarias (`VillageQuestsModal`)
+* **Propósito:** Catálogo unificado con las 8 micro-misiones diarias de los residentes de Oakhaven.
+* **Funciones:**
+  - Medidor de afinidad en 5 corazones (`calculateAffinity`) calculado determinísticamente por sesiones realizadas.
+  - Botón `Registrar Avance` protegido por clave de idempotencia diaria.
+  - Enlaces directos a los interiores de cada gremio.
 
 ---
 
-## 4. Contratos de Datos y Tipos TypeScript
+## 4. Garantías de No Regresión e Invariantes
 
-### 4.1. Contrato de Trofeo de Mobiliario Interior
-```typescript
-export interface BuildingTrophyItem {
-  id: string;
-  name: string;
-  category: "furniture" | "trophy" | "relic";
-  icon: string;
-  unlocked: boolean;
-  requirement: string;
-  flavorText: string;
-}
-```
-
-### 4.2. Contrato de Residente del Pueblo
-```typescript
-export interface VillageResident {
-  id: string;
-  name: string;
-  title: string;
-  species: string;
-  avatar: string;
-  buildingId: string;
-  domain: SkillDomain;
-  favoriteGift: string;
-  greetingQuote: string;
-  microQuest?: {
-    title: string;
-    description: string;
-    targetAction: string;
-    estimatedMinutes: number;
-    badge: string;
-  };
-  getDynamicAdvice: (context: {
-    skillLevel: number;
-    sessionsCount: number;
-    lastSessionDetails?: string;
-  }) => string;
-}
-```
-
-### 4.3. Contrato de Postal del Álbum de Recuerdos
-```typescript
-export interface ScrapbookMemory {
-  id: string;
-  title: string;
-  location: string;
-  unlocked: boolean;
-  dateUnlocked?: string;
-  icon: string;
-  description: string;
-  polaroidColor: string;
-}
-```
-
----
-
-## 5. Manejo de Estados de Carga, Error y Datos Vacíos
-
-| Estado | Estrategia de Presentación | Comportamiento Técnico |
-|---|---|---|
-| **Cargando (`loading`)** | Skeleton loaders con marco de madera rústica y destellos suaves sin saltos de layout (CLS 0). | Mantiene la estructura del dashboard mientras `/api/state` responde. |
-| **Error de Red (`error`)** | Banner no intrusivo color arcilla suave: *"Modo Desconectado: Tus avances se guardan localmente"*. | Activa automáticamente `queueOfflineAction` para retener las acciones en `localStorage`. |
-| **Colección Vacía (`empty`)** | Mensaje acogedor y motivador del residente (ej. *"Aún no hay libros en tu estantería. Elige un tomo para comenzar"*). | Evita estados en blanco con botones de acción directa para crear el primer registro. |
-| **Sesión Desconectada (`offline`)** | Píldora ámbar flotante en cabecera: *"Guardado offline activo"*. | Al recuperar internet (`window.ononline`), sincroniza la cola y ejecuta `triggerHaptic("success")`. |
-
----
-
-## 6. Diagrama de Secuencia de Registro de Sesión
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Usuario
-    participant UI as Edificio Especializado (Interior)
-    participant Hook as useUniversalSession
-    participant Offline as offline-sync (LocalStorage)
-    participant API as /api/shortcuts/skill-session
-    participant Engine as RPG RuleEngine & Vault
-    participant Store as Supabase PostgreSQL
-
-    Usuario->>UI: Inicia cronómetro de actividad
-    UI->>Hook: startSession()
-    Hook-->>UI: Actualiza formattedTime (00:00:00)
-    
-    Usuario->>UI: Finaliza sesión (con notas y métricas)
-    UI->>Hook: finishSession({ duration, notes })
-    
-    alt Conectado a Internet
-        Hook->>API: POST /api/shortcuts/skill-session (con idempotency_key)
-        API->>Engine: Valida invariantes y liquida GP/XP
-        Engine->>Store: Persiste sesión en tabla skill_sessions
-        Store-->>API: Confirmación de guardado
-        API-->>Hook: 200 OK + payload de recompensas
-        Hook-->>UI: Haptic Feedback + Cierre de modal
-    else Sin Conexión (Offline)
-        Hook->>Offline: queueOfflineAction(payload)
-        Offline-->>Hook: Acción encolada exitosamente
-        Hook-->>UI: Haptic Advertencia + Notificación Local
-        Note over Offline,Store: Al reconectar (window.ononline)
-        Offline->>API: Procesa cola acumulada en orden FIFO
-        API->>Store: Persiste sesiones con idempotencia
-    end
-```
+1. **Invariante Financiera:** Ninguna interacción o decoración genera GP arbitrario; toda recompensa se valida contra la Bóveda del usuario.
+2. **Invariante de Idempotencia:** Las micro-misiones y sesiones emplean prefijos unívocos (`village_journal_<id>_<date>_<ts>`).
+3. **Accesibilidad Sensorial:** El audio nunca se inicia automáticamente; respeta el gesto deliberado del usuario y las directivas de `prefers-reduced-motion`.
