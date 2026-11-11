@@ -23,6 +23,13 @@ import {
   FinancialWellbeingSkill,
   defaultFinancialWellbeingSkill,
 } from "../src/lib/sanctuary/financial-wellbeing-skill.ts";
+import {
+  calculateGymAmortization,
+  consumeAtelierYarn,
+  processWorkSessionFinancialImpact,
+  calculateReadingValueExtraction,
+  type AtelierYarnInventory,
+} from "../src/lib/sanctuary/skill-financial-bridge.ts";
 
 test("Hito 3.9.1 — 1. Exclusión estricta de saldos iniciales de ingresos y sueldos", () => {
   const result: ReclassifiedFinancialDataset = auditAndClassifyMovements(INITIAL_FINANCIAL_MOVEMENTS);
@@ -728,6 +735,99 @@ test("Hito 3.9.4 — 24. Barrera estricta HITL Nivel 3: Prohibición de pagos au
     "La IA tiene estrictamente prohibido mutar saldos o ejecutar pagos automáticamente."
   );
 });
+
+// ==============================================================================
+// PRUEBAS HITO 3.9.5: ECONOMÍA DE SESIONES Y HABILIDADES
+// ==============================================================================
+
+test("Hito 3.9.5 — 25. Gimnasio: Amortización de membresía mensual y cero duplicación de gasto", () => {
+  // Membresía fija mensual de $80.000 COP
+  const fee = 80000;
+
+  // 1. Si el usuario realiza 12 sesiones en el mes
+  const metrics12 = calculateGymAmortization(fee, 12);
+  assert.equal(metrics12.sessionsCompletedCount, 12);
+  assert.equal(metrics12.amortizedCostPerSessionCop, 6667, "80.000 / 12 = 6.667 COP por sesión.");
+  assert.equal(metrics12.efficiencyLevel, "optima");
+  assert.ok(metrics12.encouragementMessage.includes("óptimo") || metrics12.encouragementMessage.includes("extraordinario"));
+
+  // 2. Si solo realiza 2 sesiones en el mes
+  const metrics2 = calculateGymAmortization(fee, 2);
+  assert.equal(metrics2.amortizedCostPerSessionCop, 40000, "80.000 / 2 = 40.000 COP por sesión.");
+  assert.equal(metrics2.efficiencyLevel, "subutilizada");
+
+  // INVARIANTE: El registro de series y sesiones NO genera nuevos movimientos de egreso en el banco.
+  // La membresía se contabiliza una única vez al mes como gasto fijo.
+});
+
+test("Hito 3.9.5 — 26. Atelier: Consumo de inventario de lana sin debitar dinero bancario", () => {
+  const initialInventory: AtelierYarnInventory = {
+    skeinsInStock: 5,
+    averageCostPerSkeinCop: 12000,
+    totalInventoryValueCop: 60000,
+    skeinsConsumedTotal: 0,
+  };
+
+  // Tejer 200 filas de crochet (2 ovillos consumidos a 100 filas/ovillo)
+  const result = consumeAtelierYarn(initialInventory, 200, 100);
+
+  // 1. Descuenta 2 ovillos del inventario físico
+  assert.equal(result.skeinsConsumed, 2);
+  assert.equal(result.updatedInventory.skeinsInStock, 3);
+  assert.equal(result.updatedInventory.totalInventoryValueCop, 36000);
+  assert.equal(result.materialValueConsumedCop, 24000);
+  assert.equal(result.inventoryDepleted, false);
+
+  // INVARIANTE: Tejer consume el material propio ya comprado; no produce un débito en la cuenta bancaria.
+});
+
+test("Hito 3.9.5 — 27. Oficina: Distinción estricta entre horas asalariadas y facturación freelance/tutoría", () => {
+  // 1. Horas de empleo asalariado: NO alteran el saldo bancario inmediato
+  const salaried = processWorkSessionFinancialImpact({
+    workType: "salaried_employment",
+    hoursWorked: 8,
+  });
+  assert.equal(
+    salaried.affectsImmediateBankBalance,
+    false,
+    "Las horas de trabajo asalariado NO deben sumar dinero en banco instantáneamente (el sueldo es quincenal)."
+  );
+  assert.equal(salaried.receivableGeneratedCop, 0);
+
+  // 2. Tutoría particular (como 'Clases Juanma' $200.000 COP del dataset)
+  const tutoring = processWorkSessionFinancialImpact({
+    workType: "private_tutoring",
+    hoursWorked: 2,
+    billedAmountCop: 200000,
+  });
+  assert.equal(tutoring.affectsImmediateBankBalance, true);
+  assert.equal(tutoring.receivableGeneratedCop, 200000);
+
+  // 3. Proyecto freelance (genera cuenta por cobrar, no dinero en banco hasta confirmación)
+  const freelance = processWorkSessionFinancialImpact({
+    workType: "freelance_project",
+    hoursWorked: 5,
+    billedAmountCop: 500000,
+  });
+  assert.equal(freelance.affectsImmediateBankBalance, false);
+  assert.equal(freelance.receivableGeneratedCop, 500000);
+});
+
+test("Hito 3.9.5 — 28. Librería: Extracción de valor intelectual de libros sin gasto bancario adicional", () => {
+  // Libro adquirido por $60.000 COP con 300 páginas
+  const bookCalc = calculateReadingValueExtraction({
+    purchasePriceCop: 60000,
+    totalPages: 300,
+    pagesRead: 150,
+  });
+
+  assert.equal(bookCalc.amortizedCostPerPageCop, 200, "60.000 / 300 = $200 COP por página.");
+  assert.equal(bookCalc.readingCompletionPercentage, 50, "150 de 300 páginas = 50%.");
+  assert.equal(bookCalc.intellectualValueExtractedCop, 30000, "Valor intelectual extraído = $30.000 COP.");
+
+  // INVARIANTE: La lectura de páginas forja XP y GP en el Santuario de Oakhaven sin generar débitos bancarios.
+});
+
 
 
 
