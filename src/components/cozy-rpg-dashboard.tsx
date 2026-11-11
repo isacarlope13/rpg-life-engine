@@ -60,6 +60,7 @@ import { ObservatorioBuilding } from "@/components/sanctuary/observatorio-buildi
 import { BotanicalGardenBuilding } from "@/components/sanctuary/botanical-garden-building";
 import { HikingOutpostBuilding } from "@/components/sanctuary/hiking-outpost-building";
 import { KitchenBuilding } from "@/components/sanctuary/kitchen-building";
+import { OfficeBuilding } from "@/components/sanctuary/office-building";
 import { VillageScrapbookModal } from "@/components/sanctuary/village-scrapbook-modal";
 import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
 import { CozySkeletonLoader } from "@/components/cozy/cozy-skeleton-loader";
@@ -508,6 +509,8 @@ export function CozyRpgDashboard() {
                     ? "Club de Puzzles WCA"
                     : activeBuildingModal === "observatorio"
                     ? "El Observatorio Cósmico"
+                    : activeBuildingModal === "oficina"
+                    ? "Torre de Gestión & Oficina"
                     : "Santuario"
                 }
                 stats={{
@@ -517,6 +520,7 @@ export function CozyRpgDashboard() {
                     : activeBuildingModal === "biblioteca" ? "study"
                     : activeBuildingModal === "club_puzzles" ? "rubik"
                     : activeBuildingModal === "observatorio" ? "general"
+                    : activeBuildingModal === "oficina" ? "work"
                     : "general"
                   ))?.level || 1,
                   sessionsCount: state?.skill_summaries?.find((s) => s.domain === (
@@ -634,6 +638,18 @@ export function CozyRpgDashboard() {
                   isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
+                />
+              )}
+
+              {activeBuildingModal === "oficina" && (
+                <OfficeBuilding
+                  playerLevel={playerLevel}
+                  skillLevel={state?.skill_summaries?.find((s) => s.domain === "work")?.level || 1}
+                  totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "work")?.total_gp_earned || 0}
+                  isCozyActive={true}
+                  onRefreshState={fetchState}
+                  onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
             </div>

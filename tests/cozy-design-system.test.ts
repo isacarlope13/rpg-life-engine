@@ -72,3 +72,68 @@ test("Cozy Dashboard 6: Resiliencia Offline y Cola PWA", async () => {
   const { getOfflineQueue, queueOfflineAction } = await import("../src/lib/offline-sync.ts");
   assert.ok(Array.isArray(getOfflineQueue()), "La cola offline debe retornar un arreglo");
 });
+
+test("Cozy Village 7: Catálogo de Edificios del Santuario, Identificadores Estables y Coordenadas", async () => {
+  const {
+    VILLAGE_BUILDINGS_CATALOG,
+    getBuildingById,
+    getBuildingByDomain,
+    filterBuildingsByDistrict,
+  } = await import("../src/lib/sanctuary/village-buildings-registry.ts");
+
+  // Todos los edificios propuestos y existentes deben estar registrados
+  const requiredBuildingIds = [
+    "oficina",
+    "libreria",
+    "biblioteca",
+    "club_puzzles",
+    "observatorio",
+    "atelier",
+    "pabellon_gardening",
+    "pabellon_hiking",
+    "cocina",
+  ];
+
+  for (const id of requiredBuildingIds) {
+    const building = getBuildingById(id);
+    assert.ok(building, `El edificio con ID estable '${id}' debe estar registrado en el catálogo.`);
+    assert.ok(building.name.length > 0, `El edificio '${id}' debe tener un nombre definido.`);
+    assert.ok(building.mapCoordinates.x >= 0 && building.mapCoordinates.x <= 100, `Coordenada X de '${id}' debe estar entre 0 y 100%`);
+    assert.ok(building.mapCoordinates.y >= 0 && building.mapCoordinates.y <= 100, `Coordenada Y de '${id}' debe estar entre 0 y 100%`);
+  }
+
+  // Comprobar búsqueda por dominio
+  assert.equal(getBuildingByDomain("work")?.id, "oficina");
+  assert.equal(getBuildingByDomain("reading")?.id, "libreria");
+  assert.equal(getBuildingByDomain("study")?.id, "biblioteca");
+  assert.equal(getBuildingByDomain("knitting")?.id, "atelier");
+  assert.equal(getBuildingByDomain("rubik")?.id, "club_puzzles");
+  assert.equal(getBuildingByDomain("general")?.id, "observatorio");
+
+  // Comprobar filtros por distrito
+  assert.ok(filterBuildingsByDistrict("saber").length >= 3, "El distrito del saber debe tener al menos 3 edificios");
+  assert.ok(filterBuildingsByDistrict("artes").length >= 2, "El distrito de artes debe tener al menos 2 edificios");
+  assert.ok(filterBuildingsByDistrict("naturaleza").length >= 2, "El distrito de naturaleza debe tener al menos 2 edificios");
+  assert.ok(filterBuildingsByDistrict("all").length === VILLAGE_BUILDINGS_CATALOG.length);
+});
+
+test("Cozy Village 8: Detección de Actividad Pendiente Determinista", async () => {
+  const { getBuildingById } = await import("../src/lib/sanctuary/village-buildings-registry.ts");
+
+  const libreria = getBuildingById("libreria")!;
+  const atelier = getBuildingById("atelier")!;
+
+  // Con 2 libros activos, debe reportar actividad pendiente
+  const libreriaPending = libreria.getPendingActivity({ activeBooksCount: 2 });
+  assert.equal(libreriaPending.hasPending, true);
+  assert.equal(libreriaPending.count, 2);
+
+  // Con 0 libros, no debe reportar actividad pendiente
+  const libreriaIdle = libreria.getPendingActivity({ activeBooksCount: 0 });
+  assert.equal(libreriaIdle.hasPending, false);
+
+  // Atelier con proyectos en telar
+  const atelierPending = atelier.getPendingActivity({ activeKnittingProjectsCount: 1 });
+  assert.equal(atelierPending.hasPending, true);
+  assert.equal(atelierPending.count, 1);
+});

@@ -1,9 +1,9 @@
 # ARQUITECTURA DEL SISTEMA — COZY LIVING VILLAGE
 ## RPG Life-Engine 3.5.0
 **Documento Técnico:** `docs/cozy-village/ARCHITECTURE.md`  
-**Versión:** 1.3.0  
+**Versión:** 1.4.0  
 **Fecha:** 11 de Noviembre de 2026  
-**Estado:** Fase 4 (Cozy Dashboard) Implementada & Validada en Producción
+**Estado:** Fase 5 (Interactive Pixel Village) Implementada & Validada en Producción
 
 ---
 
@@ -128,6 +128,15 @@ flowchart TD
   - Medidor de afinidad en 5 corazones (`calculateAffinity`) calculado determinísticamente por sesiones realizadas.
   - Botón `Registrar Avance` protegido por clave de idempotencia diaria.
   - Enlaces directos a los interiores de cada gremio.
+
+### 3.6. Interactive Pixel Village & Catálogo Desacoplado (`village-buildings-registry.ts` & `cozy-village-map.tsx`)
+* **Registro de Edificios:** Catálogo tipado que mapea las habilidades reales del Santuario a 9 edificios con coordenadas de mapa (x, y %), distritos (`plaza`, `saber`, `artes`, `naturaleza`), descripción, residente asignado y detector de actividad pendiente (`getPendingActivity`).
+* **Edificio de Oficina (`office-building.tsx`):** Módulo dedicado al dominio `work` con sprints Pomodoro (25/50 min), seguimiento de proyectos ágiles y registro manual de horas.
+* **Evaluación de Motor de Juegos:** Se analizó el uso de **Phaser vs Renderizado Híbrido SVG/CSS**. Se descartó Phaser (>1.2 MB de bundle, falta de accesibilidad semántica, incompatibilidad SSR) a favor de un lienzo SVG pixel art declarativo de ultra bajo peso (<30 KB) con caminos empedrados, colinas norte, río con ondas CSS, puentes de madera, arboledas, faroles nocturnos y soporte completo de lectores de pantalla.
+* **Modo Dual de Visualización:**
+  - `landscape`: Mapa panorámico interactivo con anclaje de edificios en coordenadas reales, tooltips en hover y badges de actividad viva.
+  - `grid`: Cuadrícula semántica accesible para inspección rápida y navegación total por teclado.
+* **Inspección y Navegación:** Modal de inspección de edificio con ficha técnica y botón de regreso claro al pueblo.
 
 ---
 
