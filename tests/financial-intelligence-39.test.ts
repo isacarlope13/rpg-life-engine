@@ -13,6 +13,12 @@ import {
   type CommittedObligationItem,
   type BiweeklyPlanningParams,
 } from "../src/lib/sanctuary/financial-core.ts";
+import {
+  REAL_DEBTS_CASE_STUDY,
+  simulateDebtPaymentImpact,
+  auditSettlementOffer,
+  type RealDebtObligation,
+} from "../src/lib/sanctuary/debt-engine.ts";
 
 test("Hito 3.9.1 — 1. Exclusión estricta de saldos iniciales de ingresos y sueldos", () => {
   const result: ReclassifiedFinancialDataset = auditAndClassifyMovements(INITIAL_FINANCIAL_MOVEMENTS);
@@ -423,4 +429,150 @@ test("Hito 3.9.2 — 12. Regla de Doble Candado para compras de Wishlist y ocio"
   assert.equal(checkZero.isAllowed, false);
   assert.ok(checkZero.reason.includes("Bloqueo por Prudencia Financiera"));
 });
+
+// ==============================================================================
+// PRUEBAS HITO 3.9.3: MOTOR DE DEUDAS REALES Y SIMULACIONES
+// ==============================================================================
+
+test("Hito 3.9.3 — 13. Catálogo real de obligaciones: ADDI, Nequi y Bancolombia/Contento", () => {
+  assert.equal(REAL_DEBTS_CASE_STUDY.length, 3, "Deben existir exactamente las 3 obligaciones del caso de estudio.");
+
+  const nequi = REAL_DEBTS_CASE_STUDY.find((d) => d.id === "debt_nequi_propulsor")!;
+  assert.ok(nequi, "Debe existir Nequi");
+  assert.equal(nequi.totalBalanceCop, 166210, "Saldo Nequi exacto 166.210 COP.");
+  assert.equal(nequi.currentInstallmentCop, 56431, "Cuota Nequi 56.431 COP.");
+  assert.equal(nequi.installmentProgress?.paidInstallments, 21);
+  assert.equal(nequi.installmentProgress?.totalInstallments, 24);
+  assert.equal(nequi.dueDate, "2026-11-15");
+
+  const addi = REAL_DEBTS_CASE_STUDY.find((d) => d.id === "debt_addi_consumo")!;
+  assert.ok(addi, "Debe existir ADDI");
+  assert.equal(addi.totalBalanceCop, 1041301, "Saldo ADDI total 1.041.301 COP.");
+  assert.equal(addi.overdueBalanceCop, 213374, "Pago atrasado ADDI 213.374 COP.");
+  assert.equal(addi.status, "vencida");
+
+  const banco = REAL_DEBTS_CASE_STUDY.find((d) => d.id === "debt_bancolombia_contento")!;
+  assert.ok(banco, "Debe existir Bancolombia / Contento BPS");
+  assert.equal(banco.totalBalanceCop, 3000000);
+  assert.equal(banco.settlementOffer?.discountedAmountCop, 2348000);
+  assert.equal(banco.settlementOffer?.expirationDate, "2026-11-13");
+});
+
+test("Hito 3.9.3 — 14. Viabilidad del pago de cuota Nequi antes del 15-nov preservando reserva", () => {
+  const plan = calculateBiweeklyCashflowPlan({
+    asOfDate: "2026-11-11",
+    accounts: { nuAccountCop: 340000, nequiAccountCop: 70000 },
+    protectedEssentialReserveCop: 250000,
+    expectedNextIncome: { amountCop: 1000000, expectedDate: "2026-11-20", isConfirmed: false },
+    committedObligations: [],
+  });
+
+  const sim = simulateDebtPaymentImpact("debt_nequi_propulsor", 56431, plan);
+
+  assert.equal(sim.isAllowedByLiquidity, true, "El pago de 56.431 COP cabe holgadamente en el margen de 160.000 COP.");
+  assert.equal(sim.encroachesEssentialReserve, false, "No invade la reserva de 250.000 COP.");
+  assert.equal(sim.essentialReserveRemainingCop, 250000, "La reserva de 250.000 COP permanece 100% blindada.");
+  assert.equal(sim.isFullyNormalized, true, "Nequi queda al día al pagar su cuota ordinaria.");
+});
+
+test("Hito 3.9.3 — 15. Simulación de abono parcial a ADDI: no normaliza automáticamente", () => {
+  const plan = calculateBiweeklyCashflowPlan({
+    asOfDate: "2026-11-11",
+    accounts: { nuAccountCop: 340000, nequiAccountCop: 70000 },
+    protectedEssentialReserveCop: 250000,
+    expectedNextIncome: { amountCop: 1000000, expectedDate: "2026-11-20", isConfirmed: false },
+    committedObligations: [],
+  });
+
+  // Supongamos que el usuario abona 100.000 COP a ADDI
+  const sim = simulateDebtPaymentImpact("debt_addi_consumo", 100000, plan);
+
+  assert.equal(sim.remainingDebtBalanceCop, 941301, "El saldo total debe reducirse en 100.000 COP.");
+  assert.equal(sim.remainingOverdueCop, 113374, "El atraso pasa de 213.374 a 113.374 COP.");
+
+  // REGLA CRÍTICA: isFullyNormalized debe ser false
+  assert.equal(
+    sim.isFullyNormalized,
+    false,
+    "Un abono parcial NO normaliza la deuda de ADDI ni elimina reportes de mora."
+  );
+  assert.ok(
+    sim.safetyAdvisories.some((adv) => adv.includes("AVISO DE ABONO PARCIAL")),
+    "Debe emitir la advertencia explícita de abono parcial."
+  );
+});
+
+test("Hito 3.9.3 — 16. Pago total recomendado de ADDI ($336.085 COP) invade reserva esencial", () => {
+  const plan = calculateBiweeklyCashflowPlan({
+    asOfDate: "2026-11-11",
+    accounts: { nuAccountCop: 340000, nequiAccountCop: 70000 }, // Liquidez: 410.000 COP
+    protectedEssentialReserveCop: 250000,                       // Margen: 160.000 COP
+    expectedNextIncome: { amountCop: 1000000, expectedDate: "2026-11-20", isConfirmed: false },
+    committedObligations: [],
+  });
+
+  // Pago de la cuota completa recomendada de ADDI: 336.085 COP
+  const sim = simulateDebtPaymentImpact("debt_addi_consumo", 336085, plan);
+
+  assert.equal(sim.isAllowedByLiquidity, false, "No está permitido por liquidez antes de la quincena.");
+  assert.equal(sim.encroachesEssentialReserve, true, "Invade la reserva de subsistencia de 250.000 COP.");
+
+  // Si pagara 336.085 COP de los 410.000 COP, le quedarían solo 73.915 COP
+  assert.equal(sim.liquidCashRemainingCop, 73915);
+  assert.equal(sim.essentialReserveRemainingCop, 73915);
+  assert.ok(
+    sim.safetyAdvisories.some((adv) => adv.includes("ALERTA CRÍTICA")),
+    "Debe emitir alerta crítica alertando que devora la reserva de alimentos y transporte."
+  );
+});
+
+test("Hito 3.9.3 — 17. Auditoría y rechazo de oferta Contento BPS ($2.348.000 COP)", () => {
+  const bancoDebt = REAL_DEBTS_CASE_STUDY.find((d) => d.id === "debt_bancolombia_contento")!;
+  const offer = bancoDebt.settlementOffer!;
+
+  // Evaluar oferta al 11 de noviembre con un margen libre actual de 160.000 COP
+  const audit = auditSettlementOffer(offer, "2026-11-11", 160000);
+
+  assert.equal(
+    audit.canAffordWithoutNewDebt,
+    false,
+    "No puede pagarse sin nueva deuda: la oferta es de 2.348.000 COP y el margen libre es 160.000 COP."
+  );
+  assert.equal(audit.isValidAndExecutableToday, false);
+  assert.ok(
+    audit.recommendation.includes("RECHAZO POR CAPACIDAD FINANCIERA"),
+    "La recomendación debe ordenar el rechazo por falta de capacidad propia de pago."
+  );
+  assert.ok(
+    audit.recommendation.includes("PROHIBIDO") || audit.recommendation.includes("prohíbe"),
+    "Debe prohibir explícitamente tomar nueva deuda o préstamos usureros."
+  );
+
+  // Verificación de expiración si la fecha fuera posterior al 13 de noviembre
+  const auditExpired = auditSettlementOffer(offer, "2026-11-14", 3000000);
+  assert.equal(auditExpired.isExpired, true);
+  assert.ok(auditExpired.recommendation.includes("OFERTA EXPIRADA"));
+});
+
+test("Hito 3.9.3 — 18. Simulación post-quincena (20 de noviembre) para normalización segura", () => {
+  const plan = calculateBiweeklyCashflowPlan({
+    asOfDate: "2026-11-11",
+    accounts: { nuAccountCop: 340000, nequiAccountCop: 70000 },
+    protectedEssentialReserveCop: 250000,
+    expectedNextIncome: { amountCop: 1000000, expectedDate: "2026-11-20", isConfirmed: false },
+    committedObligations: [],
+  });
+
+  const sim = simulateDebtPaymentImpact("debt_addi_consumo", 336085, plan);
+
+  assert.equal(sim.impactOnNextQuincena.scheduledForNextPayday, true);
+  // Al ingresar los 1.000.000 COP y pagar 336.085 COP de ADDI:
+  // 1.000.000 - 336.085 = 663.915 COP remanentes
+  assert.equal(sim.impactOnNextQuincena.postPaydayRemainingCop, 663915);
+  assert.ok(
+    sim.impactOnNextQuincena.postPaydayRemainingCop > 250000,
+    "Tras pagar ADDI con el sueldo del día 20, quedan 663.915 COP, blindando cómodamente la siguiente quincena."
+  );
+});
+
 
