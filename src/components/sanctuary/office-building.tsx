@@ -30,6 +30,7 @@ import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub
 import { projectOficinaProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
+import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 
 interface OfficeBuildingProps {
   playerLevel: number;
@@ -233,6 +234,7 @@ export function OfficeBuilding({
       playerLevel={playerLevel}
       skillLevel={skillLevel}
       totalGpEarned={totalGpEarned}
+      resident={COZY_VILLAGE_RESIDENTS.find((r) => r.id === "aura")}
       specificMetrics={[
         { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Proyectos Activos", value: DEFAULT_PROJECTS.length },

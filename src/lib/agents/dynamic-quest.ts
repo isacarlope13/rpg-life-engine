@@ -83,6 +83,26 @@ export class DynamicQuestGenerator {
   }
 
   /**
+   * Genera misiones adaptativas filtradas exclusivamente por las habilidades activas del usuario (OakHaven 4.0).
+   * Excluye habilidades pausadas o archivadas para no saturar al usuario.
+   */
+  public generateActiveSkillsQuests(params: {
+    activeDomains: SkillDomain[];
+    domainLabels: Partial<Record<SkillDomain, string>>;
+    playerLevel: number;
+  }): DynamicQuestTemplate[] {
+    return params.activeDomains.map((dom) => {
+      const label = params.domainLabels[dom] || dom;
+      return this.generateAdaptiveQuest({
+        domain: dom,
+        domainLabel: label,
+        daysInactive: 1,
+        playerLevel: params.playerLevel,
+      });
+    });
+  }
+
+  /**
    * Propone la inyección de la misión en el catálogo a través del SystemGuardian.
    */
   public async proposeQuestDeployment(params: {

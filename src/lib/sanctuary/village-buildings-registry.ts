@@ -53,7 +53,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#3046C4",
     bgGradient: "from-[#1C2338] to-[#101524]",
     residentId: "aura",
-    mapCoordinates: { x: 50, y: 45, row: 2, col: 2 },
+    mapCoordinates: { x: 58, y: 35, row: 1, col: 3 },
     getPendingActivity: ({ buildingSessions = [] }) => {
       const hasToday = buildingSessions.some((s) => {
         const d = new Date(s.timestamp || Date.now());
@@ -83,7 +83,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#8E5B65",
     bgGradient: "from-[#2A2024] to-[#1A1417]",
     residentId: "sora",
-    mapCoordinates: { x: 12, y: 34, row: 1, col: 0 },
+    mapCoordinates: { x: 14, y: 28, row: 1, col: 0 },
     getPendingActivity: ({ buildingSessions = [] }) => {
       const hasToday = buildingSessions.some((s) => {
         const d = new Date(s.timestamp || Date.now());
@@ -109,7 +109,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#1E6B61",
     bgGradient: "from-[#222E28] to-[#171F1B]",
     residentId: "eldrin",
-    mapCoordinates: { x: 28, y: 32, row: 1, col: 1 },
+    mapCoordinates: { x: 28, y: 28, row: 1, col: 1 },
     getPendingActivity: ({ activeBooksCount = 0 }) => {
       return {
         hasPending: activeBooksCount > 0,
@@ -131,7 +131,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#7E22CE",
     bgGradient: "from-[#281834] to-[#190F22]",
     residentId: "aura",
-    mapCoordinates: { x: 50, y: 16, row: 1, col: 2 },
+    mapCoordinates: { x: 50, y: 13, row: 0, col: 2 },
     getPendingActivity: () => ({
       hasPending: true,
       label: "Foco profundo disponible",
@@ -150,7 +150,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#4F46E5",
     bgGradient: "from-[#1E2436] to-[#121624]",
     residentId: "lyra",
-    mapCoordinates: { x: 74, y: 30, row: 1, col: 3 },
+    mapCoordinates: { x: 73, y: 28, row: 1, col: 4 },
     getPendingActivity: ({ spacedCardsDueCount = 0 }) => {
       return {
         hasPending: spacedCardsDueCount > 0,
@@ -172,7 +172,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#0891B2",
     bgGradient: "from-[#162B34] to-[#0E1D24]",
     residentId: "milo",
-    mapCoordinates: { x: 82, y: 54, row: 2, col: 4 },
+    mapCoordinates: { x: 88, y: 38, row: 1, col: 5 },
     getPendingActivity: ({ rubikSolvesCount = 0 }) => {
       return {
         hasPending: rubikSolvesCount > 0,
@@ -198,7 +198,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#C28448",
     bgGradient: "from-[#3A2E2B] to-[#251E1C]",
     residentId: "clara",
-    mapCoordinates: { x: 18, y: 54, row: 2, col: 0 },
+    mapCoordinates: { x: 16, y: 55, row: 2, col: 0 },
     getPendingActivity: ({ activeKnittingProjectsCount = 0 }) => {
       return {
         hasPending: activeKnittingProjectsCount > 0,
@@ -220,7 +220,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#A84C35",
     bgGradient: "from-[#32211C] to-[#1D1411]",
     residentId: "maya",
-    mapCoordinates: { x: 36, y: 54, row: 2, col: 1 },
+    mapCoordinates: { x: 32, y: 55, row: 2, col: 1 },
     getPendingActivity: () => ({
       hasPending: true,
       label: "Lienzo en blanco listo",
@@ -239,7 +239,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#B86C2E",
     bgGradient: "from-[#332517] to-[#1E160D]",
     residentId: "felix",
-    mapCoordinates: { x: 65, y: 46, row: 2, col: 3 },
+    mapCoordinates: { x: 74, y: 55, row: 2, col: 4 },
     getPendingActivity: () => ({
       hasPending: true,
       label: "Partida disponible",
@@ -258,7 +258,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#9B6B38",
     bgGradient: "from-[#2C2117] to-[#19130D]",
     residentId: "hugo",
-    mapCoordinates: { x: 14, y: 76, row: 3, col: 0 },
+    mapCoordinates: { x: 16, y: 78, row: 3, col: 0 },
     getPendingActivity: () => ({
       hasPending: true,
       label: "Torno preparado",
@@ -277,7 +277,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#C46A36",
     bgGradient: "from-[#35251C] to-[#20150F]",
     residentId: "oliver",
-    mapCoordinates: { x: 50, y: 78, row: 3, col: 2 },
+    mapCoordinates: { x: 34, y: 78, row: 3, col: 1 },
     getPendingActivity: () => ({
       hasPending: true,
       label: "Fogón encendido",
@@ -300,7 +300,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#38523F",
     bgGradient: "from-[#1F2C23] to-[#141E17]",
     residentId: "barnaby",
-    mapCoordinates: { x: 32, y: 78, row: 3, col: 1 },
+    mapCoordinates: { x: 52, y: 78, row: 3, col: 2 },
     getPendingActivity: () => ({
       hasPending: true,
       label: "Huerto en calma",
@@ -319,7 +319,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#8C5835",
     bgGradient: "from-[#35251C] to-[#201610]",
     residentId: "tara",
-    mapCoordinates: { x: 69, y: 78, row: 3, col: 3 },
+    mapCoordinates: { x: 70, y: 78, row: 3, col: 3 },
     getPendingActivity: () => ({
       hasPending: true,
       label: "Sendero despejado",
@@ -338,7 +338,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#3A5A40",
     bgGradient: "from-[#1D2B1F] to-[#121B13]",
     residentId: "bruno",
-    mapCoordinates: { x: 87, y: 75, row: 3, col: 4 },
+    mapCoordinates: { x: 87, y: 78, row: 3, col: 4 },
     getPendingActivity: ({ buildingSessions = [] }) => {
       const hasToday = buildingSessions.some((s) => {
         const d = new Date(s.timestamp || Date.now());
@@ -367,7 +367,7 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     borderColor: "#AA820A",
     bgGradient: "from-[#2C2411] to-[#1A1508]",
     residentId: "silas",
-    mapCoordinates: { x: 50, y: 31, row: 1, col: 2 },
+    mapCoordinates: { x: 42, y: 35, row: 1, col: 2 },
     getPendingActivity: () => ({
       hasPending: true,
       label: "Tesorería activa",

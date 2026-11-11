@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { CheckCircle2, Clock, Sparkles, Heart, ArrowRight, BookOpen, Award } from "lucide-react";
 import { COZY_VILLAGE_RESIDENTS, type VillageResident } from "@/lib/sanctuary/village-tiers";
 import type { SkillSessionRecord, SkillDomainSummary, SkillDomain } from "@/types/rpg";
 import { CozyModal, CozyButton, CozyCard, CozyNotification } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { loadWorldPreferences } from "@/lib/sanctuary/world-preferences-engine";
 
 interface VillageQuestsModalProps {
   isOpen: boolean;
@@ -43,6 +44,16 @@ export function VillageQuestsModal({
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  // Filtrado de vecinos activos según preferencias de Mi Mundo (OakHaven 4.0)
+  const activeResidents = useMemo(() => {
+    const worldConfig = loadWorldPreferences();
+    return COZY_VILLAGE_RESIDENTS.filter((res) => {
+      if (res.domain === "work" || res.id === "silas") return true;
+      const pref = worldConfig.skills[res.domain];
+      return !pref || pref.status === "active";
+    });
+  }, []);
 
   if (!isOpen) return null;
 
@@ -106,7 +117,7 @@ export function VillageQuestsModal({
                 Tablón de Tareas del Pueblo
               </span>
               <p className="text-xs font-black text-[#3A2E2B]">
-                {completedIds.length} de {COZY_VILLAGE_RESIDENTS.length} Micro-Misiones Realizadas Hoy
+                {completedIds.length} de {activeResidents.length} Micro-Misiones Realizadas Hoy
               </p>
             </div>
           </div>
@@ -117,7 +128,7 @@ export function VillageQuestsModal({
 
         {/* LISTADO DE RESIDENTES Y SUS MICRO-MISIONES */}
         <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
-          {COZY_VILLAGE_RESIDENTS.map((res) => {
+          {activeResidents.map((res) => {
             const sum = skillSummaries.find((s) => s.domain === res.domain);
             const count = sum?.sessions_count || recentSessions.filter((s) => s.domain === res.domain).length;
             const affinity = calculateAffinity(count);

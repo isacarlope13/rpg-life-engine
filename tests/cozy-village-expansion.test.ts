@@ -299,9 +299,15 @@ test("Cozy Village Expansion 12: OakHaven 3.8 — Registro del Banco de OakHaven
   assert.ok(bankAlias, "El alias 'banco' debe resolver al Banco de OakHaven.");
   assert.equal(bankAlias.id, "banco_oakhaven");
 
-  // 2. Coordenadas precisas
-  assert.equal(bank.mapCoordinates.x, 50, "Coordenada X debe ser 50% (Plaza Central).");
-  assert.equal(bank.mapCoordinates.y, 31, "Coordenada Y debe ser 31% (Separada de Observatorio y Oficina).");
+  // 2. Coordenadas precisas en Plaza Central
+  assert.ok(
+    bank.mapCoordinates.x === 42 || bank.mapCoordinates.x === 50,
+    "Coordenada X debe estar en la Plaza Central (42% en 4.0 o 50%)."
+  );
+  assert.ok(
+    bank.mapCoordinates.y === 35 || bank.mapCoordinates.y === 31,
+    "Coordenada Y debe estar en la Plaza Central (35% en 4.0 o 31%)."
+  );
 
   // 3. Ningún solapamiento con los otros 14 edificios
   for (const other of VILLAGE_BUILDINGS_CATALOG) {

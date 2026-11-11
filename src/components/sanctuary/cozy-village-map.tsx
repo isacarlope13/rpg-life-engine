@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Compass,
   Sparkles,
@@ -27,6 +27,7 @@ import {
   AlertCircle,
   ArrowRight,
   Info,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { SkillDomain, SkillDomainSummary, SkillSessionRecord } from "@/types/rpg";
 import {
@@ -40,6 +41,12 @@ import {
   type VillageBuildingDefinition,
   type BuildingDistrict,
 } from "@/lib/sanctuary/village-buildings-registry";
+import {
+  loadWorldPreferences,
+  filterVisibleBuildings,
+  type VillageWorldConfig,
+} from "@/lib/sanctuary/world-preferences-engine";
+import { WorldCustomizationModal } from "@/components/sanctuary/world-customization-modal";
 import { cozySoundscape, type SoundscapeTheme } from "@/lib/sanctuary/cozy-soundscape";
 import { MayorsLedgerModal } from "@/components/sanctuary/mayors-ledger-modal";
 import { VillageQuestsModal } from "@/components/cozy/village-quests-modal";
@@ -108,6 +115,10 @@ export function CozyVillageMap({
   const [selectedDistrict, setSelectedDistrict] = useState<BuildingDistrict | "all">("all");
   const [activeResidentDialogue, setActiveResidentDialogue] = useState<VillageResident | null>(null);
 
+  // Configuración de Habilidades y Mundo Adaptable (OakHaven 4.0)
+  const [worldConfig, setWorldConfig] = useState<VillageWorldConfig>(() => loadWorldPreferences());
+  const [isWorldCustomizationOpen, setIsWorldCustomizationOpen] = useState(false);
+
   // Detener audio al desmontar
   useEffect(() => {
     return () => {
@@ -155,8 +166,11 @@ export function CozyVillageMap({
     }
   };
 
-  // Filtrado de edificios por distrito
-  const filteredBuildings = filterBuildingsByDistrict(selectedDistrict);
+  // Filtrado de edificios por distrito y preferencias activas de Mi Mundo (4.0)
+  const filteredBuildings = useMemo(() => {
+    const districtFiltered = filterBuildingsByDistrict(selectedDistrict);
+    return filterVisibleBuildings(districtFiltered, worldConfig);
+  }, [selectedDistrict, worldConfig]);
 
   return (
     <div className="space-y-6 text-[#3A2E2B]" role="region" aria-label="Mapa Interactivo del Pueblo Oakhaven">
@@ -221,6 +235,20 @@ export function CozyVillageMap({
               <span>Fichas</span>
             </button>
           </div>
+
+          {/* Botón Mi Mundo / Configurar Habilidades (OakHaven 4.0) */}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("light");
+              setIsWorldCustomizationOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#FDDA24] px-3 py-1.5 text-xs font-black text-[#3A2E2B] shadow-[0_2px_0_#3A2E2B] hover:bg-[#FDE24F] transition cursor-pointer"
+            title="Personalizar qué habilidades están activas, en pausa o archivadas en tu pueblo"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5 text-[#3A2E2B]" />
+            Mi Mundo
+          </button>
 
           {/* Botón Bitácora del Alcalde */}
           <button
@@ -667,6 +695,7 @@ export function CozyVillageMap({
                     pending={pending}
                     resident={resident}
                     isHovered={isHovered}
+                    isSelected={selectedBuildingDetail?.id === building.id}
                     onInspect={() => setSelectedBuildingDetail(building)}
                     onEnter={() => onSelectBuilding(building.id, building.domain)}
                     onSelectResident={(res) => {
@@ -935,6 +964,14 @@ export function CozyVillageMap({
         onSubmitSkillSession={onSubmitSkillSession || (async () => false)}
         skillSummaries={skillSummaries}
         recentSessions={recentSessions}
+      />
+
+      {/* MODAL MI MUNDO: GESTIÓN DE HABILIDADES (FASE 4.0) */}
+      <WorldCustomizationModal
+        isOpen={isWorldCustomizationOpen}
+        onClose={() => setIsWorldCustomizationOpen(false)}
+        config={worldConfig}
+        onConfigChange={(newCfg) => setWorldConfig(newCfg)}
       />
     </div>
   );
