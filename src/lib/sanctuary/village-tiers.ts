@@ -267,6 +267,117 @@ export const COZY_VILLAGE_RESIDENTS: VillageResident[] = [
       return "El horno está tibio y el aroma a hierbas inunda el taller. ¿Qué receta nutritiva cocinamos hoy?";
     },
   },
+  {
+    id: "bruno",
+    name: "Bruno",
+    title: "Entrenador de Vitalidad & Fuerza",
+    species: "Tejón Atleta",
+    avatar: "🦡",
+    buildingId: "gimnasio",
+    domain: "sports",
+    favoriteGift: "Agua de Manantial con Limón & Frutos Rojos",
+    greetingQuote: "El verdadero progreso físico no se mide en fatiga extrema, sino en constancia y energía diaria.",
+    microQuest: {
+      title: "Activación Física Consciente (15 min)",
+      description: "Completa 15 minutos de movilidad articular, estiramientos o entrenamiento funcional.",
+      targetAction: "sports_session",
+      estimatedMinutes: 15,
+      badge: "🏋️ +15 min vitalidad",
+    },
+    getDynamicAdvice: ({ sessionsCount }) => {
+      if (sessionsCount === 0) {
+        return "¡Las barras de roble y las colchonetas están listas! Comencemos con una rutina suave y buena hidratación.";
+      }
+      return `Llevas ${sessionsCount} sesiones de entrenamiento registradas. ¡Tu cuerpo y mente agradecen la disciplina!`;
+    },
+  },
+  {
+    id: "sora",
+    name: "Sora",
+    title: "Cronista de la Serenidad",
+    species: "Nutria Pensadora",
+    avatar: "🦦",
+    buildingId: "cabana_diario",
+    domain: "journaling",
+    favoriteGift: "Cuadernos de Papel de Algodón & Tinta Nogal",
+    greetingQuote: "Nombrar lo que sentimos sobre el papel es el primer paso para encontrar la paz interior.",
+    microQuest: {
+      title: "Bitácora de Claridad & Gratitud (10 min)",
+      description: "Escribe 3 cosas por las que estás agradecido hoy y cómo te sientes en este momento.",
+      targetAction: "journaling_session",
+      estimatedMinutes: 10,
+      badge: "📔 +10 min serenidad",
+    },
+    getDynamicAdvice: ({ sessionsCount }) => {
+      if (sessionsCount === 0) {
+        return "El diario en blanco es un refugio sin juicios. Escribe lo primero que venga a tu corazón.";
+      }
+      return "Tu pluma ha dejado huella en la bitácora. Tomar unos minutos de pausa diaria renueva el espíritu.";
+    },
+  },
+  {
+    id: "felix",
+    name: "Félix",
+    title: "Maestro de Estrategia Lúdica",
+    species: "Lince Sagaz",
+    avatar: "🐱",
+    buildingId: "ludoteca",
+    domain: "gaming",
+    favoriteGift: "Dados Tallados en Hueso & Té Negro",
+    greetingQuote: "El juego es el entrenamiento más puro para la toma de decisiones y la paciencia.",
+    microQuest: {
+      title: "Desafío Mental & Estratégico",
+      description: "Resuelve un puzzle lógico o completa una partida consciente de estrategia.",
+      targetAction: "gaming_session",
+      estimatedMinutes: 15,
+      badge: "🎮 +15 min ingenio",
+    },
+    getDynamicAdvice: () => {
+      return "Los tableros están dispuestos y los puzzles esperan un movimiento certero. ¡Que disfrutes la partida!";
+    },
+  },
+  {
+    id: "maya",
+    name: "Maya",
+    title: "Ilustradora de la Naturaleza",
+    species: "Mariposa Observadora",
+    avatar: "🦋",
+    buildingId: "estudio_arte",
+    domain: "drawing",
+    favoriteGift: "Pigmentos Minerales & Pinceles de Bambú",
+    greetingQuote: "No busques la perfección en el trazo; busca la presencia y la emoción en cada línea.",
+    microQuest: {
+      title: "Boceto Rápido & Expresivo (15 min)",
+      description: "Dibuja un elemento de tu entorno sin borrar trazos, apreciando cada detalle.",
+      targetAction: "drawing_session",
+      estimatedMinutes: 15,
+      badge: "🎨 +15 min arte",
+    },
+    getDynamicAdvice: () => {
+      return "La luz que entra por los ventanales del estudio es perfecta hoy. Deja que tu mano fluya en el papel.";
+    },
+  },
+  {
+    id: "hugo",
+    name: "Hugo",
+    title: "Artesano del Torno & Arcilla",
+    species: "Castor Creador",
+    avatar: "🦫",
+    buildingId: "taller_ceramica",
+    domain: "ceramics",
+    favoriteGift: "Arcilla Roja del Río & Esponjas Naturales",
+    greetingQuote: "Al moldear el barro con las manos, aprendes que la forma surge del centro hacia afuera.",
+    microQuest: {
+      title: "Modelado Manual & Texturas",
+      description: "Practica modelado de piezas básicas o preparación de arcilla consciente.",
+      targetAction: "ceramics_session",
+      estimatedMinutes: 20,
+      badge: "🏺 +20 min tacto",
+    },
+    getDynamicAdvice: () => {
+      return "El torno está engrasado y la arcilla en su punto de humedad. Respira y conecta con la materia prima.";
+    },
+  },
 ];
 
 export interface BuildingTrophyItem {
@@ -566,6 +677,100 @@ export function getBuildingTrophies(
           unlocked: sessions >= 10 || level >= 4,
           requirement: "10+ sesiones culinarias o Nivel 4+",
           flavorText: "Distinción legendaria que reconoce la cocina como acto de amor y nutrición consciente.",
+        },
+      ];
+    case "invernadero":
+    case "pabellon_gardening":
+    case "gardening":
+      return [
+        {
+          id: "inv_pot",
+          name: "Maceta de Terracota & Brote",
+          category: "furniture",
+          icon: "🌱",
+          unlocked: sessions >= 1,
+          requirement: "1+ sesión de jardinería o planta regada",
+          flavorText: "Semillero tradicional de barro cocido con tierra abonada y brote verde.",
+        },
+        {
+          id: "inv_can",
+          name: "Regadera de Cobre Antiguo",
+          category: "furniture",
+          icon: "🪴",
+          unlocked: sessions >= 3 || level >= 2,
+          requirement: "3+ sesiones o Nivel 2+",
+          flavorText: "Riega con lluvia fina para cuidar las raíces más delicadas.",
+        },
+        {
+          id: "inv_glass",
+          name: "Cúpula de Cristal de Orquídeas",
+          category: "trophy",
+          icon: "🌺",
+          unlocked: sessions >= 6 || level >= 3,
+          requirement: "6+ sesiones o Nivel 3+",
+          flavorText: "Conserva humedad óptima para especies florales exóticas del bosque.",
+        },
+      ];
+    case "gimnasio":
+    case "sports":
+      return [
+        {
+          id: "gym_mat",
+          name: "Colchoneta de Lona & Yute",
+          category: "furniture",
+          icon: "🧘",
+          unlocked: sessions >= 1,
+          requirement: "1+ sesión de actividad física",
+          flavorText: "Espacio acolchado para movilidad articular, estiramientos y calistenia suave.",
+        },
+        {
+          id: "gym_weights",
+          name: "Mancuernas de Piedra Tallada",
+          category: "furniture",
+          icon: "🏋️",
+          unlocked: sessions >= 3 || level >= 2,
+          requirement: "3+ entrenamientos o Nivel 2+",
+          flavorText: "Pesos equilibrados esculpidos en granito para forjar fortaleza muscular.",
+        },
+        {
+          id: "gym_belt",
+          name: "Cinturón de Fuerza & Disciplina",
+          category: "trophy",
+          icon: "🥋",
+          unlocked: sessions >= 6 || level >= 3,
+          requirement: "6+ entrenamientos o Nivel 3+",
+          flavorText: "Emblema que condecora la constancia corporal y la energía renovada.",
+        },
+      ];
+    case "cabana_diario":
+    case "journaling":
+      return [
+        {
+          id: "dia_quill",
+          name: "Pluma de Ganso & Tintero Nogal",
+          category: "furniture",
+          icon: "✒️",
+          unlocked: sessions >= 1,
+          requirement: "1+ entrada en el diario",
+          flavorText: "Trazo fluido sobre papel que invita a volcar reflexiones sin apuro.",
+        },
+        {
+          id: "dia_candle",
+          name: "Vela de Cera de Abeja & Lavanda",
+          category: "furniture",
+          icon: "🕯️",
+          unlocked: sessions >= 3 || level >= 2,
+          requirement: "3+ entradas o Nivel 2+",
+          flavorText: "Luz suave y aroma apaciguador que predispone a la introspección.",
+        },
+        {
+          id: "dia_tome",
+          name: "Tomo de la Vida Examinada",
+          category: "trophy",
+          icon: "📔",
+          unlocked: sessions >= 6 || level >= 3,
+          requirement: "6+ entradas o Nivel 3+",
+          flavorText: "Cuaderno encuadernado en piel que recopila un mapa honesto de tu camino interior.",
         },
       ];
     default:

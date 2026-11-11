@@ -61,6 +61,9 @@ import { BotanicalGardenBuilding } from "@/components/sanctuary/botanical-garden
 import { HikingOutpostBuilding } from "@/components/sanctuary/hiking-outpost-building";
 import { KitchenBuilding } from "@/components/sanctuary/kitchen-building";
 import { OfficeBuilding } from "@/components/sanctuary/office-building";
+import { GymBuilding } from "@/components/sanctuary/gym-building";
+import { JournalingBuilding } from "@/components/sanctuary/journaling-building";
+import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { VillageScrapbookModal } from "@/components/sanctuary/village-scrapbook-modal";
 import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
 import { CozySkeletonLoader } from "@/components/cozy/cozy-skeleton-loader";
@@ -68,6 +71,7 @@ import { CozySidebar } from "@/components/cozy/cozy-sidebar";
 import { CozyHeader } from "@/components/cozy/cozy-header";
 import { BentoDailyDashboard } from "@/components/cozy/bento-daily-dashboard";
 import { ResidentModal } from "@/components/cozy/resident-modal";
+import { CompanionsModal } from "@/components/cozy/companions-modal";
 import { CozySoundscapeModal } from "@/components/cozy/cozy-soundscape-modal";
 import { VillageQuestsModal } from "@/components/cozy/village-quests-modal";
 import { CozyQuickCaptureModal } from "@/components/cozy/cozy-quick-capture-modal";
@@ -143,6 +147,7 @@ export function CozyRpgDashboard() {
   const [isSoundscapeOpen, setIsSoundscapeOpen] = useState(false);
   const [isVillageQuestsOpen, setIsVillageQuestsOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [isCompanionsOpen, setIsCompanionsOpen] = useState(false);
   const [notesList, setNotesList] = useState<string[]>([
     "Recoger lana de alpaca para la bufanda nórdica.",
     "Completar 20 páginas del libro de arquitectura.",
@@ -413,6 +418,22 @@ export function CozyRpgDashboard() {
               setActiveTab(tab);
               if (tab === "village") setViewMode("village_map");
               if (tab === "home") setViewMode("bento");
+              if (tab === "party") {
+                triggerHaptic("medium");
+                setIsCompanionsOpen(true);
+              }
+              if (tab === "quests") {
+                triggerHaptic("light");
+                setIsVillageQuestsOpen(true);
+              }
+              if (tab === "collections") {
+                triggerHaptic("light");
+                setIsScrapbookOpen(true);
+              }
+              if (tab === "notes") {
+                triggerHaptic("light");
+                setViewMode("bento");
+              }
             }}
             questsCount={quests.length}
             collectionsCount={readingBooks.length + knittingProjects.length}
@@ -543,6 +564,22 @@ export function CozyRpgDashboard() {
                     ? "El Observatorio Cósmico"
                     : activeBuildingModal === "oficina"
                     ? "Torre de Gestión & Oficina"
+                    : activeBuildingModal === "invernadero" || activeBuildingModal === "pabellon_gardening"
+                    ? "Invernadero & Jardín Botánico"
+                    : activeBuildingModal === "gimnasio"
+                    ? "Gimnasio de Fuerza & Resistencia"
+                    : activeBuildingModal === "cabana_diario"
+                    ? "Cabaña del Diario & Reflexión"
+                    : activeBuildingModal === "pabellon_hiking"
+                    ? "Puesto de Senderismo & Refugio"
+                    : activeBuildingModal === "cocina"
+                    ? "Cocina Comunitaria & Fogón"
+                    : activeBuildingModal === "ludoteca"
+                    ? "Salón Recreativo & Ludoteca"
+                    : activeBuildingModal === "estudio_arte"
+                    ? "Estudio de Ilustración & Dibujo"
+                    : activeBuildingModal === "taller_ceramica"
+                    ? "Taller de Alfarería & Cerámica"
                     : "Santuario"
                 }
                 stats={{
@@ -553,6 +590,14 @@ export function CozyRpgDashboard() {
                     : activeBuildingModal === "club_puzzles" ? "rubik"
                     : activeBuildingModal === "observatorio" ? "general"
                     : activeBuildingModal === "oficina" ? "work"
+                    : activeBuildingModal === "invernadero" || activeBuildingModal === "pabellon_gardening" ? "gardening"
+                    : activeBuildingModal === "gimnasio" ? "sports"
+                    : activeBuildingModal === "cabana_diario" ? "journaling"
+                    : activeBuildingModal === "pabellon_hiking" ? "hiking"
+                    : activeBuildingModal === "cocina" ? "cooking"
+                    : activeBuildingModal === "ludoteca" ? "gaming"
+                    : activeBuildingModal === "estudio_arte" ? "drawing"
+                    : activeBuildingModal === "taller_ceramica" ? "ceramics"
                     : "general"
                   ))?.level || 1,
                   sessionsCount: state?.skill_summaries?.find((s) => s.domain === (
@@ -561,6 +606,15 @@ export function CozyRpgDashboard() {
                     : activeBuildingModal === "biblioteca" ? "study"
                     : activeBuildingModal === "club_puzzles" ? "rubik"
                     : activeBuildingModal === "observatorio" ? "general"
+                    : activeBuildingModal === "oficina" ? "work"
+                    : activeBuildingModal === "invernadero" || activeBuildingModal === "pabellon_gardening" ? "gardening"
+                    : activeBuildingModal === "gimnasio" ? "sports"
+                    : activeBuildingModal === "cabana_diario" ? "journaling"
+                    : activeBuildingModal === "pabellon_hiking" ? "hiking"
+                    : activeBuildingModal === "cocina" ? "cooking"
+                    : activeBuildingModal === "ludoteca" ? "gaming"
+                    : activeBuildingModal === "estudio_arte" ? "drawing"
+                    : activeBuildingModal === "taller_ceramica" ? "ceramics"
                     : "general"
                   ))?.sessions_count || recentSessions.length,
                   booksRead: readingBooks.length,
@@ -646,13 +700,39 @@ export function CozyRpgDashboard() {
                 />
               )}
 
-              {activeBuildingModal === "pabellon_gardening" && (
+              {(activeBuildingModal === "invernadero" || activeBuildingModal === "pabellon_gardening") && (
                 <BotanicalGardenBuilding
                   playerLevel={playerLevel}
                   skillLevel={state?.skill_summaries?.find((s) => s.domain === "gardening")?.level || 1}
                   totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "gardening")?.total_gp_earned || 0}
                   isCozyActive={true}
                   quests={quests}
+                  onRefreshState={fetchState}
+                  onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
+                />
+              )}
+
+              {activeBuildingModal === "gimnasio" && (
+                <GymBuilding
+                  sessions={recentSessions}
+                  playerLevel={playerLevel}
+                  skillLevel={state?.skill_summaries?.find((s) => s.domain === "sports")?.level || 1}
+                  totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "sports")?.total_gp_earned || 0}
+                  isCozyActive={true}
+                  onRefreshState={fetchState}
+                  onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
+                />
+              )}
+
+              {activeBuildingModal === "cabana_diario" && (
+                <JournalingBuilding
+                  sessions={recentSessions}
+                  playerLevel={playerLevel}
+                  skillLevel={state?.skill_summaries?.find((s) => s.domain === "journaling")?.level || 1}
+                  totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "journaling")?.total_gp_earned || 0}
+                  isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
                   onClose={() => setActiveBuildingModal(null)}
@@ -694,6 +774,52 @@ export function CozyRpgDashboard() {
                   onClose={() => setActiveBuildingModal(null)}
                 />
               )}
+
+              {["ludoteca", "estudio_arte", "taller_ceramica"].includes(activeBuildingModal) && (
+                <BuildingInteriorShell
+                  buildingId={activeBuildingModal}
+                  buildingName={
+                    activeBuildingModal === "ludoteca"
+                      ? "Salón Recreativo & Ludoteca"
+                      : activeBuildingModal === "estudio_arte"
+                      ? "Estudio de Ilustración & Dibujo"
+                      : "Taller de Alfarería & Cerámica"
+                  }
+                  domain={
+                    activeBuildingModal === "ludoteca"
+                      ? "gaming"
+                      : activeBuildingModal === "estudio_arte"
+                      ? "drawing"
+                      : "ceramics"
+                  }
+                  districtName="Distrito de Artes & Oficios"
+                  icon={
+                    activeBuildingModal === "ludoteca" ? "🎮"
+                    : activeBuildingModal === "estudio_arte" ? "🎨"
+                    : "🏺"
+                  }
+                  tagline="Espacio de práctica y presencia en preparación artesanal"
+                  playerLevel={playerLevel}
+                  skillLevel={1}
+                  totalGpEarned={0}
+                  activeTab="info"
+                  tabs={[
+                    { id: "info", label: "Taller en Preparación" },
+                  ]}
+                  onTabChange={() => {}}
+                  onClose={() => setActiveBuildingModal(null)}
+                >
+                  <div className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-8 text-center space-y-3">
+                    <span className="text-4xl select-none">🛠️</span>
+                    <h3 className="text-base font-black text-[#3A2E2B]">
+                      Taller Artesanal Habilitado en el Santuario
+                    </h3>
+                    <p className="text-xs text-[#795548] max-w-md mx-auto leading-relaxed">
+                      Este edificio forma parte del catastro oficial de Oakhaven. Sus herramientas y atril se encuentran dispuestos para futuras ampliaciones de módulos específicos, mientras que su hito y presencia están plenamente integrados en el pueblo.
+                    </p>
+                  </div>
+                </BuildingInteriorShell>
+              )}
             </div>
           </div>
         </div>
@@ -710,6 +836,16 @@ export function CozyRpgDashboard() {
             ? state?.skill_summaries?.find((s) => s.domain === selectedResident.domain)
             : undefined
         }
+        recentSessions={recentSessions}
+      />
+
+      {/* CASA DE COMPAÑEROS (CENSO DE RESIDENTES & INVENTARIO HUMANO) */}
+      <CompanionsModal
+        isOpen={isCompanionsOpen}
+        onClose={() => setIsCompanionsOpen(false)}
+        onSelectResident={(resident) => setSelectedResident(resident)}
+        onOpenBuilding={(buildingId) => setActiveBuildingModal(buildingId)}
+        skillSummaries={state?.skill_summaries}
         recentSessions={recentSessions}
       />
 

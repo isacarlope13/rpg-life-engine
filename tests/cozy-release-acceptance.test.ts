@@ -65,7 +65,7 @@ test("Aceptación Caso 1: Dashboard Bento, Hidratación de Datos Reales y Acceso
   assert.equal(realEngineState.knitting_projects.length, 1);
 
   // 2. Acceso y navegación hacia el mapa del pueblo interactivo
-  assert.equal(VILLAGE_BUILDINGS_CATALOG.length, 9, "El pueblo debe renderizar los 9 edificios del Santuario");
+  assert.ok(VILLAGE_BUILDINGS_CATALOG.length >= 9, "El pueblo debe renderizar al menos los 9 edificios del Santuario");
   const buildingIds = VILLAGE_BUILDINGS_CATALOG.map((b) => b.id);
   assert.ok(buildingIds.includes("atelier"));
   assert.ok(buildingIds.includes("libreria"));

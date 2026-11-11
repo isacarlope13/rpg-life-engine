@@ -681,38 +681,70 @@ export function BentoDailyDashboard({
             )}
 
             {/* Accesos rápidos a edificios del Santuario */}
-            <div className="mt-3.5 grid grid-cols-2 gap-2 text-xs">
+            <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => onOpenBuilding("atelier")}
-                className="flex items-center gap-2 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
               >
-                <span className="text-base select-none">🧶</span>
-                <span className="truncate">Atelier Tejido</span>
+                <span className="text-sm select-none">🧶</span>
+                <span className="truncate">Atelier</span>
               </button>
               <button
                 type="button"
                 onClick={() => onOpenBuilding("libreria")}
-                className="flex items-center gap-2 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
               >
-                <span className="text-base select-none">📚</span>
-                <span className="truncate">Librería Archivo</span>
+                <span className="text-sm select-none">📚</span>
+                <span className="truncate">Librería</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenBuilding("invernadero")}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
+              >
+                <span className="text-sm select-none">🌿</span>
+                <span className="truncate">Invernadero</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenBuilding("gimnasio")}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
+              >
+                <span className="text-sm select-none">🏋️</span>
+                <span className="truncate">Gimnasio</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenBuilding("cabana_diario")}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
+              >
+                <span className="text-sm select-none">📔</span>
+                <span className="truncate">Diario</span>
               </button>
               <button
                 type="button"
                 onClick={() => onOpenBuilding("club_puzzles")}
-                className="flex items-center gap-2 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
               >
-                <span className="text-base select-none">🧩</span>
+                <span className="text-sm select-none">🧩</span>
                 <span className="truncate">Club Puzzles</span>
               </button>
               <button
                 type="button"
                 onClick={() => onOpenBuilding("observatorio")}
-                className="flex items-center gap-2 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
               >
-                <span className="text-base select-none">🔭</span>
+                <span className="text-sm select-none">🔭</span>
                 <span className="truncate">Observatorio</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenBuilding("oficina")}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-2 font-bold text-[#3A2E2B] hover:bg-[#FFFDF8] transition cursor-pointer"
+              >
+                <span className="text-sm select-none">💼</span>
+                <span className="truncate">Oficina</span>
               </button>
             </div>
           </div>
@@ -743,7 +775,7 @@ export function BentoDailyDashboard({
               </div>
             </div>
 
-            <div className="mt-3.5 grid grid-cols-2 gap-3">
+            <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-3 gap-3">
               {/* Libros */}
               <div
                 onClick={() => onOpenBuilding("libreria")}
@@ -777,6 +809,30 @@ export function BentoDailyDashboard({
                 <h4 className="mt-1 text-xs font-black text-[#3A2E2B]">Arsenal WCA</h4>
                 <span className="font-mono text-xs font-bold text-[#06B6D4]">
                   {rubikCubes.length || 1} Cubos de velocidad
+                </span>
+              </div>
+
+              {/* Invernadero */}
+              <div
+                onClick={() => onOpenBuilding("invernadero")}
+                className="rounded-2xl border-3 border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] hover:-translate-y-0.5 transition cursor-pointer"
+              >
+                <span className="text-2xl select-none">🌿</span>
+                <h4 className="mt-1 text-xs font-black text-[#3A2E2B]">Invernadero</h4>
+                <span className="font-mono text-xs font-bold text-[#4E6E58]">
+                  Huerto & Botánica
+                </span>
+              </div>
+
+              {/* Gimnasio */}
+              <div
+                onClick={() => onOpenBuilding("gimnasio")}
+                className="rounded-2xl border-3 border-[#3A2E2B] bg-[#F7F4EB] p-3 shadow-[0_2px_0_#3A2E2B] hover:-translate-y-0.5 transition cursor-pointer"
+              >
+                <span className="text-2xl select-none">🏋️</span>
+                <h4 className="mt-1 text-xs font-black text-[#3A2E2B]">Gimnasio</h4>
+                <span className="font-mono text-xs font-bold text-[#588157]">
+                  Fuerza & Vitalidad
                 </span>
               </div>
 

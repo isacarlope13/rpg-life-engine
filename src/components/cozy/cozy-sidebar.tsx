@@ -12,6 +12,7 @@ import {
   FileText,
   Zap,
 } from "lucide-react";
+import { VILLAGE_BUILDINGS_CATALOG } from "@/lib/sanctuary/village-buildings-registry";
 
 export type NavItem =
   | "home"
@@ -44,7 +45,7 @@ export function CozySidebar({
 }: CozySidebarProps) {
   const NAV_ITEMS = [
     { id: "home", label: "Inicio (Hem)", icon: Home, badge: "Bento" },
-    { id: "village", label: "Pueblo Vivo (By)", icon: Compass, badge: "8 Edificios" },
+    { id: "village", label: "Pueblo Vivo (By)", icon: Compass, badge: `${VILLAGE_BUILDINGS_CATALOG.length} Edificios` },
     { id: "quests", label: "Misiones (Uppgifter)", icon: Scroll, badge: `${questsCount}` },
     { id: "collections", label: "Colecciones (Samlingar)", icon: Archive, badge: `${collectionsCount}` },
     { id: "party", label: "Compañeros (Invånare)", icon: Users, badge: `${residentsCount}` },
