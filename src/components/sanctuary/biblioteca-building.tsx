@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 import {
   GraduationCap,
   Clock,
@@ -17,11 +16,15 @@ import {
   Timer,
   Layers,
   Award,
+  History,
+  Plus,
 } from "lucide-react";
 import type { SpacedRepetitionCard, SkillSessionRecord } from "@/types/rpg";
 import { SpacedRepetitionDuelingWidget } from "@/components/rpg-advanced-widgets";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
+import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
+import { triggerHaptic } from "@/lib/offline-sync";
 
 interface BibliotecaBuildingProps {
   cards: SpacedRepetitionCard[];
@@ -34,6 +37,7 @@ interface BibliotecaBuildingProps {
   onSubmitDirectSkillSession: (payload: Record<string, unknown>) => Promise<unknown>;
   onReviewCard: (cardId: string, rating: 1 | 2 | 3 | 4) => Promise<void>;
   onAddCard: (prompt: string, reflection: string, source: string) => Promise<void>;
+  onClose?: () => void;
 }
 
 export function BibliotecaBuilding({
@@ -47,7 +51,10 @@ export function BibliotecaBuilding({
   onSubmitDirectSkillSession,
   onReviewCard,
   onAddCard,
+  onClose,
 }: BibliotecaBuildingProps) {
+  const [activeTab, setActiveTab] = useState<"estudio" | "repasos" | "materias" | "historial">("estudio");
+
   // Parámetros de la sesión de estudio
   const [studySubject, setStudySubject] = useState<string>("Desarrollo & Arquitectura");
   const [studyMethod, setStudyMethod] = useState<
@@ -56,13 +63,23 @@ export function BibliotecaBuilding({
   const [studyMinutes, setStudyMinutes] = useState<number>(50);
   const [comprehensionRating, setComprehensionRating] = useState<number>(4);
   const [sessionNotes, setSessionNotes] = useState<string>("");
-  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{
+    type: "success" | "error" | "warning";
+    message: string;
+  } | null>(null);
+
+  // Formulario de nueva flashcard
+  const [isAddingCard, setIsAddingCard] = useState(false);
+  const [newCardPrompt, setNewCardPrompt] = useState("");
+  const [newCardReflection, setNewCardReflection] = useState("");
+  const [newCardSource, setNewCardSource] = useState("");
 
   // Motor Universal de Sesiones
   const {
     session,
     isRunning,
     isPaused,
+    isActive,
     formattedTime,
     elapsedMinutes,
     startSession,
@@ -77,6 +94,7 @@ export function BibliotecaBuilding({
   const totalStudyMinutes = studySessions.reduce((acc, s) => acc + (s.duration_minutes || 0), 0);
 
   const handleStartStudy = () => {
+    triggerHaptic("light");
     startSession({
       domain: "study",
       buildingId: "biblioteca",
@@ -84,11 +102,14 @@ export function BibliotecaBuilding({
       objective: `Bloque de ${studyMethod} en ${studySubject}`,
       initialNotes: sessionNotes,
     });
-    setActionSuccessMsg("🎓 ¡Sesión de estudio iniciada en La Biblioteca!");
-    setTimeout(() => setActionSuccessMsg(null), 3000);
+    setNotification({
+      type: "success",
+      message: "🎓 ¡Sesión de estudio iniciada! Concentración en atril de estudio.",
+    });
   };
 
   const handleFinishAndSave = async () => {
+    triggerHaptic("medium");
     try {
       const minutesToLog = isRunning || isPaused ? elapsedMinutes : studyMinutes;
       const result = await finishSession({
@@ -100,343 +121,411 @@ export function BibliotecaBuilding({
       });
 
       if (result) {
-        setActionSuccessMsg(
-          `✨ ¡Bloque de estudio completado! Se registraron ${minutesToLog}m en "${studySubject}".`
-        );
+        setNotification({
+          type: "success",
+          message: `✨ ¡Bloque de estudio completado! Se registraron ${minutesToLog}m en "${studySubject}".`,
+        });
         setSessionNotes("");
         await onRefreshState();
-        setTimeout(() => setActionSuccessMsg(null), 4000);
       }
     } catch (err) {
       console.error("Error al finalizar sesión en Biblioteca:", err);
-      setActionSuccessMsg("⚠️ Ocurrió un error al guardar la sesión.");
+      setNotification({
+        type: "error",
+        message: "Ocurrió un error al guardar la sesión de estudio.",
+      });
+    }
+  };
+
+  const handleCreateCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCardPrompt.trim() || !newCardReflection.trim()) return;
+
+    try {
+      await onAddCard(newCardPrompt.trim(), newCardReflection.trim(), newCardSource.trim() || studySubject);
+      setNotification({
+        type: "success",
+        message: "🧠 ¡Tarjeta de memoria espaciada forjada en el atril!",
+      });
+      setIsAddingCard(false);
+      setNewCardPrompt("");
+      setNewCardReflection("");
+      setNewCardSource("");
+      await onRefreshState();
+    } catch {
+      setNotification({
+        type: "error",
+        message: "No se pudo guardar la tarjeta.",
+      });
     }
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* 1. NAVEGACIÓN SUPERIOR: RETORNO AL PUEBLO */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#4A3C31]/40 pb-4">
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-2 rounded-xl border border-[#4A3C31]/50 bg-[#25201C] px-3.5 py-2 text-xs font-bold text-[#EAE4D9] hover:border-[#88A98E]/60 hover:bg-[#2C2420] transition"
-        >
-          <ArrowLeft className="h-4 w-4 text-[#88A98E]" />
-          <span>Volver al Pueblo del Santuario</span>
-        </Link>
-
-        <div className="flex items-center gap-2">
-          <span className="rounded-lg bg-[#A78BFA]/20 border border-[#A78BFA]/30 px-2.5 py-1 text-xs font-bold text-[#DDD6FE]">
-            NVL {skillLevel} Estudio
-          </span>
-          <span className="rounded-lg bg-[#E9C46A]/15 border border-[#E9C46A]/30 px-2.5 py-1 text-xs font-bold text-[#E9C46A]">
-            🪙 {totalGpEarned.toLocaleString("es-CO")} GP Liberados
-          </span>
-          <span className="rounded-lg bg-[#2E2822] border border-[#4A3C31]/50 px-2.5 py-1 text-xs font-mono font-bold text-[#D8E6DA]">
-            ⏱️ {Math.round(totalStudyMinutes / 60)}h {totalStudyMinutes % 60}m acumulados
-          </span>
+    <BuildingInteriorShell
+      buildingId="biblioteca"
+      buildingName="La Gran Biblioteca del Erudito"
+      domain="study"
+      districtName="Distrito del Saber"
+      icon="🏛️"
+      tagline="Atriles de nogal, duelos de memoria espaciada SM-2 y forja de conocimiento duradero."
+      playerLevel={playerLevel}
+      skillLevel={skillLevel}
+      totalGpEarned={totalGpEarned}
+      specificMetrics={[
+        { label: "Tarjetas SM-2", value: cards.length },
+        { label: "Horas de Estudio", value: `${Math.round(totalStudyMinutes / 60)}h ${totalStudyMinutes % 60}m` },
+      ]}
+      lastSessionSummary={
+        studySubject ? `Continuar estudio de "${studySubject}" (${studyMethod})` : undefined
+      }
+      continueActionLabel="Iniciar bloque de estudio"
+      onContinueLastSession={() => {
+        setActiveTab("estudio");
+        handleStartStudy();
+      }}
+      activeTab={activeTab}
+      tabs={[
+        { id: "estudio", label: "Sesión de Estudio", icon: <GraduationCap className="h-3.5 w-3.5" /> },
+        { id: "repasos", label: "Repasos SM-2", icon: <Brain className="h-3.5 w-3.5" />, badge: cards.length },
+        { id: "materias", label: "Materias & Temas", icon: <Layers className="h-3.5 w-3.5" /> },
+        { id: "historial", label: "Historial de Estudio", icon: <History className="h-3.5 w-3.5" />, badge: studySessions.length },
+      ]}
+      onTabChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+      onClose={onClose}
+    >
+      {notification && (
+        <div className="mb-4">
+          <CozyNotification
+            variant={notification.type}
+            title={notification.type === "success" ? "¡Éxito!" : "Aviso"}
+            message={notification.message}
+            onDismiss={() => setNotification(null)}
+          />
         </div>
-      </div>
-
-      {/* 2. CABECERA ATMOSFÉRICA: LA BIBLIOTECA */}
-      <div className="rounded-2xl border border-[#453A5A]/60 bg-gradient-to-r from-[#201D28] via-[#2A2337] to-[#201D28] p-6 shadow-md text-[#EAE4D9]">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#362D45] text-3xl ring-2 ring-[#A78BFA]/40 shadow-inner">
-              🎓
-            </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black text-[#F4EFE6] tracking-tight">
-                  La Biblioteca del Erudito
-                </h1>
-                <span className="rounded-md bg-[#A78BFA]/20 px-2 py-0.5 text-[11px] font-bold text-[#DDD6FE]">
-                  Estudio Profundo & Memoria
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-[#C9BEAE] max-w-2xl leading-relaxed">
-                Mesas de nogal bajo lámparas verdes de banquero. Diseñada para la asimilación conceptual rigurosa, duelos de memoria SM-2 y preparación sin distracciones.
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-[#453A5A]/50 bg-[#16131D]/70 p-3 text-right shrink-0">
-            <span className="text-[10px] uppercase font-bold text-[#A69B8D] tracking-wider block">
-              Tarjetas Mnemotécnicas
-            </span>
-            <span className="font-mono text-lg font-black text-[#A78BFA]">
-              {cards.length} Flashcards SM-2
-            </span>
-            <span className="block text-[10px] text-[#88A98E] font-medium">
-              Repetición espaciada activa
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* BANNER DE NOTIFICACIÓN ESTANDARIZADO */}
-      {actionSuccessMsg && (
-        <CozyNotification
-          variant={actionSuccessMsg.includes("⚠️") ? "warning" : "success"}
-          message={actionSuccessMsg}
-          onDismiss={() => setActionSuccessMsg(null)}
-        />
       )}
 
-      {/* 3. WIDGET DE DUELO DE REPETICIÓN ESPACIADA SM-2 */}
-      <div className="rounded-2xl border border-[#4A3C31]/50 bg-[#221F1C]/80 p-5 shadow-md">
-        <div className="flex items-center justify-between mb-3 border-b border-[#4A3C31]/40 pb-2.5">
-          <div className="flex items-center gap-2">
-            <Brain className="h-4 w-4 text-[#A78BFA]" />
-            <h2 className="text-sm font-bold text-[#EAE4D9]">
-              Duelo de Memoria & Repetición Espaciada SM-2
-            </h2>
-          </div>
-          <span className="text-[11px] text-[#A69B8D]">
-            Algoritmo SuperMemo 2
-          </span>
-        </div>
-
-        <SpacedRepetitionDuelingWidget
-          cards={cards}
-          onReviewCard={onReviewCard}
-          onAddCard={onAddCard}
-        />
-      </div>
-
-      {/* 4. LAYOUT CENTRAL: BANCO DE ESTUDIO & BITÁCORA */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* PANEL IZQUIERDO: CONFIGURACIÓN DE SESIÓN & CRONÓMETRO (6 COLUMNAS) */}
-        <div className="space-y-4 rounded-2xl border border-[#4A3C31]/50 bg-[#221F1C]/85 p-5 shadow-md lg:col-span-6 text-[#EAE4D9]">
-          <div className="flex items-center justify-between border-b border-[#4A3C31]/40 pb-3">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-[#A78BFA]" />
-              <h2 className="text-sm font-bold text-[#EAE4D9]">
-                Mesa de Estudio Profundo
-              </h2>
-            </div>
-            <span className="text-[11px] text-[#A69B8D]">
-              Motor Universal
-            </span>
-          </div>
-
-          {/* CRONÓMETRO DE ESTUDIO */}
-          <div className="rounded-xl border border-[#453A5A]/50 bg-[#17141E] p-4 text-center">
-            <span className="text-[10px] uppercase font-bold text-[#A69B8D] tracking-wider block">
-              {isRunning
-                ? "● Bloque de Estudio en Curso"
-                : isPaused
-                ? "⏸ Estudio en Pausa"
-                : "Listo para Iniciar"}
-            </span>
-            <div className="mt-1 font-mono text-3xl font-black text-[#F4EFE6] tracking-tight">
-              {formattedTime}
-            </div>
-            <p className="mt-1 text-[11px] text-[#A69B8D] truncate">
-              {studySubject} · {studyMethod}
-            </p>
-
-            {/* CONTROLES */}
-            <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
-              {!isRunning && !isPaused ? (
-                <CozyButton
-                  variant="lake"
-                  size="sm"
-                  icon={<Play className="h-4 w-4 fill-current" />}
-                  onClick={handleStartStudy}
-                >
-                  Iniciar Bloque de Estudio
-                </CozyButton>
-              ) : (
-                <>
-                  {isPaused ? (
-                    <CozyButton
-                      variant="sage"
-                      size="sm"
-                      icon={<Play className="h-3.5 w-3.5 fill-current" />}
-                      onClick={resumeSession}
-                    >
-                      Reanudar
-                    </CozyButton>
-                  ) : (
-                    <CozyButton
-                      variant="sunlight"
-                      size="sm"
-                      icon={<Pause className="h-3.5 w-3.5" />}
-                      onClick={pauseSession}
-                    >
-                      Pausar
-                    </CozyButton>
-                  )}
-
-                  <CozyButton
-                    variant="lake"
-                    size="sm"
-                    disabled={submitting}
-                    icon={<Square className="h-3.5 w-3.5 fill-current" />}
-                    onClick={handleFinishAndSave}
-                  >
-                    Concluir ({elapsedMinutes}m)
-                  </CozyButton>
-
-                  <CozyButton
-                    variant="wood"
-                    size="sm"
-                    icon={<RotateCcw className="h-3 w-3" />}
-                    onClick={resetSession}
-                    aria-label="Reiniciar cronómetro"
-                  />
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* MATERIA & MÉTODO */}
-          <div className="space-y-3">
-            <div>
-              <label className="text-[11px] text-[#A69B8D] block mb-1">
-                Materia / Tema:
-              </label>
-              <input
-                type="text"
-                value={studySubject}
-                onChange={(e) => setStudySubject(e.target.value)}
-                placeholder="Ej. Algoritmos, Finanzas, Neurociencia..."
-                className="w-full rounded-lg border border-[#4A3C31] bg-[#161412] px-3 py-2 text-xs text-[#EAE4D9] focus:border-[#A78BFA] focus:outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-[11px] text-[#A69B8D] block mb-1">
-                  Método de Enfoque:
-                </label>
-                <select
-                  value={studyMethod}
-                  onChange={(e) => setStudyMethod(e.target.value as typeof studyMethod)}
-                  className="w-full rounded-lg border border-[#4A3C31] bg-[#161412] px-2.5 py-2 text-xs text-[#EAE4D9] focus:border-[#A78BFA] focus:outline-none"
-                >
-                  <option value="Deep Study 50/10">Deep Study 50/10</option>
-                  <option value="Pomodoro 25/5">Pomodoro 25/5</option>
-                  <option value="Active Recall">Active Recall</option>
-                  <option value="Técnica Feynman">Técnica Feynman</option>
-                  <option value="Resolución de Problemas">Resolución de Problemas</option>
-                </select>
+      {/* =======================================================================
+          TAB 1: SESIÓN DE ESTUDIO ACTIVA
+         ======================================================================= */}
+      {activeTab === "estudio" && (
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+          <div className="md:col-span-7 space-y-4">
+            <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_6px_0_#3A2E2B] space-y-4">
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-[#795548] tracking-wider block">
+                  Atril Principal de Cátedra
+                </span>
+                <h3 className="text-base font-black text-[#3A2E2B]">
+                  Configuración del Bloque de Estudio
+                </h3>
               </div>
 
-              <div>
-                <label className="text-[11px] text-[#A69B8D] block mb-1">
-                  Meta Duración (minutos):
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#795548] block">
+                  Materia o Tema:
                 </label>
                 <input
-                  type="number"
-                  min="10"
-                  max="180"
-                  value={studyMinutes}
-                  onChange={(e) => setStudyMinutes(Number(e.target.value))}
-                  className="w-full rounded-lg border border-[#4A3C31] bg-[#161412] px-3 py-2 text-xs text-[#EAE4D9] focus:border-[#A78BFA] focus:outline-none"
+                  type="text"
+                  value={studySubject}
+                  onChange={(e) => setStudySubject(e.target.value)}
+                  placeholder="Ej. Algoritmos, Arquitectura Hexagonal, Inglés..."
+                  className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-2 text-xs font-bold text-[#3A2E2B] outline-none"
                 />
               </div>
-            </div>
 
-            {/* PRESETS RÁPIDOS DE MINUTOS */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {[25, 50, 75, 90].map((mins) => (
-                <button
-                  key={mins}
-                  type="button"
-                  onClick={() => setStudyMinutes(mins)}
-                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
-                    studyMinutes === mins
-                      ? "bg-[#A78BFA] text-[#1E1B18] shadow"
-                      : "bg-[#25201C] text-[#A69B8D] hover:bg-[#2C2420]"
-                  }`}
-                >
-                  {mins} min
-                </button>
-              ))}
-            </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#795548] block">
+                  Método de Aprendizaje:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["Deep Study 50/10", "Pomodoro 25/5", "Active Recall", "Técnica Feynman"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setStudyMethod(m)}
+                      className={`rounded-xl border-2 p-2 text-left text-xs font-bold transition cursor-pointer ${
+                        studyMethod === m
+                          ? "border-[#3A2E2B] bg-[#314C3C] text-[#FFFDF8] shadow-[0_2px_0_#1A2B20]"
+                          : "border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C]"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            {/* APUNTES & NOTAS CONCEPTUALES */}
-            <div>
-              <label className="text-[11px] text-[#A69B8D] block mb-1">
-                Apuntes Clave / Resumen de Sesión:
-              </label>
+              {/* Cronómetro Universal */}
+              <div className="rounded-2xl border-3 border-[#3A2E2B] bg-[#F4EEDC] p-4 text-center space-y-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#795548] block">
+                  {isRunning ? "⏱️ Sesión de Estudio Activa" : isPaused ? "⏸️ En Pausa" : "🎓 Listo para Estudiar"}
+                </span>
+
+                <div className="font-mono text-4xl sm:text-5xl font-black text-[#3A2E2B] tracking-tight">
+                  {formattedTime}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  {!isActive ? (
+                    <CozyButton
+                      variant="forest"
+                      size="md"
+                      onClick={handleStartStudy}
+                      className="flex items-center gap-2"
+                    >
+                      <Play className="h-4 w-4" />
+                      Comenzar Bloque de Estudio
+                    </CozyButton>
+                  ) : (
+                    <>
+                      {isRunning ? (
+                        <CozyButton
+                          variant="clay"
+                          size="md"
+                          onClick={() => {
+                            triggerHaptic("light");
+                            pauseSession();
+                          }}
+                          className="flex items-center gap-1.5"
+                        >
+                          <Pause className="h-4 w-4" />
+                          Pausar
+                        </CozyButton>
+                      ) : (
+                        <CozyButton
+                          variant="forest"
+                          size="md"
+                          onClick={() => {
+                            triggerHaptic("light");
+                            resumeSession();
+                          }}
+                          className="flex items-center gap-1.5"
+                        >
+                          <Play className="h-4 w-4" />
+                          Reanudar
+                        </CozyButton>
+                      )}
+
+                      <CozyButton
+                        variant="sunlight"
+                        size="md"
+                        disabled={submitting}
+                        onClick={handleFinishAndSave}
+                        className="flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        {submitting ? "Guardando..." : "Finalizar & Registrar"}
+                      </CozyButton>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("warning");
+                          resetSession();
+                        }}
+                        className="text-xs font-bold text-red-700 underline hover:text-red-900 cursor-pointer ml-2"
+                      >
+                        Descartar
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-5 space-y-4">
+            <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
+              <h4 className="text-xs font-black uppercase text-[#3A2E2B] flex items-center gap-1.5">
+                <BookOpen className="h-4 w-4 text-[#77936A]" />
+                Apuntes & Reflexiones del Bloque
+              </h4>
+
               <textarea
-                rows={2}
                 value={sessionNotes}
                 onChange={(e) => setSessionNotes(e.target.value)}
-                placeholder="Conceptos asimilados, dudas o fórmulas clave..."
-                className="w-full rounded-lg border border-[#4A3C31] bg-[#161412] p-2.5 text-xs text-[#EAE4D9] placeholder-[#7D7366] focus:border-[#A78BFA] focus:outline-none resize-none"
+                placeholder="Anota las conclusiones clave, dudas resueltas o conceptos que debas repasar..."
+                rows={5}
+                className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-3 text-xs font-medium text-[#3A2E2B] placeholder:text-[#795548]/60 outline-none"
               />
-            </div>
-          </div>
 
-          {/* BOTÓN REGISTRAR BLOQUE */}
-          <div className="pt-2 border-t border-[#4A3C31]/30">
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={handleFinishAndSave}
-              className="w-full rounded-xl bg-[#2D2621] border border-[#A78BFA]/40 py-2.5 text-xs font-bold text-[#DDD6FE] hover:bg-[#382F2A] hover:border-[#A78BFA] transition disabled:opacity-40 cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Award className="h-4 w-4 text-[#E9C46A]" />
-              <span>Registrar Bloque de Estudio ({studyMinutes}m)</span>
-            </button>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-[#795548] uppercase block">
+                  Autoevaluación de Comprensión (1 - 5):
+                </label>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setComprehensionRating(star)}
+                      className={`flex-1 rounded-xl border-2 py-1 text-xs font-bold transition cursor-pointer ${
+                        comprehensionRating >= star
+                          ? "border-[#3A2E2B] bg-[#E7D69C] text-[#3A2E2B]"
+                          : "border-[#3A2E2B] bg-[#FFFDF8] text-[#795548]"
+                      }`}
+                    >
+                      ★ {star}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* PANEL DERECHO: HISTORIAL & BITÁCORA DE APRENDIZAJE (6 COLUMNAS) */}
-        <div className="space-y-4 rounded-2xl border border-[#4A3C31]/50 bg-[#221F1C]/85 p-5 shadow-md lg:col-span-6 text-[#EAE4D9]">
-          <div className="flex items-center justify-between border-b border-[#4A3C31]/40 pb-3">
-            <div className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-[#88A98E]" />
-              <h2 className="text-sm font-bold text-[#EAE4D9]">
-                Bitácora de Sesiones de la Biblioteca
-              </h2>
+      {/* =======================================================================
+          TAB 2: REPASOS SM-2 (DUELO DE FLASHCARDS)
+         ======================================================================= */}
+      {activeTab === "repasos" && (
+        <div className="space-y-4">
+          <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
+            <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/15 pb-2">
+              <div>
+                <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+                  Duelo Mnemotécnico de Repetición Espaciada SM-2
+                </h4>
+                <p className="text-xs text-[#795548]">
+                  Consolida conceptos a largo plazo sin saturación mediante el algoritmo SuperMemo-2.
+                </p>
+              </div>
+              <span className="rounded-full bg-[#E7D69C] px-3 py-1 text-xs font-black text-[#3A2E2B] border border-[#3A2E2B]">
+                {cards.length} Tarjetas en Rotación
+              </span>
             </div>
-            <span className="text-[10px] text-[#A69B8D] font-mono">
-              {studySessions.length} registros
-            </span>
+
+            <SpacedRepetitionDuelingWidget
+              cards={cards}
+              onReviewCard={onReviewCard}
+              onAddCard={onAddCard}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* =======================================================================
+          TAB 3: MATERIAS, CURSOS & NUEVA TARJETA
+         ======================================================================= */}
+      {activeTab === "materias" && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+              Banco de Materias & Fichas Nemotécnicas
+            </h4>
+            <CozyButton
+              variant="forest"
+              size="sm"
+              onClick={() => setIsAddingCard(!isAddingCard)}
+              className="flex items-center gap-1.5"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>{isAddingCard ? "Cerrar" : "Crear Flashcard"}</span>
+            </CozyButton>
           </div>
 
+          {isAddingCard && (
+            <form onSubmit={handleCreateCard} className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_4px_0_#3A2E2B] space-y-3">
+              <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+                Nueva Ficha de Repaso SM-2
+              </h4>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="Pregunta o concepto clave *"
+                  value={newCardPrompt}
+                  onChange={(e) => setNewCardPrompt(e.target.value)}
+                  className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-2 text-xs font-bold text-[#3A2E2B] outline-none"
+                />
+                <textarea
+                  required
+                  placeholder="Respuesta, fórmula o reflexión a recordar *"
+                  rows={3}
+                  value={newCardReflection}
+                  onChange={(e) => setNewCardReflection(e.target.value)}
+                  className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-3 text-xs font-medium text-[#3A2E2B] outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="Materia o Fuente (opcional)"
+                  value={newCardSource}
+                  onChange={(e) => setNewCardSource(e.target.value)}
+                  className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-1.5 text-xs font-bold text-[#3A2E2B] outline-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <CozyButton variant="wood" size="sm" type="button" onClick={() => setIsAddingCard(false)}>
+                  Cancelar
+                </CozyButton>
+                <CozyButton variant="forest" size="sm" type="submit">
+                  Forjar Tarjeta ➜
+                </CozyButton>
+              </div>
+            </form>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {cards.slice(0, 6).map((c) => (
+              <div key={c.id} className="rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] p-4 shadow-[0_3px_0_#3A2E2B] space-y-2">
+                <span className="text-[10px] font-black uppercase text-[#77936A] tracking-wider block">
+                  {c.source_title || "Materia General"}
+                </span>
+                <h4 className="text-xs font-black text-[#3A2E2B]">
+                  {c.front_prompt}
+                </h4>
+                <p className="text-[11px] text-[#795548] line-clamp-2 italic">
+                  {c.back_reflection}
+                </p>
+                <div className="flex justify-between items-center text-[9px] font-bold text-[#795548] border-t border-[#3A2E2B]/15 pt-1.5">
+                  <span>Factor Facilidad: {c.ease_factor.toFixed(2)}</span>
+                  <span>Intervalo: {c.interval_days} días</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* =======================================================================
+          TAB 4: HISTORIAL DE SESIONES DE ESTUDIO
+         ======================================================================= */}
+      {activeTab === "historial" && (
+        <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
+          <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+            Historial de Sesiones en La Gran Biblioteca
+          </h4>
+
           {studySessions.length === 0 ? (
-            <div className="py-12 text-center text-xs text-[#A69B8D]">
-              <BookOpen className="h-8 w-8 text-[#A69B8D]/40 mx-auto mb-2" />
-              <p>Aún no has registrado bloques de estudio en La Biblioteca.</p>
-              <p className="text-[10px] text-[#7D7366] mt-0.5">
-                Inicia un cronómetro para acumular minutos y forjar maestría.
-              </p>
+            <div className="text-center py-8 text-xs text-[#795548]">
+              Aún no has registrado sesiones de estudio. ¡Inicia un bloque de cátedra!
             </div>
           ) : (
-            <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
-              {studySessions.map((sess) => (
-                <div
-                  key={sess.id}
-                  className="rounded-xl border border-[#4A3C31]/40 bg-[#1A1715] p-3 text-xs flex items-center justify-between"
-                >
+            <div className="divide-y divide-[#3A2E2B]/15">
+              {studySessions.map((ses) => (
+                <div key={ses.id} className="py-2.5 flex items-center justify-between text-xs">
                   <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="rounded bg-[#A78BFA]/20 px-1.5 py-0.2 text-[9px] font-bold text-[#DDD6FE]">
-                        {sess.duration_minutes}m
-                      </span>
-                      <strong className="text-[#F4EFE6]">{sess.title}</strong>
-                    </div>
-                    {sess.details && (
-                      <p className="text-[11px] text-[#A69B8D] mt-0.5 line-clamp-1">
-                        {sess.details}
-                      </p>
-                    )}
+                    <span className="font-black text-[#3A2E2B] block">
+                      {ses.title}
+                    </span>
+                    <span className="text-[10px] text-[#795548]">
+                      {ses.details} • {new Date(ses.timestamp).toLocaleDateString("es-CO")}
+                    </span>
                   </div>
-                  <span className="font-mono text-xs font-bold text-[#E9C46A] shrink-0 ml-2">
-                    +{sess.gp_earned.toLocaleString("es-CO")} GP
-                  </span>
+                  <div className="text-right">
+                    <span className="font-bold text-[#314C3C]">
+                      +{ses.gp_earned} GP
+                    </span>
+                    <span className="text-[10px] text-[#795548] block">
+                      {ses.duration_minutes} min
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
-      </div>
-    </div>
+      )}
+    </BuildingInteriorShell>
   );
 }

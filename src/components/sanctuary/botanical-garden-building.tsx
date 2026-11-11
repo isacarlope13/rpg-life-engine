@@ -29,6 +29,7 @@ interface BotanicalGardenBuildingProps {
   quests?: Quest[];
   onRefreshState: () => Promise<void>;
   onSubmitDirectSkillSession: (payload: Record<string, unknown>) => Promise<unknown>;
+  onClose?: () => void;
 }
 
 interface PlantSpecimen {
@@ -128,6 +129,7 @@ export function BotanicalGardenBuilding({
   quests = [],
   onRefreshState,
   onSubmitDirectSkillSession,
+  onClose,
 }: BotanicalGardenBuildingProps) {
   // Estado del cantero de plantas
   const [plants, setPlants] = useState<PlantSpecimen[]>(DEFAULT_PLANTS);
@@ -262,14 +264,26 @@ export function BotanicalGardenBuilding({
           </div>
         </div>
 
-        {/* CONTADOR DE RIEGO DIARIO */}
-        <div className="flex items-center gap-2 rounded-2xl border-2 border-[#38523F] bg-[#FFFBF2] px-4 py-2 shadow-sm">
-          <Droplets className="h-4 w-4 text-[#2A9D8F]" />
-          <div>
-            <span className="text-[10px] font-extrabold uppercase text-[#7A6B62]">Cantero Hoy</span>
-            <p className="text-xs font-black text-[#1F2C23]">
-              {wateredCount} / {plants.length} Plantas Regadas
-            </p>
+        {/* CONTADOR DE RIEGO DIARIO & REGRESO */}
+        <div className="flex flex-wrap items-center gap-2">
+          {onClose && (
+            <CozyButton
+              variant="wood"
+              size="sm"
+              onClick={onClose}
+              className="flex items-center gap-1.5"
+            >
+              <span>← Volver al Pueblo</span>
+            </CozyButton>
+          )}
+          <div className="flex items-center gap-2 rounded-2xl border-2 border-[#38523F] bg-[#FFFBF2] px-4 py-2 shadow-sm">
+            <Droplets className="h-4 w-4 text-[#2A9D8F]" />
+            <div>
+              <span className="text-[10px] font-extrabold uppercase text-[#7A6B62]">Cantero Hoy</span>
+              <p className="text-xs font-black text-[#1F2C23]">
+                {wateredCount} / {plants.length} Plantas Regadas
+              </p>
+            </div>
           </div>
         </div>
       </div>

@@ -137,3 +137,43 @@ test("Cozy Village 8: Detección de Actividad Pendiente Determinista", async () 
   assert.equal(atelierPending.hasPending, true);
   assert.equal(atelierPending.count, 1);
 });
+
+test("Cozy Interiors 9: Integridad de Catálogo y Registro de Edificios Especializados", async () => {
+  const { VILLAGE_BUILDINGS_CATALOG, getBuildingById, getBuildingByDomain } = await import(
+    "../src/lib/sanctuary/village-buildings-registry.ts"
+  );
+
+  // Cada edificio debe contar con identificador, distrito, coordenadas y detector de actividad
+  for (const building of VILLAGE_BUILDINGS_CATALOG) {
+    assert.ok(building.id, "Todo edificio debe tener ID");
+    assert.ok(building.domain, "Todo edificio debe tener dominio de habilidad");
+    assert.ok(building.tagline, "Todo edificio debe tener tagline");
+    assert.ok(typeof building.getPendingActivity === "function", "Debe tener detector getPendingActivity");
+  }
+
+  // Comprobar edificios núcleo requeridos en Fase 6
+  assert.equal(getBuildingByDomain("reading")?.id, "libreria");
+  assert.equal(getBuildingByDomain("study")?.id, "biblioteca");
+  assert.equal(getBuildingByDomain("knitting")?.id, "atelier");
+  assert.equal(getBuildingByDomain("work")?.id, "oficina");
+  assert.equal(getBuildingByDomain("general")?.id, "observatorio");
+  assert.equal(getBuildingByDomain("rubik")?.id, "club_puzzles");
+});
+
+test("Cozy Interiors 10: Detección Funcional de Actividad para Centro de Acción", async () => {
+  const { getBuildingById } = await import(
+    "../src/lib/sanctuary/village-buildings-registry.ts"
+  );
+
+  const oficina = getBuildingById("oficina")!;
+  const biblioteca = getBuildingById("biblioteca")!;
+
+  // Oficina sin sesión hoy reporta sprint disponible
+  const oficinaPending = oficina.getPendingActivity({ buildingSessions: [] });
+  assert.equal(oficinaPending.hasPending, true);
+
+  // Biblioteca con tarjetas vencidas reporta repaso
+  const bibliotecaDue = biblioteca.getPendingActivity({ spacedCardsDueCount: 5 });
+  assert.equal(bibliotecaDue.hasPending, true);
+  assert.equal(bibliotecaDue.count, 5);
+});

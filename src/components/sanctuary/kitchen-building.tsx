@@ -15,6 +15,7 @@ import {
   Award,
   CheckCircle2,
   Heart,
+  ArrowLeft,
 } from "lucide-react";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
@@ -26,6 +27,7 @@ interface KitchenBuildingProps {
   isCozyActive?: boolean;
   onRefreshState: () => Promise<void>;
   onSubmitDirectSkillSession: (payload: Record<string, unknown>) => Promise<unknown>;
+  onClose?: () => void;
 }
 
 interface RecipeItem {
@@ -94,6 +96,7 @@ export function KitchenBuilding({
   isCozyActive = true,
   onRefreshState,
   onSubmitDirectSkillSession,
+  onClose,
 }: KitchenBuildingProps) {
   const [recipes, setRecipes] = useState<RecipeItem[]>(PRESET_RECIPES);
   const [activeTab, setActiveTab] = useState<"recipes" | "timer" | "alchemy">("recipes");
@@ -202,14 +205,27 @@ export function KitchenBuilding({
           </div>
         </div>
 
-        {/* MÉTRICA RÁPIDA */}
-        <div className="flex items-center gap-2 rounded-2xl border-2 border-[#C46A36] bg-[#FFFBF2] px-4 py-2 shadow-sm">
-          <Flame className="h-4 w-4 text-[#E76F51]" />
-          <div>
-            <span className="text-[10px] font-extrabold uppercase text-[#7A6B62]">Elaboraciones</span>
-            <p className="text-xs font-black text-[#35251C]">
-              {totalPreparedCount} Preparaciones Realizadas
-            </p>
+        {/* MÉTRICA RÁPIDA & REGRESO */}
+        <div className="flex flex-wrap items-center gap-2">
+          {onClose && (
+            <CozyButton
+              variant="wood"
+              size="sm"
+              onClick={onClose}
+              className="flex items-center gap-1.5"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Volver al Pueblo</span>
+            </CozyButton>
+          )}
+          <div className="flex items-center gap-2 rounded-2xl border-2 border-[#C46A36] bg-[#FFFBF2] px-4 py-2 shadow-sm">
+            <Flame className="h-4 w-4 text-[#E76F51]" />
+            <div>
+              <span className="text-[10px] font-extrabold uppercase text-[#7A6B62]">Elaboraciones</span>
+              <p className="text-xs font-black text-[#35251C]">
+                {totalPreparedCount} Preparaciones Realizadas
+              </p>
+            </div>
           </div>
         </div>
       </div>

@@ -1,9 +1,9 @@
 # ARQUITECTURA DEL SISTEMA — COZY LIVING VILLAGE
 ## RPG Life-Engine 3.5.0
 **Documento Técnico:** `docs/cozy-village/ARCHITECTURE.md`  
-**Versión:** 1.4.0  
+**Versión:** 1.5.0  
 **Fecha:** 11 de Noviembre de 2026  
-**Estado:** Fase 5 (Interactive Pixel Village) Implementada & Validada en Producción
+**Estado:** Fase 6 (Specialized Building Interiors) Implementada & Validada en Producción
 
 ---
 
@@ -137,6 +137,25 @@ flowchart TD
   - `landscape`: Mapa panorámico interactivo con anclaje de edificios en coordenadas reales, tooltips en hover y badges de actividad viva.
   - `grid`: Cuadrícula semántica accesible para inspección rápida y navegación total por teclado.
 * **Inspección y Navegación:** Modal de inspección de edificio con ficha técnica y botón de regreso claro al pueblo.
+
+### 3.7. Interiores Especializados de Edificios (`BuildingInteriorShell` & Gremio Modules)
+* **Principio de Centro de Actividad:** Cada interior es un espacio de trabajo y acción real donde el usuario comienza, continúa o audita sesiones activas, registrando progreso verificado en `/api/shortcuts/skill-session` sin modificar reglas de XP, GP ni economía.
+* **Plantilla Compartida (`BuildingInteriorShell.tsx`):**
+  - **Cabecera Unificada:** Icono de gremio, título temático, badge de maestría con nivel, balance visible de GP y botón accesible "← Volver al Pueblo".
+  - **Métricas Específicas del Edificio:** Grilla superior bento con 3 a 4 indicadores vivos según la habilidad.
+  - **Banner de Continuación Inmediata:** Detección de última sesión activa con botón de reanudación rápida con un clic.
+  - **Navegación por Pestañas:** Organización modular de submodos (Sesión Activa, Catálogo/Proyectos, Recursos/Herramientas, Historial).
+  - **Acción Principal Destacada:** Panel de acción primaria contextual (Temporizadores, Contadores, Flashcards SM-2).
+* **Catálogo Completo de Interiores Funcionales:**
+  1. **Librería (`reading`):** Catálogo de libros, wishlist de compras, lectura activa con cronómetro universal y contador de páginas, notas/citas con dictado por voz e historial.
+  2. **Biblioteca (`study`):** Materias y cursos, forja y repaso de flashcards con algoritmo SM-2 (`SpacedRepetitionDuelingWidget`), sesiones de estudio e historial de repasos.
+  3. **Atelier (`knitting`):** Telar digital, proyectos y patrones, inventario de fibras/materiales, contador táctil de rondas (+1, +5, -1) y galería de recuerdos.
+  4. **Oficina (`work`):** Sprints Pomodoro (25/50m), gestión ágil de proyectos y tareas (Scrum/Kanban), minutas de reuniones y entregables de retrospectiva.
+  5. **Observatorio (`general` / Deep Work):** Temporizador de hiperfoco (Pomodoro 25m, Profundo 50m, Flow 90m), escudo anti-distracciones con checklist reflexivo e historial de foco.
+  6. **Club de Puzzles (`rubik`):** Arsenal de cubos WCA, cronómetro reglamentario con penalties (+2s/DNF), trimmed average (Ao5/Ao12), aprendizaje de algoritmos y cuaderno de lubricación/tensiones.
+  7. **Invernadero Botánico (`gardening`):** Canteros vivos de hábitos, esquejes recolectados, registro de humedad y sesiones de calma botánica.
+  8. **Puesto de Senderismo (`hiking`):** Rutas y senderos, kit de supervivencia, brújula de orientación y registro de caminatas/salidas al aire libre.
+  9. **Cocina de Campamento (`cooking`):** Recetario culinario, despensa de ingredientes, temporizador de fuegos y preparación de banquetes del gremio.
 
 ---
 

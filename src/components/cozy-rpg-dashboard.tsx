@@ -544,24 +544,28 @@ export function CozyRpgDashboard() {
               {activeBuildingModal === "atelier" && (
                 <AtelierBuilding
                   projects={knittingProjects}
+                  sessions={recentSessions}
                   playerLevel={playerLevel}
                   skillLevel={state?.skill_summaries?.find((s) => s.domain === "knitting")?.level || 1}
                   totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "knitting")?.total_gp_earned || 0}
                   isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
 
               {activeBuildingModal === "libreria" && (
                 <LibreriaBuilding
                   books={readingBooks}
+                  sessions={recentSessions}
                   playerLevel={playerLevel}
                   skillLevel={state?.skill_summaries?.find((s) => s.domain === "reading")?.level || 1}
                   totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "reading")?.total_gp_earned || 0}
                   isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
 
@@ -577,6 +581,7 @@ export function CozyRpgDashboard() {
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
                   onReviewCard={async () => {}}
                   onAddCard={async () => {}}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
 
@@ -592,6 +597,7 @@ export function CozyRpgDashboard() {
                   isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
 
@@ -604,6 +610,7 @@ export function CozyRpgDashboard() {
                   isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
 
@@ -616,6 +623,7 @@ export function CozyRpgDashboard() {
                   quests={quests}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
 
@@ -627,6 +635,7 @@ export function CozyRpgDashboard() {
                   isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
 
@@ -638,6 +647,7 @@ export function CozyRpgDashboard() {
                   isCozyActive={true}
                   onRefreshState={fetchState}
                   onSubmitDirectSkillSession={handleSubmitSkillSession}
+                  onClose={() => setActiveBuildingModal(null)}
                 />
               )}
 

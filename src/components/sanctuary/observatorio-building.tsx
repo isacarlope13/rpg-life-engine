@@ -12,24 +12,28 @@ import {
   AlertCircle,
   Eye,
   Flame,
-  Volume2,
-  VolumeX,
   Target,
   Clock,
   Award,
+  ShieldCheck,
+  History,
+  ShieldAlert,
 } from "lucide-react";
 import type { SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
-import { CozyButton } from "@/components/cozy/ui";
+import { CozyButton, CozyNotification } from "@/components/cozy/ui";
+import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
+import { triggerHaptic } from "@/lib/offline-sync";
 
 interface ObservatorioBuildingProps {
   sessions?: SkillSessionRecord[];
-  playerLevel: number;
+  playerLevel?: number;
   skillLevel?: number;
   totalGpEarned?: number;
   isCozyActive?: boolean;
   onRefreshState: () => void | Promise<void>;
   onSubmitDirectSkillSession: (payload: Record<string, unknown>) => Promise<unknown>;
+  onClose?: () => void;
 }
 
 export function ObservatorioBuilding({
@@ -37,17 +41,23 @@ export function ObservatorioBuilding({
   playerLevel = 1,
   skillLevel = 1,
   totalGpEarned = 0,
-  isCozyActive = false,
+  isCozyActive = true,
   onRefreshState,
   onSubmitDirectSkillSession,
+  onClose,
 }: ObservatorioBuildingProps) {
+  const [activeTab, setActiveTab] = useState<"foco" | "interrupciones" | "historial">("foco");
+
   // Enfoque / preset
   const [focusMode, setFocusMode] = useState<"pomodoro" | "deep" | "flow">("pomodoro");
   const [targetGoal, setTargetGoal] = useState<string>("Arquitectura & Resolución de Bloqueos");
   const [distractions, setDistractions] = useState<string[]>([]);
   const [distractionInput, setDistractionInput] = useState("");
+  const [notification, setNotification] = useState<{
+    type: "success" | "error" | "warning";
+    message: string;
+  } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [ambientAudioActive, setAmbientAudioActive] = useState(false);
 
   // Motor Universal de Sesiones
   const {
@@ -62,24 +72,39 @@ export function ObservatorioBuilding({
     resumeSession,
     resetSession,
     finishSession,
-    updateNotes,
   } = useUniversalSession("general", "observatorio");
 
   const focusPresets = [
-    { id: "pomodoro", name: "Pomodoro Clásico", time: "25 min", xp: 80, gp: 2500 },
-    { id: "deep", name: "Deep Work Sprint", time: "50 min", xp: 160, gp: 5000 },
-    { id: "flow", name: "Flow State Cósmico", time: "90 min", xp: 300, gp: 9000 },
+    { id: "pomodoro", name: "Pomodoro Clásico", time: "25 min", minutes: 25 },
+    { id: "deep", name: "Deep Work Sprint", time: "50 min", minutes: 50 },
+    { id: "flow", name: "Flow State Cósmico", time: "90 min", minutes: 90 },
   ];
+
+  const handleStartFocus = (mins: number) => {
+    triggerHaptic("light");
+    startSession({
+      domain: "general",
+      buildingId: "observatorio",
+      resourceTitle: targetGoal,
+      objective: `Bloque de foco de ${mins} min: ${targetGoal}`,
+    });
+    setNotification({
+      type: "success",
+      message: "🔭 ¡Cúpula del Observatorio en silencio! Bloque de Deep Work iniciado.",
+    });
+  };
 
   const handleAddDistraction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!distractionInput.trim()) return;
+    triggerHaptic("light");
     setDistractions((prev) => [...prev, distractionInput.trim()]);
     setDistractionInput("");
   };
 
   const handleFinishFocusSession = async () => {
     setIsSubmitting(true);
+    triggerHaptic("medium");
     try {
       await finishSession({
         domain: "general",
@@ -91,289 +116,300 @@ export function ObservatorioBuilding({
         target_goal: targetGoal,
         distractions_logged: distractions,
       });
-      await onRefreshState();
+
+      setNotification({
+        type: "success",
+        message: "✨ ¡Bloque de Deep Work completado y registrado con éxito!",
+      });
       setDistractions([]);
+      await onRefreshState();
+    } catch {
+      setNotification({
+        type: "error",
+        message: "Error al finalizar la sesión de foco.",
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const recentFocusSessions = sessions.filter(
+  const focusSessions = sessions.filter(
     (s) =>
       s.domain === "general" ||
       s.details?.toLowerCase().includes("enfoque") ||
       s.details?.toLowerCase().includes("focus")
   );
 
+  const totalFocusMinutes = focusSessions.reduce((acc, s) => acc + (s.duration_minutes || 0), 0);
+
   return (
-    <div
-      className={`space-y-6 transition-all duration-300 ${
-        isCozyActive
-          ? "rounded-3xl border border-[#5C4033]/40 bg-[#19161e]/90 p-6 shadow-md text-purple-100"
-          : "text-slate-100"
-      }`}
+    <BuildingInteriorShell
+      buildingId="observatorio"
+      buildingName="El Observatorio Cósmico"
+      domain="general"
+      districtName="Distrito del Saber"
+      icon="🔭"
+      tagline="Cúpula de silencio y meditación cósmica. Un santuario blindado de distracciones externas."
+      playerLevel={playerLevel}
+      skillLevel={skillLevel}
+      totalGpEarned={totalGpEarned}
+      specificMetrics={[
+        { label: "Horas de Foco", value: `${Math.round(totalFocusMinutes / 60)}h ${totalFocusMinutes % 60}m` },
+        { label: "Sesiones de Foco", value: focusSessions.length },
+      ]}
+      lastSessionSummary={
+        targetGoal ? `Continuar enfoque en "${targetGoal}" (${focusMode})` : undefined
+      }
+      continueActionLabel="Iniciar Deep Work"
+      onContinueLastSession={() => {
+        setActiveTab("foco");
+        handleStartFocus(25);
+      }}
+      activeTab={activeTab}
+      tabs={[
+        { id: "foco", label: "Deep Work Activo", icon: <Target className="h-3.5 w-3.5" /> },
+        { id: "interrupciones", label: "Registro de Distracciones", icon: <ShieldAlert className="h-3.5 w-3.5" />, badge: distractions.length > 0 ? distractions.length : undefined },
+        { id: "historial", label: "Historial de Foco", icon: <History className="h-3.5 w-3.5" />, badge: focusSessions.length },
+      ]}
+      onTabChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+      onClose={onClose}
     >
-      {/* CABECERA OBSERVATORIO */}
-      <div
-        className={`flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 shadow-xl ${
-          isCozyActive
-            ? "border-purple-900/40 bg-[#241c2c]/90"
-            : "border-purple-500/30 bg-slate-900/90"
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/20 border border-purple-500/40 text-purple-300 text-2xl shadow-inner">
-            🔭
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black tracking-tight text-white">
-                El Observatorio Cósmico: Deep Work & Enfoque
-              </h2>
-              <span className="rounded-full bg-purple-500/20 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-300">
-                Santuario de Concentración • Grado {skillLevel}
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Cero distracciones, pulsos circadianos de máxima concentración y forja de resultados profundos.
-            </p>
-          </div>
+      {notification && (
+        <div className="mb-4">
+          <CozyNotification
+            variant={notification.type}
+            title={notification.type === "success" ? "¡Éxito!" : "Aviso"}
+            message={notification.message}
+            onDismiss={() => setNotification(null)}
+          />
         </div>
+      )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-center">
-            <span className="text-[10px] uppercase font-semibold text-slate-400">Total Ganado</span>
-            <p className="font-mono text-xs font-black text-purple-300">
-              +{totalGpEarned.toLocaleString("es-CO")} GP
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-center">
-            <span className="text-[10px] uppercase font-semibold text-slate-400">Sesiones Foco</span>
-            <p className="font-mono text-xs font-black text-emerald-300">
-              {recentFocusSessions.length}
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* =======================================================================
+          TAB 1: DEEP WORK ACTIVO
+         ======================================================================= */}
+      {activeTab === "foco" && (
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+          <div className="md:col-span-7 space-y-4">
+            <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_6px_0_#3A2E2B] space-y-4">
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-[#795548] tracking-wider block">
+                  Objetivo de Concentración
+                </span>
+                <input
+                  type="text"
+                  value={targetGoal}
+                  onChange={(e) => setTargetGoal(e.target.value)}
+                  placeholder="¿Cuál es la única cosa que vas a resolver en este bloque?"
+                  className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3.5 py-2 text-xs font-black text-[#3A2E2B] outline-none"
+                />
+              </div>
 
-      {/* CUERPO PRINCIPAL DEL OBSERVATORIO */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* TEMPORIZADOR Y CONTROL DE SESIÓN */}
-        <div className="space-y-5 rounded-2xl border border-purple-500/30 bg-slate-950/90 p-6 lg:col-span-7 shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-purple-400" />
-              <h3 className="text-base font-bold text-white">Cámara de Silencio & Enfoque</h3>
-            </div>
+              {/* Presets de Tiempo */}
+              <div className="grid grid-cols-3 gap-2">
+                {focusPresets.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setFocusMode(p.id as typeof focusMode)}
+                    className={`rounded-xl border-2 p-2.5 text-center transition cursor-pointer ${
+                      focusMode === p.id
+                        ? "border-[#3A2E2B] bg-[#314C3C] text-[#FFFDF8] shadow-[0_2px_0_#1A2B20]"
+                        : "border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C]"
+                    }`}
+                  >
+                    <span className="text-xs font-black block">{p.name}</span>
+                    <span className="text-[10px] opacity-80">{p.time}</span>
+                  </button>
+                ))}
+              </div>
 
-            {/* Selector de Modos de Enfoque */}
-            <div className="flex flex-wrap gap-1.5">
-              {focusPresets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => setFocusMode(preset.id as "pomodoro" | "deep" | "flow")}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold cursor-pointer transition ${
-                    focusMode === preset.id
-                      ? "border border-purple-500 bg-purple-600/30 text-purple-200 shadow-md shadow-purple-600/20"
-                      : "border border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
-                  }`}
-                >
-                  {preset.name} ({preset.time})
-                </button>
-              ))}
-            </div>
-          </div>
+              {/* Cronómetro Universal */}
+              <div className="rounded-2xl border-3 border-[#3A2E2B] bg-[#F4EEDC] p-4 text-center space-y-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#795548] block">
+                  {isRunning ? "🔭 Deep Work en Curso" : isPaused ? "⏸️ En Pausa" : "🌌 Cúpula en Silencio"}
+                </span>
 
-          {/* TEMPORIZADOR EN VIVO */}
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-purple-500/20 bg-gradient-to-b from-purple-950/30 via-slate-950 to-slate-950 py-8 text-center">
-            <div className="flex items-center gap-2 text-xs font-bold text-purple-300 uppercase tracking-widest">
-              <Flame className="h-4 w-4 text-purple-400 animate-pulse" />
-              {isRunning
-                ? "● Modo Deep Work Activo — Cero Distracciones"
-                : isPaused
-                ? "⏸ Enfoque en Pausa"
-                : "Listo para Iniciar Bloque de Foco"}
-            </div>
+                <div className="font-mono text-4xl sm:text-5xl font-black text-[#3A2E2B] tracking-tight">
+                  {formattedTime}
+                </div>
 
-            <span className="mt-3 font-mono text-6xl font-black tracking-tight text-white sm:text-7xl">
-              {formattedTime}
-            </span>
-
-            <p className="mt-2 text-xs text-slate-400">
-              {isRunning
-                ? `${elapsedMinutes} minutos de concentración acumulados`
-                : "Entra en la zona y silencia cualquier notificación externa."}
-            </p>
-
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-              {!isActive ? (
-                <CozyButton
-                  variant="lake"
-                  size="md"
-                  icon={<Play className="h-4 w-4 fill-current" />}
-                  onClick={() => startSession({ notes: targetGoal })}
-                >
-                  Comenzar Sesión de Enfoque
-                </CozyButton>
-              ) : (
-                <>
-                  {isPaused ? (
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  {!isActive ? (
                     <CozyButton
-                      variant="sage"
-                      size="sm"
-                      icon={<Play className="h-4 w-4 fill-current" />}
-                      onClick={resumeSession}
+                      variant="forest"
+                      size="md"
+                      onClick={() => handleStartFocus(focusMode === "pomodoro" ? 25 : focusMode === "deep" ? 50 : 90)}
+                      className="flex items-center gap-2"
                     >
-                      Reanudar
+                      <Play className="h-4 w-4" />
+                      Iniciar Bloque de Foco
                     </CozyButton>
                   ) : (
-                    <CozyButton
-                      variant="sunlight"
-                      size="sm"
-                      icon={<Pause className="h-4 w-4" />}
-                      onClick={pauseSession}
-                    >
-                      Pausar
-                    </CozyButton>
+                    <>
+                      {isRunning ? (
+                        <CozyButton
+                          variant="clay"
+                          size="md"
+                          onClick={() => {
+                            triggerHaptic("light");
+                            pauseSession();
+                          }}
+                          className="flex items-center gap-1.5"
+                        >
+                          <Pause className="h-4 w-4" />
+                          Pausar
+                        </CozyButton>
+                      ) : (
+                        <CozyButton
+                          variant="forest"
+                          size="md"
+                          onClick={() => {
+                            triggerHaptic("light");
+                            resumeSession();
+                          }}
+                          className="flex items-center gap-1.5"
+                        >
+                          <Play className="h-4 w-4" />
+                          Reanudar
+                        </CozyButton>
+                      )}
+
+                      <CozyButton
+                        variant="sunlight"
+                        size="md"
+                        disabled={isSubmitting}
+                        onClick={handleFinishFocusSession}
+                        className="flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        {isSubmitting ? "Registrando..." : "Completar Foco"}
+                      </CozyButton>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("warning");
+                          resetSession();
+                        }}
+                        className="text-xs font-bold text-red-700 underline hover:text-red-900 cursor-pointer ml-2"
+                      >
+                        Descartar
+                      </button>
+                    </>
                   )}
-
-                  <CozyButton
-                    variant="lake"
-                    size="sm"
-                    disabled={isSubmitting}
-                    icon={<Square className="h-4 w-4 fill-current" />}
-                    onClick={handleFinishFocusSession}
-                  >
-                    Finalizar y Reclamar Recompensas
-                  </CozyButton>
-
-                  <CozyButton
-                    variant="wood"
-                    size="sm"
-                    icon={<RotateCcw className="h-3.5 w-3.5" />}
-                    onClick={resetSession}
-                    aria-label="Reiniciar cronómetro"
-                  />
-                </>
-              )}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* OBJETIVO DE LA SESIÓN */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <Target className="h-4 w-4 text-purple-400" />
-              Objetivo Crítico de este Bloque:
-            </label>
-            <input
-              type="text"
-              value={targetGoal}
-              onChange={(e) => setTargetGoal(e.target.value)}
-              placeholder="¿Qué único resultado tangible vas a completar en este bloque?"
-              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs text-white"
-            />
-          </div>
+          <div className="md:col-span-5 space-y-4">
+            <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
+              <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+                Escudo Contra la Fragmentación
+              </h4>
+              <p className="text-xs text-[#795548]">
+                Si te asalta una idea o impulso externo mientras estás enfocado, anótalo aquí abajo para atenderlo después y no romper el flujo.
+              </p>
 
-          {/* NOTAS DE SESIÓN */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300">
-              Bitácora & Resultados del Bloque:
-            </label>
-            <textarea
-              rows={3}
-              value={session?.notes || ""}
-              onChange={(e) => updateNotes(e.target.value)}
-              placeholder="Anota descubrimientos, avances de código o arquitectura alcanzados..."
-              className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-white"
-            />
+              <form onSubmit={handleAddDistraction} className="flex gap-2">
+                <input
+                  type="text"
+                  value={distractionInput}
+                  onChange={(e) => setDistractionInput(e.target.value)}
+                  placeholder="Distracción evitada..."
+                  className="flex-1 rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-1.5 text-xs font-bold text-[#3A2E2B] outline-none"
+                />
+                <CozyButton variant="wood" size="sm" type="submit">
+                  Atrapar
+                </CozyButton>
+              </form>
+
+              {distractions.length > 0 && (
+                <div className="space-y-1.5 pt-2 border-t border-[#3A2E2B]/15">
+                  <span className="text-[10px] font-bold text-[#795548] uppercase block">
+                    Distracciones Desactivadas ({distractions.length}):
+                  </span>
+                  {distractions.map((d, i) => (
+                    <div key={i} className="rounded-xl border border-[#3A2E2B]/20 bg-[#F4EEDC] p-2 text-xs text-[#3A2E2B]">
+                      🛡️ {d}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+      )}
 
-        {/* ESCUDO DE DISTRACCIONES & MÉTRICAS */}
-        <div className="space-y-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-5 lg:col-span-5">
-          {/* CONTROL DE DISTRACCIONES (PARKING LOT) */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-                <Eye className="h-4 w-4 text-rose-400" />
-                Escudo Antipensamientos / Distracciones
-              </h4>
-              <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
-                {distractions.length} repelidas
-              </span>
+      {/* =======================================================================
+          TAB 2: REGISTRO DE DISTRACCIONES
+         ======================================================================= */}
+      {activeTab === "interrupciones" && (
+        <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
+          <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+            Registro de Impulsos e Interrupciones Desactivadas
+          </h4>
+          <p className="text-xs text-[#795548]">
+            La mente suele buscar distracciones cuando enfrenta fricción creativa. Nombrar la distracción y posponerla reduce su carga dopaminérgica en un 80%.
+          </p>
+
+          {distractions.length === 0 ? (
+            <div className="text-center py-8 text-xs text-[#795548]">
+              Cero distracciones registradas en este bloque. ¡Atención impecable!
             </div>
-            <p className="text-[11px] text-slate-400">
-              Si te surge una idea, mensaje o tarea pendiente que no sea tu objetivo actual, anótala aquí inmediatamente y vuelve a tu foco.
-            </p>
-
-            <form onSubmit={handleAddDistraction} className="flex gap-2">
-              <input
-                type="text"
-                value={distractionInput}
-                onChange={(e) => setDistractionInput(e.target.value)}
-                placeholder="Anota la distracción para atender después..."
-                className="flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
-              />
-              <button
-                type="submit"
-                className="rounded-lg bg-rose-600/30 border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-600/50 cursor-pointer"
-              >
-                Parquear
-              </button>
-            </form>
-
-            <div className="max-h-40 space-y-1.5 overflow-auto pr-1">
-              {distractions.length === 0 ? (
-                <p className="text-[11px] text-slate-500 italic">Mente despejada sin distracciones.</p>
-              ) : (
-                distractions.map((d, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/60 px-2.5 py-1.5 text-xs text-slate-300"
-                  >
-                    <span>🛡️ {d}</span>
-                    <button
-                      type="button"
-                      onClick={() => setDistractions((prev) => prev.filter((_, i) => i !== idx))}
-                      className="text-[10px] text-slate-500 hover:text-rose-400"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))
-              )}
+          ) : (
+            <div className="space-y-2 pt-2">
+              {distractions.map((d, idx) => (
+                <div key={idx} className="rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-3 text-xs flex justify-between items-center">
+                  <span>🛡️ {d}</span>
+                  <span className="text-[10px] font-bold text-[#77936A]">Neutralizada</span>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
+        </div>
+      )}
 
-          {/* HISTORIAL RECIENTE DE FOCO */}
-          <div className="space-y-2.5 pt-2 border-t border-slate-800">
-            <h4 className="text-xs font-bold text-slate-300">Historial de Sesiones de Concentración</h4>
-            <div className="max-h-52 space-y-2 overflow-auto pr-1">
-              {recentFocusSessions.length === 0 ? (
-                <p className="text-xs text-slate-500">Sin sesiones registradas aún en el Observatorio.</p>
-              ) : (
-                recentFocusSessions.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/50 p-2.5 text-xs"
-                  >
-                    <div>
-                      <p className="font-semibold text-white">{s.details || "Sesión de Enfoque"}</p>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        ⏱️ {s.duration_minutes || 25} min • {s.timestamp?.slice(0, 10)}
-                      </span>
-                    </div>
-                    <span className="font-mono font-bold text-purple-300">
-                      +{s.gp_earned.toLocaleString("es-CO")} GP
+      {/* =======================================================================
+          TAB 3: HISTORIAL DE FOCO PROFUNDO
+         ======================================================================= */}
+      {activeTab === "historial" && (
+        <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
+          <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+            Historial de Bloques en el Observatorio Cósmico
+          </h4>
+
+          {focusSessions.length === 0 ? (
+            <div className="text-center py-8 text-xs text-[#795548]">
+              Aún no hay bloques de Deep Work registrados. ¡Enciende el foco cósmico!
+            </div>
+          ) : (
+            <div className="divide-y divide-[#3A2E2B]/15">
+              {focusSessions.map((ses) => (
+                <div key={ses.id} className="py-2.5 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-black text-[#3A2E2B] block">
+                      {ses.title}
+                    </span>
+                    <span className="text-[10px] text-[#795548]">
+                      {ses.details} • {new Date(ses.timestamp).toLocaleDateString("es-CO")}
                     </span>
                   </div>
-                ))
-              )}
+                  <div className="text-right">
+                    <span className="font-bold text-[#314C3C]">
+                      +{ses.gp_earned} GP
+                    </span>
+                    <span className="text-[10px] text-[#795548] block">
+                      {ses.duration_minutes} min
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
         </div>
-      </div>
-    </div>
+      )}
+    </BuildingInteriorShell>
   );
 }

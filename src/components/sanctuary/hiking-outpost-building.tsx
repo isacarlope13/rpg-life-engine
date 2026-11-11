@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Backpack,
   Award,
+  ArrowLeft,
 } from "lucide-react";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
@@ -27,6 +28,7 @@ interface HikingOutpostBuildingProps {
   isCozyActive?: boolean;
   onRefreshState: () => Promise<void>;
   onSubmitDirectSkillSession: (payload: Record<string, unknown>) => Promise<unknown>;
+  onClose?: () => void;
 }
 
 interface TrailRoute {
@@ -84,6 +86,7 @@ export function HikingOutpostBuilding({
   isCozyActive = true,
   onRefreshState,
   onSubmitDirectSkillSession,
+  onClose,
 }: HikingOutpostBuildingProps) {
   const [routes, setRoutes] = useState<TrailRoute[]>(PRESET_ROUTES);
   const [gearList, setGearList] = useState(INITIAL_GEAR_CHECKLIST);
@@ -185,13 +188,26 @@ export function HikingOutpostBuilding({
         </div>
 
         {/* MÉTRICAS RÁPIDAS DE SENDERISMO */}
-        <div className="flex items-center gap-2 rounded-2xl border-2 border-[#8C5835] bg-[#FFFBF2] px-4 py-2 shadow-sm">
-          <Footprints className="h-4 w-4 text-[#C46A36]" />
-          <div>
-            <span className="text-[10px] font-extrabold uppercase text-[#7A6B62]">Recorrido Total</span>
-            <p className="text-xs font-black text-[#35251C]">
-              {totalKmWalked.toFixed(1)} km Caminados
-            </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {onClose && (
+            <CozyButton
+              variant="wood"
+              size="sm"
+              onClick={onClose}
+              className="flex items-center gap-1.5"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Volver al Pueblo</span>
+            </CozyButton>
+          )}
+          <div className="flex items-center gap-2 rounded-2xl border-2 border-[#8C5835] bg-[#FFFBF2] px-4 py-2 shadow-sm">
+            <Footprints className="h-4 w-4 text-[#C46A36]" />
+            <div>
+              <span className="text-[10px] font-extrabold uppercase text-[#7A6B62]">Recorrido Total</span>
+              <p className="text-xs font-black text-[#35251C]">
+                {totalKmWalked.toFixed(1)} km Caminados
+              </p>
+            </div>
           </div>
         </div>
       </div>

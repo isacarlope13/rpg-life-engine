@@ -43,6 +43,7 @@ interface ClubPuzzlesBuildingProps {
   isCozyActive?: boolean;
   onRefreshState: () => void | Promise<void>;
   onSubmitDirectSkillSession: (payload: Record<string, unknown>) => Promise<unknown>;
+  onClose?: () => void;
 }
 
 export function ClubPuzzlesBuilding({
@@ -56,6 +57,7 @@ export function ClubPuzzlesBuilding({
   isCozyActive = false,
   onRefreshState,
   onSubmitDirectSkillSession,
+  onClose,
 }: ClubPuzzlesBuildingProps) {
   // Submodos
   const [rubikSubMode, setRubikSubMode] = useState<
@@ -395,6 +397,15 @@ export function ClubPuzzlesBuilding({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-300 hover:text-white hover:border-slate-500 cursor-pointer"
+            >
+              ← Volver al Pueblo
+            </button>
+          )}
           <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-center">
             <span className="text-[10px] uppercase font-semibold text-slate-400">Single PB</span>
             <p className="font-mono text-xs font-black text-amber-300">
