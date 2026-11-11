@@ -640,3 +640,298 @@ test("Smart Capture 20: Aislamiento de Usuario y Persistencia Local de Recursos"
   assert.equal(deleteByA, true);
   assert.equal(getStoredSkillResources("knitting", "usr_alice").length, 0);
 });
+
+test("Visual Progression 21: Un hito real desbloquea un estado visual determinista (Tier 1 -> Tier 2 -> Tier 3)", async () => {
+  const {
+    projectAtelierProgression,
+    projectLibreriaProgression,
+    projectBibliotecaProgression,
+    projectOficinaProgression,
+    projectRubikProgression,
+  } = await import("../src/lib/sanctuary/visual-village-progression.ts");
+
+  // 1. Piloto: Atelier en estado inicial (Tier 1)
+  const atelierInitial = projectAtelierProgression({
+    level: 1,
+    sessionsCount: 0,
+    knittingProjects: [
+      {
+        id: "p1",
+        name: "Bufanda Cálida",
+        technique: "Crochet",
+        total_rows_target: 60,
+        completed_rows: 5,
+        yarn_details: "Lana Merino",
+        status: "in_progress",
+      },
+    ],
+  });
+  assert.equal(atelierInitial.tier, 1);
+  assert.equal(atelierInitial.tierName, "Cabaña de Bastidor Rústico");
+  assert.equal(atelierInitial.creationsExhibition.length, 0, "No hay prendas terminadas aún");
+
+  // 2. Piloto: Atelier con 1 proyecto terminado (Tier 2)
+  const atelierTier2 = projectAtelierProgression({
+    level: 2,
+    sessionsCount: 3,
+    knittingProjects: [
+      {
+        id: "p1",
+        name: "Bufanda Cálida",
+        technique: "Crochet",
+        total_rows_target: 60,
+        completed_rows: 60,
+        yarn_details: "Lana Merino",
+        status: "completed",
+      },
+    ],
+  });
+  assert.equal(atelierTier2.tier, 2);
+  assert.equal(atelierTier2.tierName, "Taller de Costura Establecido");
+  assert.equal(atelierTier2.creationsExhibition.length, 1);
+  assert.equal(atelierTier2.creationsExhibition[0].title, "Bufanda Cálida");
+  assert.ok(atelierTier2.exteriorDecorations.find((d) => d.id === "at_ext_awning")?.unlocked);
+
+  // 3. Piloto: Atelier con 2 proyectos y 85 filas (Tier 3: Maestro Textil)
+  const atelierTier3 = projectAtelierProgression({
+    level: 4,
+    sessionsCount: 8,
+    knittingProjects: [
+      {
+        id: "p1",
+        name: "Bufanda Cálida",
+        technique: "Crochet",
+        total_rows_target: 60,
+        completed_rows: 60,
+        yarn_details: "Lana Merino",
+        status: "completed",
+      },
+      {
+        id: "p2",
+        name: "Gorro de Invierno",
+        technique: "Dos Agujas",
+        total_rows_target: 25,
+        completed_rows: 25,
+        yarn_details: "Alpaca",
+        status: "completed",
+      },
+    ],
+  });
+  assert.equal(atelierTier3.tier, 3);
+  assert.equal(atelierTier3.tierName, "Atelier Maestro Textil");
+  assert.equal(atelierTier3.creationsExhibition.length, 2);
+  assert.ok(atelierTier3.trophies.find((t) => t.id === "at_trophy_tapestry")?.unlocked);
+  assert.ok(atelierTier3.exteriorDecorations.find((d) => d.id === "at_ext_garden")?.unlocked);
+
+  // 4. Librería: libro terminado desbloquea colección y Tier 2
+  const libTier2 = projectLibreriaProgression({
+    level: 2,
+    sessionsCount: 4,
+    readingBooks: [
+      {
+        id: "b1",
+        title: "El Principito",
+        author: "Antoine de Saint-Exupéry",
+        total_pages: 96,
+        pages_read: 96,
+        status: "completed",
+        category: "Clásicos",
+      },
+    ],
+  });
+  assert.equal(libTier2.tier, 2);
+  assert.equal(libTier2.creationsExhibition.length, 1);
+  assert.ok(libTier2.trophies.find((t) => t.id === "lib_trophy_seal")?.unlocked);
+
+  // 5. Rubik: PB registrado desbloquea cronómetro y Tier 2
+  const rubikTier2 = projectRubikProgression({
+    level: 2,
+    sessionsCount: 6,
+    rubikSinglePb: 18.42,
+    rubikSolvesCount: 15,
+  });
+  assert.equal(rubikTier2.tier, 2);
+  assert.ok(rubikTier2.interiorFurniture.find((f) => f.id === "pz_furn_display")?.unlocked);
+  assert.ok(rubikTier2.trophies.find((t) => t.id === "pz_trophy_cup")?.unlocked);
+});
+
+test("Visual Progression 22: Reprocesamiento seguro e idempotencia de eventos de hito", async () => {
+  const { recordConfirmedMilestoneEvent, getStoredProgressionState } = await import(
+    "../src/lib/sanctuary/visual-village-progression.ts"
+  );
+
+  const eventPayload = {
+    eventId: "evt_milestone_knitting_finish_p1",
+    userId: "usr_alice",
+    buildingId: "atelier",
+    domain: "knitting" as const,
+    milestoneType: "project_completed" as const,
+    targetId: "p1",
+    title: "Bufanda Terminada",
+    confirmedAt: new Date().toISOString(),
+  };
+
+  // Primera invocación: debe registrar el evento
+  const firstResult = recordConfirmedMilestoneEvent("usr_alice", eventPayload);
+  assert.equal(firstResult.wasAlreadyProcessed, false);
+  assert.ok(firstResult.state.processedEventIds.includes("evt_milestone_knitting_finish_p1"));
+
+  // Segunda invocación (duplicada): no debe duplicar el evento
+  const secondResult = recordConfirmedMilestoneEvent("usr_alice", eventPayload);
+  assert.equal(secondResult.wasAlreadyProcessed, true, "Evento repetido debe marcar wasAlreadyProcessed=true");
+
+  const stored = getStoredProgressionState("usr_alice");
+  const occurrences = stored.processedEventIds.filter((id) => id === "evt_milestone_knitting_finish_p1").length;
+  assert.equal(occurrences, 1, "No debe duplicarse la entrada en el estado persistido");
+});
+
+test("Visual Progression 23: Invariante estricta — Cero degradación por inactividad", async () => {
+  const { projectAtelierProgression } = await import(
+    "../src/lib/sanctuary/visual-village-progression.ts"
+  );
+
+  // Usuario con Tier 3 alcanzado
+  const activeProgression = projectAtelierProgression({
+    level: 5,
+    sessionsCount: 15,
+    knittingProjects: [
+      {
+        id: "p1",
+        name: "Manta Nórdica",
+        technique: "Crochet",
+        total_rows_target: 100,
+        completed_rows: 100,
+        yarn_details: "Merino",
+        status: "completed",
+      },
+      {
+        id: "p2",
+        name: "Chaqueta Artesanal",
+        technique: "Dos Agujas",
+        total_rows_target: 80,
+        completed_rows: 80,
+        yarn_details: "Lana",
+        status: "completed",
+      },
+    ],
+  });
+  assert.equal(activeProgression.tier, 3);
+  assert.equal(activeProgression.unlockedItemsCount >= 5, true);
+
+  // Simulación: Han pasado 180 días sin sesiones recientes
+  // La progresión se vuelve a proyectar: NO DEBE DEGRADARSE
+  const simulatedAfterMonths = projectAtelierProgression({
+    level: 5,
+    sessionsCount: 15, // Las sesiones históricas confirmadas se conservan
+    knittingProjects: [
+      {
+        id: "p1",
+        name: "Manta Nórdica",
+        technique: "Crochet",
+        total_rows_target: 100,
+        completed_rows: 100,
+        yarn_details: "Merino",
+        status: "completed",
+      },
+      {
+        id: "p2",
+        name: "Chaqueta Artesanal",
+        technique: "Dos Agujas",
+        total_rows_target: 80,
+        completed_rows: 80,
+        yarn_details: "Lana",
+        status: "completed",
+      },
+    ],
+  });
+
+  assert.equal(simulatedAfterMonths.tier, 3, "El edificio no debe degradarse a Tier 2 ni Tier 1");
+  assert.equal(simulatedAfterMonths.tierName, "Atelier Maestro Textil");
+  assert.equal(simulatedAfterMonths.creationsExhibition.length, 2, "Las prendas expuestas nunca desaparecen");
+});
+
+test("Visual Progression 24: Aislamiento multi-usuario estricto", async () => {
+  const { projectVillageProgression, recordConfirmedMilestoneEvent, getStoredProgressionState } = await import(
+    "../src/lib/sanctuary/visual-village-progression.ts"
+  );
+
+  // Alice registra un hito en su pueblo
+  recordConfirmedMilestoneEvent("usr_alice_villager", {
+    eventId: "evt_alice_book_1",
+    userId: "usr_alice_villager",
+    buildingId: "libreria",
+    domain: "reading",
+    milestoneType: "book_finished",
+    title: "Libro Terminado de Alice",
+    confirmedAt: new Date().toISOString(),
+  });
+
+  // Bob no tiene hitos registrados
+  const bobState = getStoredProgressionState("usr_bob_villager");
+  assert.equal(bobState.processedEventIds.length, 0, "Bob no debe tener eventos de Alice");
+
+  // Proyecciones de aldea independientes
+  const aliceVillage = projectVillageProgression({
+    userId: "usr_alice_villager",
+    readingBooks: [
+      {
+        id: "b1",
+        title: "Clean Code",
+        author: "Robert C. Martin",
+        total_pages: 450,
+        pages_read: 450,
+        status: "completed",
+        category: "Software",
+      },
+    ],
+  });
+
+  const bobVillage = projectVillageProgression({
+    userId: "usr_bob_villager",
+    readingBooks: [],
+  });
+
+  assert.equal(aliceVillage.buildings.libreria.tier, 2, "La librería de Alice debe ser Tier 2");
+  assert.equal(bobVillage.buildings.libreria.tier, 1, "La librería de Bob debe ser Tier 1 (Cabaña)");
+  assert.equal(aliceVillage.buildings.libreria.creationsExhibition.length, 1);
+  assert.equal(bobVillage.buildings.libreria.creationsExhibition.length, 0);
+});
+
+test("Visual Progression 25: Invariante económica — Cero GP y Cero XP emitidos en la proyección visual", async () => {
+  const { projectVillageProgression } = await import(
+    "../src/lib/sanctuary/visual-village-progression.ts"
+  );
+
+  // Aldea altamente avanzada con múltiples hitos confirmados
+  const advancedVillage = projectVillageProgression({
+    userId: "usr_veteran",
+    skillSummaries: [
+      { domain: "knitting", level: 5, sessions_count: 20, total_gp_earned: 5000 },
+      { domain: "reading", level: 5, sessions_count: 25, total_gp_earned: 6200 },
+      { domain: "study", level: 5, sessions_count: 18, total_gp_earned: 4500 },
+      { domain: "work", level: 5, sessions_count: 30, total_gp_earned: 9000 },
+      { domain: "rubik", level: 5, sessions_count: 50, total_gp_earned: 15000 },
+    ],
+    knittingProjects: [
+      { id: "k1", name: "P1", technique: "Crochet", total_rows_target: 60, completed_rows: 60, yarn_details: "Y1", status: "completed" },
+      { id: "k2", name: "P2", technique: "Dos Agujas", total_rows_target: 80, completed_rows: 80, yarn_details: "Y2", status: "completed" },
+    ],
+    readingBooks: [
+      { id: "r1", title: "B1", author: "A1", total_pages: 300, pages_read: 300, status: "completed", category: "C1" },
+      { id: "r2", title: "B2", author: "A2", total_pages: 200, pages_read: 200, status: "completed", category: "C2" },
+    ],
+    workProjectsCompletedCount: 3,
+    workDeliverablesCount: 8,
+    studyReviewsCount: 35,
+    rubikSinglePb: 14.25,
+    rubikSolvesCount: 120,
+    deepWorkMinutes: 300,
+  });
+
+  // Verificación estricta de invariantes económicas
+  assert.equal(advancedVillage.gpEmitted, 0, "Invariante: la proyección visual emite estrictamente 0 GP");
+  assert.equal(advancedVillage.xpEmitted, 0, "Invariante: la proyección visual emite estrictamente 0 XP");
+  assert.ok(advancedVillage.totalMilestonesUnlocked > 15, "Deben haberse proyectado múltiples hitos");
+  assert.equal(advancedVillage.overallVillageTier, 3, "El pueblo entero debe alcanzar Tier 3");
+});
+

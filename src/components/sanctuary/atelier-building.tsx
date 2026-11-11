@@ -25,6 +25,8 @@ import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
+import { projectAtelierProgression } from "@/lib/sanctuary/visual-village-progression";
+import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 
 interface AtelierBuildingProps {
   projects: KnittingProject[];
@@ -49,7 +51,7 @@ export function AtelierBuilding({
   onSubmitDirectSkillSession,
   onClose,
 }: AtelierBuildingProps) {
-  const [activeTab, setActiveTab] = useState<"taller" | "proyectos" | "materiales" | "galeria">("taller");
+  const [activeTab, setActiveTab] = useState<"taller" | "proyectos" | "evolucion" | "materiales" | "galeria">("taller");
 
   // Proyecto seleccionado
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
@@ -93,6 +95,13 @@ export function AtelierBuilding({
   const activeProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
   const totalCompletedRows = projects.reduce((acc, p) => acc + (p.completed_rows || 0), 0);
   const knittingSessions = sessions.filter((s) => s.domain === "knitting");
+
+  // Proyección Visual Determinista del Atelier (Fase 9)
+  const progression = projectAtelierProgression({
+    level: skillLevel,
+    sessionsCount: knittingSessions.length,
+    knittingProjects: projects,
+  });
 
   const handleStartSession = () => {
     triggerHaptic("light");
@@ -185,8 +194,10 @@ export function AtelierBuilding({
       skillLevel={skillLevel}
       totalGpEarned={totalGpEarned}
       specificMetrics={[
+        { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Proyectos en Curso", value: projects.length },
         { label: "Vueltas Tejidas", value: totalCompletedRows.toLocaleString("es-CO") },
+        { label: "Creaciones Listas", value: progression.creationsExhibition.length },
       ]}
       lastSessionSummary={
         activeProject
@@ -202,6 +213,7 @@ export function AtelierBuilding({
       tabs={[
         { id: "taller", label: "Telar Activo", icon: <Scissors className="h-3.5 w-3.5" /> },
         { id: "proyectos", label: "Proyectos & Patrones", icon: <Layers className="h-3.5 w-3.5" />, badge: projects.length },
+        { id: "evolucion", label: "Evolución & Creaciones", icon: <Sparkles className="h-3.5 w-3.5" />, badge: progression.tierBadge },
         { id: "materiales", label: "Lanas & Materiales", icon: <BookOpen className="h-3.5 w-3.5" /> },
         { id: "galeria", label: "Galería & Historial", icon: <ImageIcon className="h-3.5 w-3.5" />, badge: knittingSessions.length },
       ]}
@@ -223,7 +235,30 @@ export function AtelierBuilding({
           TAB 1: TELAR & TEJIDO ACTIVO
          ======================================================================= */}
       {activeTab === "taller" && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="space-y-4">
+          {/* BANNER DE PROGRESIÓN VISUAL DEL ATELIER */}
+          <div className="rounded-2xl border-2 border-[#3A2E2B]/20 bg-[#F4EEDC] p-3 flex flex-wrap items-center justify-between gap-2 shadow-[0_2px_0_#3A2E2B]">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">{progression.tier === 3 ? "⭐" : progression.tier === 2 ? "🌿" : "🪵"}</span>
+              <div>
+                <span className="text-xs font-black text-[#3A2E2B] block">
+                  {progression.tierName} ({progression.tierBadge})
+                </span>
+                <span className="text-[11px] text-[#795548] font-medium">
+                  {progression.facadeDescription}
+                </span>
+              </div>
+            </div>
+            <CozyButton
+              variant="wood"
+              size="sm"
+              onClick={() => setActiveTab("evolucion")}
+            >
+              Ver Fachada & Trofeos ➜
+            </CozyButton>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
           <div className="md:col-span-7 space-y-4">
             <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_6px_0_#3A2E2B] space-y-4">
               <div className="flex items-start justify-between gap-3">
@@ -472,6 +507,7 @@ export function AtelierBuilding({
             />
           </div>
         </div>
+        </div>
       )}
 
       {/* =======================================================================
@@ -663,6 +699,16 @@ export function AtelierBuilding({
             </div>
           )}
         </div>
+      )}
+
+      {/* =======================================================================
+          TAB 5: EVOLUCIÓN VISUAL & EXPOSICIÓN DE CREACIONES (FASE 9)
+         ======================================================================= */}
+      {activeTab === "evolucion" && (
+        <VillageProgressionPanel
+          progression={progression}
+          buildingName="El Atelier de Hilados & Textil"
+        />
       )}
     </BuildingInteriorShell>
   );

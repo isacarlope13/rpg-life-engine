@@ -31,6 +31,8 @@ import type {
 import { WcaPerformanceCurve } from "@/components/rpg-advanced-widgets";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
+import { projectRubikProgression } from "@/lib/sanctuary/visual-village-progression";
+import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 
 interface ClubPuzzlesBuildingProps {
   cubes: RubikCubeCatalogItem[];
@@ -61,7 +63,7 @@ export function ClubPuzzlesBuilding({
 }: ClubPuzzlesBuildingProps) {
   // Submodos
   const [rubikSubMode, setRubikSubMode] = useState<
-    "practice" | "study" | "notes" | "arsenal"
+    "practice" | "study" | "notes" | "arsenal" | "evolucion"
   >("practice");
 
   // Estado del cubo activo y práctica WCA
@@ -134,6 +136,14 @@ export function ClubPuzzlesBuilding({
       mean_seconds: null,
       recent_solves: [],
     };
+
+  // Proyección Visual Determinista del Club de Puzzles (Fase 9)
+  const progression = projectRubikProgression({
+    level: skillLevel,
+    sessionsCount: activeRubikStats.recent_solves?.length || 0,
+    rubikSinglePb: activeRubikStats.pb_seconds,
+    rubikSolvesCount: activeRubikStats.total_solves || activeRubikStats.recent_solves?.length || 0,
+  });
 
   // Cargar notas desde localStorage al cambiar de cubo
   useEffect(() => {
@@ -480,6 +490,19 @@ export function ClubPuzzlesBuilding({
           >
             <Box className="h-4 w-4" />
             🧊 Arsenal WCA ({cubes.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRubikSubMode("evolucion")}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+              rubikSubMode === "evolucion"
+                ? "bg-amber-600 text-white shadow-lg shadow-amber-600/30"
+                : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white"
+            }`}
+          >
+            <Trophy className="h-4 w-4" />
+            🏆 Evolución & Trofeos ({progression.tierBadge})
           </button>
         </div>
 
@@ -1225,6 +1248,16 @@ export function ClubPuzzlesBuilding({
             </div>
           </div>
         </div>
+      )}
+
+      {/* =======================================================================
+          MODO 5: EVOLUCIÓN VISUAL & TROFEOS WCA (FASE 9)
+         ======================================================================= */}
+      {rubikSubMode === "evolucion" && (
+        <VillageProgressionPanel
+          progression={progression}
+          buildingName="Club de Puzzles & Speedcubing WCA"
+        />
       )}
     </div>
   );

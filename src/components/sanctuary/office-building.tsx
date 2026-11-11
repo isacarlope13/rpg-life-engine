@@ -27,6 +27,8 @@ import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
+import { projectOficinaProgression } from "@/lib/sanctuary/visual-village-progression";
+import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 
 interface OfficeBuildingProps {
   playerLevel: number;
@@ -94,7 +96,7 @@ export function OfficeBuilding({
   const { session, isRunning, isPaused, isActive, formattedTime, startSession, pauseSession, resumeSession, resetSession } =
     useUniversalSession("work", "oficina");
 
-  const [activeTab, setActiveTab] = useState<"timer" | "projects" | "meetings" | "deliverables">("timer");
+  const [activeTab, setActiveTab] = useState<"timer" | "projects" | "meetings" | "deliverables" | "evolucion">("timer");
   const [sessionNotes, setSessionNotes] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("proj-1");
   const [manualDuration, setManualDuration] = useState(25);
@@ -107,6 +109,14 @@ export function OfficeBuilding({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const activeProject = DEFAULT_PROJECTS.find((p) => p.id === selectedProjectId) || DEFAULT_PROJECTS[0];
+
+  // Proyección Visual Determinista de la Oficina (Fase 9)
+  const progression = projectOficinaProgression({
+    level: skillLevel,
+    sessionsCount: 3,
+    workProjectsCompletedCount: DEFAULT_PROJECTS.filter((p) => p.progressPercent >= 100).length,
+    workDeliverablesCount: DEFAULT_PROJECTS.filter((p) => p.completedTasks > 0).length,
+  });
 
   const handleStartTimer = (presetMinutes?: number) => {
     triggerHaptic("light");
@@ -223,8 +233,9 @@ export function OfficeBuilding({
       skillLevel={skillLevel}
       totalGpEarned={totalGpEarned}
       specificMetrics={[
+        { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Proyectos Activos", value: DEFAULT_PROJECTS.length },
-        { label: "Entregables", value: "3 en curso" },
+        { label: "Entregables", value: `${progression.creationsExhibition.length} concluidos` },
       ]}
       lastSessionSummary={
         activeProject
@@ -240,6 +251,7 @@ export function OfficeBuilding({
       tabs={[
         { id: "timer", label: "Sprints & Pomodoro", icon: <Clock className="h-3.5 w-3.5" /> },
         { id: "projects", label: "Proyectos & Tareas", icon: <FolderGit2 className="h-3.5 w-3.5" />, badge: DEFAULT_PROJECTS.length },
+        { id: "evolucion", label: "Evolución & Hitos", icon: <Sparkles className="h-3.5 w-3.5" />, badge: progression.tierBadge },
         { id: "meetings", label: "Reuniones & Minutas", icon: <Users2 className="h-3.5 w-3.5" /> },
         { id: "deliverables", label: "Entregables & Registro", icon: <FileCheck2 className="h-3.5 w-3.5" /> },
       ]}
@@ -594,6 +606,16 @@ export function OfficeBuilding({
             {isSubmitting ? "Registrando..." : `Guardar Jornada de ${manualDuration} min`}
           </CozyButton>
         </div>
+      )}
+
+      {/* =======================================================================
+          TAB 5: EVOLUCIÓN VISUAL & HITOS ESTRATÉGICOS (FASE 9)
+         ======================================================================= */}
+      {activeTab === "evolucion" && (
+        <VillageProgressionPanel
+          progression={progression}
+          buildingName="Torre de Gestión & Oficina"
+        />
       )}
     </BuildingInteriorShell>
   );

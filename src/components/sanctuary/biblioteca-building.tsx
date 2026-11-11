@@ -27,6 +27,8 @@ import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
+import { projectBibliotecaProgression } from "@/lib/sanctuary/visual-village-progression";
+import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 
 interface BibliotecaBuildingProps {
   cards: SpacedRepetitionCard[];
@@ -55,7 +57,7 @@ export function BibliotecaBuilding({
   onAddCard,
   onClose,
 }: BibliotecaBuildingProps) {
-  const [activeTab, setActiveTab] = useState<"estudio" | "repasos" | "materias" | "historial">("estudio");
+  const [activeTab, setActiveTab] = useState<"estudio" | "repasos" | "materias" | "historial" | "evolucion">("estudio");
 
   // Parámetros de la sesión de estudio
   const [studySubject, setStudySubject] = useState<string>("Desarrollo & Arquitectura");
@@ -95,6 +97,13 @@ export function BibliotecaBuilding({
 
   const studySessions = sessions.filter((s) => s.domain === "study");
   const totalStudyMinutes = studySessions.reduce((acc, s) => acc + (s.duration_minutes || 0), 0);
+
+  // Proyección Visual Determinista de la Biblioteca (Fase 9)
+  const progression = projectBibliotecaProgression({
+    level: skillLevel,
+    sessionsCount: studySessions.length,
+    studyReviewsCount: cards.length,
+  });
 
   const handleStartStudy = () => {
     triggerHaptic("light");
@@ -177,8 +186,10 @@ export function BibliotecaBuilding({
       skillLevel={skillLevel}
       totalGpEarned={totalGpEarned}
       specificMetrics={[
+        { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Tarjetas SM-2", value: cards.length },
         { label: "Horas de Estudio", value: `${Math.round(totalStudyMinutes / 60)}h ${totalStudyMinutes % 60}m` },
+        { label: "Diplomas / Códice", value: progression.trophies.filter((t) => t.unlocked).length },
       ]}
       lastSessionSummary={
         studySubject ? `Continuar estudio de "${studySubject}" (${studyMethod})` : undefined
@@ -192,6 +203,7 @@ export function BibliotecaBuilding({
       tabs={[
         { id: "estudio", label: "Sesión de Estudio", icon: <GraduationCap className="h-3.5 w-3.5" /> },
         { id: "repasos", label: "Repasos SM-2", icon: <Brain className="h-3.5 w-3.5" />, badge: cards.length },
+        { id: "evolucion", label: "Evolución & Diplomas", icon: <Sparkles className="h-3.5 w-3.5" />, badge: progression.tierBadge },
         { id: "materias", label: "Materias & Temas", icon: <Layers className="h-3.5 w-3.5" /> },
         { id: "historial", label: "Historial de Estudio", icon: <History className="h-3.5 w-3.5" />, badge: studySessions.length },
       ]}
@@ -588,6 +600,16 @@ export function BibliotecaBuilding({
             </div>
           )}
         </div>
+      )}
+
+      {/* =======================================================================
+          TAB 5: EVOLUCIÓN VISUAL & DIPLOMAS ACADÉMICOS (FASE 9)
+         ======================================================================= */}
+      {activeTab === "evolucion" && (
+        <VillageProgressionPanel
+          progression={progression}
+          buildingName="La Gran Biblioteca del Erudito"
+        />
       )}
     </BuildingInteriorShell>
   );

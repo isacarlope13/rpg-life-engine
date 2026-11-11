@@ -1,9 +1,9 @@
 # ARQUITECTURA DEL SISTEMA — COZY LIVING VILLAGE
 ## RPG Life-Engine 3.5.0
 **Documento Técnico:** `docs/cozy-village/ARCHITECTURE.md`  
-**Versión:** 1.7.0  
+**Versión:** 1.9.0  
 **Fecha:** 11 de Noviembre de 2026  
-**Estado:** Fase 8 (Skill Resource Hub & Smart Capture) Implementada & Validada en Producción
+**Estado:** Fase 9 (Visual Village Progression) Implementada & Validada en Producción
 
 ---
 
@@ -204,10 +204,29 @@ flowchart TD
     - Todo snippet o comando dictado analizado heurísticamente por `parseSmartCaptureSnippet` despliega un banner de confirmación previa con los valores detectados (ej. "25 páginas", "vuelta 18"), requiriendo que el usuario presione `Confirmar y Aplicar` antes de alterar el estado.
 * **Integración sin Modificación de Reglas:** Reutiliza las estructuras de `/api/shortcuts/skill-session` sin crear servicios externos costosos ni alterar balances de economía o niveles.
 
+### 3.10. Motor de Progresión Visual del Pueblo (`visual-village-progression.ts` & `VillageProgressionPanel`)
+* **Principio de Transformación de Hitos Reales:** Transforma exclusivamente hitos confirmados por el usuario (proyectos terminados, libros completados, filas tejidas, repasos SM-2, solves de Rubik, entregables ágiles) en evolución visual y arquitectónica.
+* **Tiers Arquitectónicos Deterministas (Tiers 1, 2 y 3):**
+  - *Tier 1 (Cabaña Rústica):* Aspecto inicial acogedor de madera y troncos con chimenea y mobiliario básico de taller.
+  - *Tier 2 (Taller Establecido):* Desbloqueado con 1+ proyecto/libro/PB concluido o nivel 2+. Incorpora toldos de lona artesanal, faroles de hierro forjado, estantes exteriores y herramientas avanzadas.
+  - *Tier 3 (Santuario Maestro):* Desbloqueado con 2+ o 3+ hitos mayores o nivel 5+. Fachada señorial de cantería, vidrieras policromadas, cúpulas iluminadas, estandartes heráldicos y jardines botánicos.
+* **Exposición de Creaciones (Creations Exhibition):**
+  - *Atelier (Piloto):* Galería de prendas concluidas (bufandas, gorros, mantas) con técnica, tipo de fibra y badge conmemorativo.
+  - *Librería:* Colección de tomos terminados resguardados en estanterías de honor con autor y número de páginas.
+  - *Biblioteca:* Muro de diplomas académicos y mazo de memoria espaciada SM-2 con retención a largo plazo.
+  - *Oficina:* Vitrina de lanzamientos ágiles y proyectos estratégicos culminados en producción.
+  - *Club de Puzzles:* Marcador de Single PB, Ao5 oficial y vitrina de colección de cubos WCA.
+* **Desacoplamiento e Invariantes Críticas:**
+  - **Cero Emisión de GP/XP:** La proyección visual emite estrictamente `gpEmitted: 0` y `xpEmitted: 0`. No existe economía cosmética ni alteración de balances.
+  - **Invariante de No Degradación por Inactividad:** Los hitos y mejoras visuales una vez conquistados son **permanentes e irreversibles**; ningún edificio pierde su nivel o decoraciones por días o meses de inactividad.
+  - **Idempotencia Estricta:** El registro de eventos (`recordConfirmedMilestoneEvent`) utiliza claves unívocas (`eventId`), impidiendo duplicación de estados o unlocks repetidos.
+  - **Aislamiento Multi-Usuario:** Estados particionados por identificador de usuario (`rpg_village_progression_<userId>`).
+
 ---
 
 ## 4. Garantías de No Regresión e Invariantes
 
-1. **Invariante Financiera:** Ninguna interacción o decoración genera GP arbitrario; toda recompensa se valida contra la Bóveda del usuario.
-2. **Invariante de Idempotencia:** Las micro-misiones y sesiones emplean prefijos unívocos (`village_journal_<id>_<date>_<ts>`).
-3. **Accesibilidad Sensorial:** El audio nunca se inicia automáticamente; respeta el gesto deliberado del usuario y las directivas de `prefers-reduced-motion`.
+1. **Invariante Financiera:** Ninguna interacción, decoración o progreso visual genera GP arbitrario; toda recompensa se valida contra la Bóveda del usuario.
+2. **Invariante de Idempotencia:** Las micro-misiones, sesiones y eventos de hito emplean prefijos unívocos (`village_journal_<id>_<date>_<ts>`, `evt_<building>_<type>_<id>`).
+3. **Invariante de No Degradación:** Los logros de los edificios nunca se revierten por ausencia o inactividad del usuario.
+4. **Accesibilidad Sensorial:** El audio nunca se inicia automáticamente; respeta el gesto deliberado del usuario y las directivas de `prefers-reduced-motion`.

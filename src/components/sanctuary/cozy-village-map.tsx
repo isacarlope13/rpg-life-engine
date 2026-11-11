@@ -682,6 +682,18 @@ export function CozyVillageMap({
                       {tierInfo.badge}
                     </span>
 
+                    {/* Decoraciones exteriores desbloqueadas (Fase 9: Visual Progression) */}
+                    {tierInfo.tier >= 2 && (
+                      <span className="absolute -top-2.5 -left-2 text-xs filter drop-shadow select-none" title="Farol artesanal exterior instalado (Tier 2+)">
+                        🏮
+                      </span>
+                    )}
+                    {tierInfo.tier === 3 && (
+                      <span className="absolute -top-3.5 -right-2 text-sm filter drop-shadow select-none animate-bounce" title="Estandarte y cúpula de maestría (Tier 3)">
+                        🚩
+                      </span>
+                    )}
+
                     {/* Avatar del Residente Asistente junto a la puerta */}
                     {resident && (
                       <span
@@ -879,6 +891,42 @@ export function CozyVillageMap({
                 <span className="font-mono text-[#314C3C]">{selectedBuildingDetail.domain}</span>
               </div>
             </div>
+
+            {/* EVOLUCIÓN VISUAL ACTUAL DEL EDIFICIO (FASE 9) */}
+            {(() => {
+              const bTier = calculateBuildingTier({
+                level: skillSummaries.find((s) => s.domain === selectedBuildingDetail.domain)?.level || 1,
+                sessionsCount: skillSummaries.find((s) => s.domain === selectedBuildingDetail.domain)?.sessions_count || 0,
+                completedProjectsCount:
+                  selectedBuildingDetail.domain === "knitting"
+                    ? activeKnittingProjectsCount
+                    : selectedBuildingDetail.domain === "reading"
+                    ? activeBooksCount
+                    : 0,
+              });
+              return (
+                <div className="rounded-2xl border-2 border-[#3A2E2B]/20 bg-[#EAF3ED] p-3 space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center font-bold">
+                    <span className="text-[#314C3C] font-black uppercase text-[10px]">
+                      Estado Visual Actual:
+                    </span>
+                    <span className="rounded-full bg-[#E7D69C] px-2 py-0.5 text-[9px] font-black text-[#3A2E2B] border border-[#3A2E2B]">
+                      {bTier.badge} • {bTier.tierName}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#795548] italic">
+                    {bTier.facadeDescription}
+                  </p>
+                  <div className="pt-1 flex flex-wrap gap-1">
+                    {bTier.decorations.map((d, i) => (
+                      <span key={i} className="rounded-md bg-[#FFFDF8] border border-[#3A2E2B]/20 px-1.5 py-0.5 text-[9px] font-medium text-[#314C3C]">
+                        ✨ {d}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t-2 border-[#3A2E2B]/20">
               <CozyButton

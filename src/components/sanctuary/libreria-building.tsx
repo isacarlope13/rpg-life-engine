@@ -29,6 +29,8 @@ import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
+import { projectLibreriaProgression } from "@/lib/sanctuary/visual-village-progression";
+import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 
 interface LibreriaBuildingProps {
   books: ReadingBook[];
@@ -56,7 +58,7 @@ export function LibreriaBuilding({
   onClose,
 }: LibreriaBuildingProps) {
   // Pestañas del interior
-  const [activeTab, setActiveTab] = useState<"lectura" | "catalogo" | "citas" | "historial">("lectura");
+  const [activeTab, setActiveTab] = useState<"lectura" | "catalogo" | "citas" | "historial" | "evolucion">("lectura");
 
   // Estado de libro seleccionado y filtros
   const [selectedBookId, setSelectedBookId] = useState<string>(() => books[0]?.id || "");
@@ -113,6 +115,13 @@ export function LibreriaBuilding({
   const readingBooksCount = books.filter((b) => b.status === "reading" || !b.status).length;
   const completedBooksCount = books.filter((b) => b.status === "completed").length;
   const readingSessions = sessions.filter((s) => s.domain === "reading");
+
+  // Proyección Visual Determinista de la Librería (Fase 9)
+  const progression = projectLibreriaProgression({
+    level: skillLevel,
+    sessionsCount: readingSessions.length,
+    readingBooks: books,
+  });
 
   const handleStartReading = () => {
     triggerHaptic("light");
@@ -297,8 +306,10 @@ export function LibreriaBuilding({
       skillLevel={skillLevel}
       totalGpEarned={totalGpEarned}
       specificMetrics={[
+        { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Libros Activos", value: readingBooksCount },
         { label: "Páginas Leídas", value: totalPagesReadEver.toLocaleString("es-CO") },
+        { label: "Libros Terminados", value: completedBooksCount },
       ]}
       lastSessionSummary={
         activeBook
@@ -318,6 +329,12 @@ export function LibreriaBuilding({
           label: "Catálogo & Pendientes",
           icon: <Layers className="h-3.5 w-3.5" />,
           badge: books.length,
+        },
+        {
+          id: "evolucion",
+          label: "Evolución & Colección",
+          icon: <Sparkles className="h-3.5 w-3.5" />,
+          badge: progression.tierBadge,
         },
         {
           id: "citas",
@@ -872,6 +889,16 @@ export function LibreriaBuilding({
             )}
           </div>
         </div>
+      )}
+
+      {/* =======================================================================
+          TAB 5: EVOLUCIÓN VISUAL & COLECCIONES DE LIBROS (FASE 9)
+         ======================================================================= */}
+      {activeTab === "evolucion" && (
+        <VillageProgressionPanel
+          progression={progression}
+          buildingName="La Librería & Archivo Antiguo"
+        />
       )}
     </BuildingInteriorShell>
   );
