@@ -19,6 +19,10 @@ import {
   auditSettlementOffer,
   type RealDebtObligation,
 } from "../src/lib/sanctuary/debt-engine.ts";
+import {
+  FinancialWellbeingSkill,
+  defaultFinancialWellbeingSkill,
+} from "../src/lib/sanctuary/financial-wellbeing-skill.ts";
 
 test("Hito 3.9.1 — 1. Exclusión estricta de saldos iniciales de ingresos y sueldos", () => {
   const result: ReclassifiedFinancialDataset = auditAndClassifyMovements(INITIAL_FINANCIAL_MOVEMENTS);
@@ -574,5 +578,156 @@ test("Hito 3.9.3 — 18. Simulación post-quincena (20 de noviembre) para normal
     "Tras pagar ADDI con el sueldo del día 20, quedan 663.915 COP, blindando cómodamente la siguiente quincena."
   );
 });
+
+// ==============================================================================
+// PRUEBAS HITO 3.9.4: SKILL FINANCIAL WELLBEING & ASESOR SILAS
+// ==============================================================================
+
+test("Hito 3.9.4 — 19. Generación de diagnóstico contextual explicable y semáforo de riesgo", () => {
+  const plan = calculateBiweeklyCashflowPlan({
+    asOfDate: "2026-11-11",
+    accounts: { nuAccountCop: 340000, nequiAccountCop: 70000 },
+    protectedEssentialReserveCop: 250000,
+    expectedNextIncome: { amountCop: 1000000, expectedDate: "2026-11-20", isConfirmed: false },
+    committedObligations: [],
+  });
+
+  const skill = defaultFinancialWellbeingSkill;
+  const diagnosis = skill.generateFinancialDiagnosis(plan, REAL_DEBTS_CASE_STUDY);
+
+  // 1. Semáforo de riesgo claro y explicable
+  assert.equal(diagnosis.trafficLightStatus.nequi, "green", "Nequi debe estar en verde (prioritario y viable).");
+  assert.equal(diagnosis.trafficLightStatus.addi, "yellow", "ADDI debe estar en amarillo (reprogramar al 20-nov).");
+  assert.equal(diagnosis.trafficLightStatus.bancolombiaContento, "red", "Contento BPS en rojo (no aceptar ni endeudarse).");
+
+  // 2. Resumen de liquidez en mano
+  assert.equal(diagnosis.liquiditySummary.liquidInHandCop, 410000);
+  assert.equal(diagnosis.liquiditySummary.protectedReserveCop, 250000);
+  assert.equal(diagnosis.liquiditySummary.maxMarginBeforeDebtsCop, 160000);
+
+  // 3. Pasos de acción concretos
+  assert.ok(diagnosis.immediateActionPlan.length >= 4);
+  assert.equal(diagnosis.immediateActionPlan[0].title.includes("Blindar Reserva"), true);
+  assert.equal(diagnosis.immediateActionPlan[1].title.includes("Nequi"), true);
+});
+
+test("Hito 3.9.4 — 20. Redacción de solicitud formal a Contento BPS / Bancolombia", () => {
+  const skill = defaultFinancialWellbeingSkill;
+  const draft = skill.draftNegotiationDocument({
+    creditorType: "contento_bancolombia",
+    userFullName: "Usuario Héroe de Oakhaven",
+    documentIdMasked: "*4491",
+    debtTotalCop: 3000000,
+    proposedPaymentCop: 2348000,
+  });
+
+  // 1. Debe incluir exigencia escrita de cesión de crédito de Bancolombia
+  assert.ok(
+    draft.formalBodyMarkdown.includes("Cesión de Crédito") ||
+    draft.formalBodyMarkdown.includes("Bancolombia S.A."),
+    "La carta debe exigir la certificación formal expedida directamente por Bancolombia."
+  );
+
+  // 2. Debe incluir exigencia de Paz y Salvo Total
+  assert.ok(
+    draft.formalBodyMarkdown.includes("Paz y Salvo Total"),
+    "La carta debe exigir constancia de extinción del 100% de la obligación sin saldos remanentes."
+  );
+
+  // 3. Advertencia legal al usuario
+  assert.ok(
+    draft.legalContextAdvisory.includes("ADVERTENCIA LEGAL"),
+    "Debe advertir al usuario no entregar dinero a terceros cobradores sin certificación previa."
+  );
+});
+
+test("Hito 3.9.4 — 21. Redacción de aviso voluntario de pago a ADDI para fecha de quincena", () => {
+  const skill = defaultFinancialWellbeingSkill;
+  const draft = skill.draftNegotiationDocument({
+    creditorType: "addi",
+    userFullName: "Usuario Héroe de Oakhaven",
+    debtTotalCop: 1041301,
+  });
+
+  // 1. Debe mencionar la fecha del 20 de noviembre
+  assert.ok(
+    draft.formalBodyMarkdown.includes("20 de noviembre de 2026"),
+    "Debe comprometer el pago de forma voluntaria para el 20 de noviembre con la nómina."
+  );
+
+  // 2. Debe solicitar mitigación de recargos de cobranza
+  assert.ok(
+    draft.formalBodyMarkdown.includes("cobranza"),
+    "Debe solicitar mitigación de cargos de cobranza."
+  );
+});
+
+test("Hito 3.9.4 — 22. Distribución equilibrada del presupuesto de bienestar no punitivo", () => {
+  const skill = defaultFinancialWellbeingSkill;
+
+  // Supongamos que tras pagar Nequi ($56.431) quedan $103.569 COP de Dinero Libre
+  const budget = skill.recommendWellnessBudget(103569);
+
+  assert.equal(budget.totalAllocatedCop, 103569);
+  assert.equal(budget.categories.length, 3);
+
+  // Alimentación fresca: 40% (aprox 41.428 COP)
+  const food = budget.categories.find((c) => c.category === "alimentacion_fresca")!;
+  assert.ok(food && food.allocatedCop > 40000);
+
+  // Ocio consciente: 25% (aprox 25.892 COP)
+  const leisure = budget.categories.find((c) => c.category === "ocio_consciente")!;
+  assert.ok(leisure && leisure.allocatedCop > 20000);
+
+  // Mensaje no punitivo
+  assert.ok(
+    budget.guidanceMessage.includes("bienestar integral no es un premio") ||
+    budget.guidanceMessage.includes("combustible"),
+    "El mensaje debe ser empático y no punitivo."
+  );
+});
+
+test("Hito 3.9.4 — 23. Evaluación de financiamiento de metas Wishlist con Doble Candado", () => {
+  const skill = defaultFinancialWellbeingSkill;
+
+  const plan = calculateBiweeklyCashflowPlan({
+    asOfDate: "2026-11-11",
+    accounts: { nuAccountCop: 340000, nequiAccountCop: 70000 },
+    protectedEssentialReserveCop: 250000,
+    expectedNextIncome: { amountCop: 1000000, expectedDate: "2026-11-20", isConfirmed: false },
+    committedObligations: [{ id: "o1", name: "Nequi", amountCop: 56431, dueDate: "2026-11-15", isMandatory: true, priority: "critical", status: "pending" }],
+  }); // Dinero Libre = 103.569 COP
+
+  // Caso A: Artículo asequible con GP y Dinero Libre suficientes (ej. Libro $45.000 COP, 30.000 GP)
+  const itemA = { name: "Libro de Finanzas Claras", costGp: 30000, priceCop: 45000 };
+  const advisoryA = skill.evaluateWishlistGoalFunding(itemA, plan, 50000);
+  assert.equal(advisoryA.canRedeemNow, true);
+  assert.ok(advisoryA.recommendedSavingsPlan.includes("Doble candado desbloqueado"));
+
+  // Caso B: Falta dinero real aunque sobran GP (ej. Cubo $150.000 COP, 40.000 GP teniendo 80.000 GP)
+  const itemB = { name: "Cubo Rubik GAN 12 MagLev", costGp: 40000, priceCop: 150000 };
+  const advisoryB = skill.evaluateWishlistGoalFunding(itemB, plan, 80000);
+  assert.equal(advisoryB.canRedeemNow, false);
+  assert.ok(advisoryB.blockReason?.includes("Dinero Libre actual"));
+  assert.ok(advisoryB.recommendedSavingsPlan.includes("20 de noviembre"));
+
+  // Caso C: Falta GP de hábitos aunque sobra dinero
+  const advisoryC = skill.evaluateWishlistGoalFunding(itemA, plan, 10000); // Solo 10.000 GP
+  assert.equal(advisoryC.canRedeemNow, false);
+  assert.ok(advisoryC.blockReason?.includes("faltan"));
+});
+
+test("Hito 3.9.4 — 24. Barrera estricta HITL Nivel 3: Prohibición de pagos autónomos por la IA", () => {
+  const skill = defaultFinancialWellbeingSkill;
+
+  assert.throws(
+    () => {
+      skill.executeAutonomousPayment();
+    },
+    /Acción bloqueada por política de seguridad HITL Nivel 3/,
+    "La IA tiene estrictamente prohibido mutar saldos o ejecutar pagos automáticamente."
+  );
+});
+
 
 
