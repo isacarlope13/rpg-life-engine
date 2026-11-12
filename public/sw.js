@@ -68,7 +68,8 @@ self.addEventListener("fetch", (event) => {
             message: "Estás sin conexión a internet. Los cambios se sincronizarán al recuperar la señal.",
           }),
           {
-            status: 200,
+            status: 503,
+            statusText: "Service Unavailable (Offline)",
             headers: { "Content-Type": "application/json" },
           }
         );

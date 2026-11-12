@@ -189,11 +189,13 @@ test("OAKHAVEN 4.5 — PRUEBAS DE USUARIO & AUDITORÍA INTEGRAL", async (t) => {
     // Sesión histórica real existente en gaming
     const historicGamingSession: SkillSessionRecord = {
       id: "ses_gaming_historical_1",
-      user_id: "usr_auditor_lifecycle",
       domain: "gaming",
+      title: "Partida de ajedrez táctico",
       duration_minutes: 45,
-      completed_at: "2026-11-01T15:00:00Z",
+      gp_earned: 150,
+      xp_earned: 80,
       details: "Partida de ajedrez táctico",
+      timestamp: "2026-11-01T15:00:00Z",
     };
     const sessionHistory = [historicGamingSession];
 

@@ -101,6 +101,39 @@ export async function POST(req: Request) {
         .single();
 
       if (actErr) {
+        // Manejo idempotente de duplicados (colisión de clave idempotente en base de datos)
+        if (
+          actErr.code === "23505" ||
+          actErr.message?.toLowerCase().includes("unique") ||
+          actErr.message?.toLowerCase().includes("duplicate")
+        ) {
+          const scopedKey = scopeIdempotencyKey(userId, body.idempotency_key);
+          const { data: existingAct } = await db
+            .from("activity_logs")
+            .select("*")
+            .eq("idempotency_key", scopedKey)
+            .maybeSingle();
+
+          if (existingAct) {
+            return NextResponse.json(
+              {
+                success: true,
+                mode: "supabase_idempotent_replay",
+                activity_log_id: existingAct.id,
+                quest_completed: {
+                  code: body.quest_code || "CUSTOM",
+                  title: existingAct.activity_name,
+                  domain: existingAct.domain,
+                  transferred_gp: existingAct.requested_gp,
+                  earned_xp: existingAct.earned_xp,
+                },
+                shortcut_tts_message: `Hábito ya registrado previamente: ${existingAct.activity_name}.`,
+              },
+              { status: 200 }
+            );
+          }
+        }
+
         return NextResponse.json(
           { success: false, error: actErr.message },
           { status: 500 }

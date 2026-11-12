@@ -32,9 +32,20 @@ export async function POST(req: Request) {
       detected_source = aiParsed.detected_source || "voice_dictation";
     }
 
-    if (!amount_cop || amount_cop <= 0) {
+    if (
+      typeof amount_cop !== "number" ||
+      !Number.isFinite(amount_cop) ||
+      amount_cop <= 0
+    ) {
       return NextResponse.json(
-        { success: false, error: "El monto en COP debe ser mayor a 0" },
+        { success: false, error: "El monto en COP debe ser un número válido mayor a 0" },
+        { status: 400 }
+      );
+    }
+
+    if (amount_cop > 1_000_000_000) {
+      return NextResponse.json(
+        { success: false, error: "El monto en COP excede el límite máximo de seguridad (1,000,000,000 COP)" },
         { status: 400 }
       );
     }
@@ -85,6 +96,39 @@ export async function POST(req: Request) {
         .single();
 
       if (txError) {
+        // Manejo idempotente de duplicados (colisión de clave idempotente en base de datos)
+        if (
+          txError.code === "23505" ||
+          txError.message?.toLowerCase().includes("unique") ||
+          txError.message?.toLowerCase().includes("duplicate")
+        ) {
+          const scopedKey = scopeIdempotencyKey(userId, body.idempotency_key);
+          const { data: existingTx } = await db
+            .from("financial_transactions")
+            .select("*")
+            .eq("idempotency_key", scopedKey)
+            .maybeSingle();
+
+          if (existingTx) {
+            return NextResponse.json(
+              {
+                success: true,
+                mode: "supabase_idempotent_replay",
+                transaction_id: existingTx.id,
+                parsed_data: {
+                  amount_cop: existingTx.amount_cop,
+                  category: existingTx.category,
+                  merchant_or_concept: existingTx.merchant_or_concept,
+                  detected_source,
+                  multiplier_applied: existingTx.aegis_shield_used ? 1.0 : 1.2,
+                },
+                shortcut_tts_message: `Operación ya registrada previamente: ${existingTx.merchant_or_concept} por ${existingTx.amount_cop.toLocaleString("es-CO")} COP.`,
+              },
+              { status: 200 }
+            );
+          }
+        }
+
         return NextResponse.json(
           { success: false, error: txError.message },
           { status: 500 }
