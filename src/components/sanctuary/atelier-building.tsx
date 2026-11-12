@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Scissors,
   Clock,
@@ -91,9 +91,18 @@ export function AtelierBuilding({
     pauseSession,
     resumeSession,
     resetSession,
+    updateSpecializedData,
     finishSession,
     submitting,
   } = useUniversalSession("knitting", "atelier");
+
+  // Sincronizar vueltas registradas al reingresar si la sesión sigue activa en segundo plano
+  useEffect(() => {
+    const persistedRows = (session?.specializedData as Record<string, unknown>)?.knitting as { rows_completed?: number } | undefined;
+    if (typeof persistedRows?.rows_completed === "number" && persistedRows.rows_completed > 0) {
+      setSessionRows(persistedRows.rows_completed);
+    }
+  }, [session?.sessionId]);
 
   const activeProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
   const totalCompletedRows = projects.reduce((acc, p) => acc + (p.completed_rows || 0), 0);
@@ -124,7 +133,16 @@ export function AtelierBuilding({
 
   const handleIncrementRows = (delta: number) => {
     triggerHaptic("light");
-    setSessionRows((prev) => Math.max(0, prev + delta));
+    setSessionRows((prev) => {
+      const nextRows = Math.max(0, prev + delta);
+      updateSpecializedData({
+        knitting: {
+          ...((session?.specializedData as Record<string, unknown>)?.knitting as Record<string, unknown> || {}),
+          rows_completed: nextRows,
+        },
+      });
+      return nextRows;
+    });
   };
 
   const handleFinishAndSave = async () => {

@@ -45,10 +45,15 @@ import {
   getSmartBankInsights,
   type BankAccountRecord,
   type BankTransferPayload,
+  STORAGE_KEY_BANK_ACCOUNTS,
+  CASE_STUDY_ACCOUNTS,
+  loadPersistedAccounts,
+  savePersistedAccounts,
 } from "@/lib/sanctuary/bank-engine";
 import { INITIAL_FINANCIAL_MOVEMENTS } from "@/lib/initial-financial-movements";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { safeLocalStorage } from "@/lib/storage-safe";
 
 // OAKHAVEN 3.9 CORE IMPORTS
 import {
@@ -70,29 +75,7 @@ import {
   type DualWishlistItem,
 } from "@/lib/sanctuary/wishlist-dual-engine";
 
-// Cuentas Reales del Caso de Estudio 3.9 (11 de Noviembre de 2026)
-const CASE_STUDY_ACCOUNTS: BankAccountRecord[] = [
-  {
-    id: "acc_nu_39",
-    name: "Cuenta Nu (Ahorros)",
-    type: "savings",
-    balanceCop: 340000,
-    color: "#820AD1",
-    icon: "💜",
-    accountNumberMask: "*3921",
-    institution: "Nu Colombia",
-  },
-  {
-    id: "acc_nequi_39",
-    name: "Cuenta Nequi",
-    type: "savings",
-    balanceCop: 70000,
-    color: "#FF007A",
-    icon: "📱",
-    accountNumberMask: "*1126",
-    institution: "Nequi Bancolombia",
-  },
-];
+// Cuentas Reales y persistencia importadas de bank-engine.ts
 
 interface BankBuildingProps {
   playerLevel: number;
@@ -121,10 +104,14 @@ export function BankBuilding({
 }: BankBuildingProps) {
   const [activeTab, setActiveTab] = useState("calendar");
 
-  // Estado financiero: Movimientos y Cuentas Soberanas
+  // Estado financiero: Movimientos y Cuentas Soberanas con Persistencia Real
   const [movements, setMovements] = useState<FinancialMovementRecord[]>(INITIAL_FINANCIAL_MOVEMENTS);
-  const [accounts, setAccounts] = useState<BankAccountRecord[]>(CASE_STUDY_ACCOUNTS);
+  const [accounts, setAccounts] = useState<BankAccountRecord[]>(() => loadPersistedAccounts());
   const [debts, setDebts] = useState<RealDebtObligation[]>(REAL_DEBTS_CASE_STUDY);
+
+  // Modal para Ajustar / Modificar Saldo de Cuenta
+  const [editingAccount, setEditingAccount] = useState<BankAccountRecord | null>(null);
+  const [editAccountBalance, setEditAccountBalance] = useState<number>(0);
 
   // Wishlist Engine State
   const [wishlistItems, setWishlistItems] = useState<DualWishlistItem[]>(
@@ -276,6 +263,7 @@ export function BankBuilding({
 
       const result = executeAccountTransfer(accounts, payload);
       setAccounts(result.updatedAccounts);
+      savePersistedAccounts(result.updatedAccounts);
       setMovements((prev) => [result.transferMovement, ...prev]);
 
       triggerHaptic("success");
@@ -292,6 +280,22 @@ export function BankBuilding({
         message: err instanceof Error ? err.message : "Error al transferir fondos.",
       });
     }
+  };
+
+  // Manejador de Ajuste Directo de Saldo (Prueba de Usuario & Personalización Real)
+  const handleSaveAccountBalance = (accountId: string, newBalanceCop: number) => {
+    const exactBalance = Math.max(0, Math.round(newBalanceCop));
+    setAccounts((prev) => {
+      const updated = prev.map((a) => (a.id === accountId ? { ...a, balanceCop: exactBalance } : a));
+      savePersistedAccounts(updated);
+      return updated;
+    });
+    setEditingAccount(null);
+    triggerHaptic("success");
+    setNotification({
+      type: "success",
+      message: `💰 ¡Saldo de cuenta actualizado a $${exactBalance.toLocaleString("es-CO")} COP y recalculado en el plan!`,
+    });
   };
 
   // Manejador de Registro de Movimiento Manual
@@ -313,15 +317,17 @@ export function BankBuilding({
       created_at: new Date().toISOString(),
     };
 
-    setAccounts((prev) =>
-      prev.map((acc) => {
+    setAccounts((prev) => {
+      const updated = prev.map((acc) => {
         if (acc.id === chosenAcc.id) {
           const delta = newTxType === "Ingreso" ? amountExact : -amountExact;
           return { ...acc, balanceCop: Math.max(0, acc.balanceCop + delta) };
         }
         return acc;
-      })
-    );
+      });
+      savePersistedAccounts(updated);
+      return updated;
+    });
 
     setMovements((prev) => [newMov, ...prev]);
     triggerHaptic("success");
@@ -1316,13 +1322,27 @@ export function BankBuilding({
                   </span>
                 </div>
 
-                <div className="pt-2 border-t-2 border-[#3A2E2B]/10">
-                  <span className="text-[10px] uppercase font-bold text-[#795548] block">
-                    Saldo Disponible
-                  </span>
-                  <span className="font-mono text-xl font-black text-[#2A4331]">
-                    ${Math.round(acc.balanceCop).toLocaleString("es-CO")} COP
-                  </span>
+                <div className="pt-2 border-t-2 border-[#3A2E2B]/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-[#795548] block">
+                      Saldo Disponible
+                    </span>
+                    <span className="font-mono text-xl font-black text-[#2A4331]">
+                      ${Math.round(acc.balanceCop).toLocaleString("es-CO")} COP
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingAccount(acc);
+                      setEditAccountBalance(acc.balanceCop);
+                      triggerHaptic("light");
+                    }}
+                    className="rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-2.5 py-1 text-xs font-black text-[#3A2E2B] hover:bg-[#E8DFCF] shadow-[0_2px_0_#3A2E2B] transition cursor-pointer"
+                    title={`Modificar saldo de ${acc.name}`}
+                  >
+                    ✏️ Ajustar Saldo
+                  </button>
                 </div>
               </div>
             ))}
@@ -1657,6 +1677,75 @@ export function BankBuilding({
                 </CozyButton>
                 <CozyButton variant="forest" size="sm" type="submit">
                   Guardar Movimiento
+                </CozyButton>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 3: AJUSTAR SALDO DE CUENTA (PERSISTENCIA & PRUEBA DE USUARIO)
+         ========================================================================= */}
+      {editingAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 sm:p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-[#3A2E2B]/10 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">{editingAccount.icon}</span>
+                <div>
+                  <h3 className="text-sm font-black text-[#3A2E2B]">
+                    Ajustar Saldo Real: {editingAccount.name}
+                  </h3>
+                  <span className="text-[11px] text-[#795548]">
+                    {editingAccount.institution} • {editingAccount.accountNumberMask}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingAccount(null)}
+                className="rounded-lg p-1 text-[#795548] hover:bg-[#F4EEDC]"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveAccountBalance(editingAccount.id, editAccountBalance);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-[#3A2E2B] mb-1">
+                  Nuevo Saldo Disponible (COP):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={editAccountBalance}
+                  onChange={(e) => setEditAccountBalance(Number(e.target.value))}
+                  className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] p-3 text-base font-mono font-black text-[#2A4331]"
+                  required
+                />
+                <span className="text-[11px] font-bold text-[#4E6E58] mt-1 block">
+                  ${Math.round(editAccountBalance || 0).toLocaleString("es-CO")} COP
+                </span>
+              </div>
+
+              <p className="text-[11px] text-[#795548] bg-[#F7F4EB] p-2.5 rounded-xl border border-[#3A2E2B]/15 leading-relaxed">
+                ℹ️ Al modificar este saldo, el plan de flujo de caja quincenal, el margen libre y los diagnósticos de Silas Vance se recalcularán automáticamente de forma determinista y persistirán en almacenamiento seguro.
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <CozyButton variant="wood" size="sm" onClick={() => setEditingAccount(null)}>
+                  Cancelar
+                </CozyButton>
+                <CozyButton variant="forest" size="sm" type="submit">
+                  Guardar Saldo
                 </CozyButton>
               </div>
             </form>

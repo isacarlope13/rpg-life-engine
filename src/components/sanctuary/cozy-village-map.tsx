@@ -718,6 +718,7 @@ export function CozyVillageMap({
         onSubmitSkillSession={onSubmitSkillSession || (async () => false)}
         skillSummaries={skillSummaries}
         recentSessions={recentSessions}
+        worldConfig={worldConfig}
       />
 
       {/* MODAL MI MUNDO: GESTIÓN DE HABILIDADES (FASE 4.0) */}

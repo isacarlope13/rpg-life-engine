@@ -32,6 +32,7 @@ import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-
 import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 import { CozyButton, CozyCard } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { safeLocalStorage } from "@/lib/storage-safe";
 
 import {
   type GymSetRecord,
@@ -73,36 +74,45 @@ export function GymBuilding({
   const [restPresetSecs, setRestPresetSecs] = useState<number>(90);
   const [isResting, setIsResting] = useState<boolean>(false);
 
-  // Series interactivas de la sesión
-  const [workoutSets, setWorkoutSets] = useState<GymSetRecord[]>([
-    {
-      id: "set-1",
-      exerciseName: "Sentadilla Goblet",
-      setNumber: 1,
-      reps: 10,
-      weightKg: 16,
-      rpe: 7,
-      completed: true,
-    },
-    {
-      id: "set-2",
-      exerciseName: "Sentadilla Goblet",
-      setNumber: 2,
-      reps: 10,
-      weightKg: 16,
-      rpe: 8,
-      completed: true,
-    },
-    {
-      id: "set-3",
-      exerciseName: "Sentadilla Goblet",
-      setNumber: 3,
-      reps: 8,
-      weightKg: 18,
-      rpe: 8,
-      completed: false,
-    },
-  ]);
+  // Series interactivas de la sesión con persistencia segura
+  const [workoutSets, setWorkoutSets] = useState<GymSetRecord[]>(() => {
+    try {
+      const raw = safeLocalStorage.getItem("oakhaven_gym_sets_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [
+      {
+        id: "set-1",
+        exerciseName: "Sentadilla Goblet",
+        setNumber: 1,
+        reps: 10,
+        weightKg: 16,
+        rpe: 7,
+        completed: true,
+      },
+      {
+        id: "set-2",
+        exerciseName: "Sentadilla Goblet",
+        setNumber: 2,
+        reps: 10,
+        weightKg: 16,
+        rpe: 8,
+        completed: true,
+      },
+      {
+        id: "set-3",
+        exerciseName: "Sentadilla Goblet",
+        setNumber: 3,
+        reps: 8,
+        weightKg: 18,
+        rpe: 8,
+        completed: false,
+      },
+    ];
+  });
 
   // Residente asociado: Bruno
   const brunoResident = useMemo(
@@ -228,7 +238,13 @@ export function GymBuilding({
       rpe: lastSet ? lastSet.rpe : 8,
       completed: false,
     };
-    setWorkoutSets((prev) => [...prev, newSet]);
+    setWorkoutSets((prev) => {
+      const updated = [...prev, newSet];
+      try {
+        safeLocalStorage.setItem("oakhaven_gym_sets_v1", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
 
   const handleUpdateSet = (
@@ -236,14 +252,24 @@ export function GymBuilding({
     field: keyof GymSetRecord,
     val: number
   ) => {
-    setWorkoutSets((prev) =>
-      prev.map((s) => (s.id === setId ? { ...s, [field]: val } : s))
-    );
+    setWorkoutSets((prev) => {
+      const updated = prev.map((s) => (s.id === setId ? { ...s, [field]: val } : s));
+      try {
+        safeLocalStorage.setItem("oakhaven_gym_sets_v1", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
 
   const handleDeleteSet = (setId: string) => {
     triggerHaptic("warning");
-    setWorkoutSets((prev) => prev.filter((s) => s.id !== setId));
+    setWorkoutSets((prev) => {
+      const updated = prev.filter((s) => s.id !== setId);
+      try {
+        safeLocalStorage.setItem("oakhaven_gym_sets_v1", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
 
   const handleSelectRoutine = (key: GymRoutineKey) => {

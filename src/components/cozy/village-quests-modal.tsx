@@ -6,7 +6,7 @@ import { COZY_VILLAGE_RESIDENTS, type VillageResident } from "@/lib/sanctuary/vi
 import type { SkillSessionRecord, SkillDomainSummary, SkillDomain } from "@/types/rpg";
 import { CozyModal, CozyButton, CozyCard, CozyNotification } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";
-import { loadWorldPreferences } from "@/lib/sanctuary/world-preferences-engine";
+import { type VillageWorldConfig, loadWorldPreferences } from "@/lib/sanctuary/world-preferences-engine";
 
 interface VillageQuestsModalProps {
   isOpen: boolean;
@@ -15,6 +15,7 @@ interface VillageQuestsModalProps {
   onSubmitSkillSession: (payload: Record<string, unknown>) => Promise<boolean>;
   skillSummaries?: SkillDomainSummary[];
   recentSessions?: SkillSessionRecord[];
+  worldConfig?: VillageWorldConfig;
 }
 
 function calculateAffinity(sessionsCount: number) {
@@ -40,20 +41,21 @@ export function VillageQuestsModal({
   onSubmitSkillSession,
   skillSummaries = [],
   recentSessions = [],
+  worldConfig,
 }: VillageQuestsModalProps) {
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
-  // Filtrado de vecinos activos según preferencias de Mi Mundo (OakHaven 4.0)
+  // Filtrado reactivo de vecinos activos según preferencias de Mi Mundo (OakHaven 4.0)
   const activeResidents = useMemo(() => {
-    const worldConfig = loadWorldPreferences();
+    const activeConfig = worldConfig || loadWorldPreferences();
     return COZY_VILLAGE_RESIDENTS.filter((res) => {
       if (res.domain === "work" || res.id === "silas") return true;
-      const pref = worldConfig.skills[res.domain];
+      const pref = activeConfig.skills[res.domain];
       return !pref || pref.status === "active";
     });
-  }, []);
+  }, [worldConfig, isOpen]);
 
   if (!isOpen) return null;
 
@@ -65,7 +67,8 @@ export function VillageQuestsModal({
 
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const idempotencyKey = `village_journal_${resident.id}_${today}_${Date.now()}`;
+      // Clave determinista diaria para garantizar idempotencia y evitar duplicación de GP/XP
+      const idempotencyKey = `village_journal_${resident.id}_${today}`;
 
       const success = await onSubmitSkillSession({
         domain: resident.domain,

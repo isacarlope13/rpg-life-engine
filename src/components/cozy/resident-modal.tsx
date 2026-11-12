@@ -64,7 +64,8 @@ export function ResidentModal({
 
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const idempotencyKey = `resident_micro_${resident.id}_${today}_${Date.now()}`;
+      // Clave de idempotencia determinista diaria: evita recompensas espurias o duplicadas
+      const idempotencyKey = `resident_micro_${resident.id}_${today}`;
 
       const success = await onSubmitSkillSession({
         domain: resident.domain,

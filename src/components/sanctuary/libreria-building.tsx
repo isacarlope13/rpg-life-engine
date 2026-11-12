@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   BookOpen,
   Clock,
@@ -100,9 +100,18 @@ export function LibreriaBuilding({
     pauseSession,
     resumeSession,
     resetSession,
+    updateSpecializedData,
     finishSession,
     submitting,
   } = useUniversalSession("reading", "libreria");
+
+  // Sincronizar páginas registradas al reingresar si la sesión sigue activa en segundo plano
+  useEffect(() => {
+    const readingData = (session?.specializedData as Record<string, unknown>)?.reading as { pages_read_count?: number } | undefined;
+    if (typeof readingData?.pages_read_count === "number" && readingData.pages_read_count > 0) {
+      setPagesReadInput(readingData.pages_read_count);
+    }
+  }, [session?.sessionId]);
 
   const activeBook = books.find((b) => b.id === selectedBookId) || books[0];
 

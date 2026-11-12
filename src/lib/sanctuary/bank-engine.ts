@@ -13,6 +13,52 @@
 import type { FinancialMovementRecord, BossDoTSummary, DebtStrategy } from "../../types/rpg.ts";
 import { INITIAL_FINANCIAL_MOVEMENTS } from "../initial-financial-movements.ts";
 import { SmartExpenseEngine } from "../agents/smart-expense.ts";
+import { safeLocalStorage } from "../storage-safe.ts";
+
+export const STORAGE_KEY_BANK_ACCOUNTS = "oakhaven_bank_accounts_v1";
+
+// Cuentas Reales del Caso de Estudio 3.9 (11 de Noviembre de 2026) - Fallback inicial
+export const CASE_STUDY_ACCOUNTS: BankAccountRecord[] = [
+  {
+    id: "acc_nu_39",
+    name: "Cuenta Nu (Ahorros)",
+    type: "savings",
+    balanceCop: 340000,
+    color: "#820AD1",
+    icon: "💜",
+    accountNumberMask: "*3921",
+    institution: "Nu Colombia",
+  },
+  {
+    id: "acc_nequi_39",
+    name: "Cuenta Nequi",
+    type: "savings",
+    balanceCop: 70000,
+    color: "#FF007A",
+    icon: "📱",
+    accountNumberMask: "*1126",
+    institution: "Nequi Bancolombia",
+  },
+];
+
+export function loadPersistedAccounts(): BankAccountRecord[] {
+  try {
+    const raw = safeLocalStorage.getItem(STORAGE_KEY_BANK_ACCOUNTS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return CASE_STUDY_ACCOUNTS;
+}
+
+export function savePersistedAccounts(accs: BankAccountRecord[]): void {
+  try {
+    safeLocalStorage.setItem(STORAGE_KEY_BANK_ACCOUNTS, JSON.stringify(accs));
+  } catch {}
+}
 
 export interface BankAccountRecord {
   id: string;

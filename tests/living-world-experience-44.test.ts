@@ -111,7 +111,7 @@ test("OAKHAVEN 4.0 — LIVING WORLD EXPERIENCE (4.1 a 4.4 INTEGRAL SUITE)", asyn
       userId: "usr_hero",
       domain: "knitting",
       buildingId: "atelier",
-      nowTimestamp: t0,
+      autoStart: false,
     });
     session = startUniversalSession(session, t0);
 
