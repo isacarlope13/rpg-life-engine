@@ -13,7 +13,6 @@ import {
   Trash2,
   ExternalLink,
   Image as ImageIcon,
-  Lock,
   Sparkles,
   X,
 } from "lucide-react";
@@ -255,44 +254,112 @@ export function AtelierBuilding({
     });
   };
 
+  const [savingQuickRows, setSavingQuickRows] = useState(false);
+
+  const rowDraftKey =
+    sessionOwner && activeProject?.id
+      ? `oakhaven_atelier_row_draft_v1_${encodeURIComponent(sessionOwner)}_${activeProject.id}`
+      : null;
+
+  // Recuperar borrador local de vueltas si no hay sesión con cronómetro activa
+  useEffect(() => {
+    if (!rowDraftKey || isActive) return;
+    try {
+      const raw = window.localStorage.getItem(rowDraftKey);
+      const parsed = raw ? Number(raw) : 0;
+      if (Number.isSafeInteger(parsed) && parsed > 0) {
+        setSessionRows(parsed);
+      }
+    } catch {
+      // Silencioso en entornos sin localStorage
+    }
+  }, [rowDraftKey, isActive]);
+
+  const persistRowDraft = (rows: number) => {
+    if (!rowDraftKey) return;
+    try {
+      if (rows > 0) {
+        window.localStorage.setItem(rowDraftKey, String(rows));
+      } else {
+        window.localStorage.removeItem(rowDraftKey);
+      }
+    } catch {
+      // Ignorar errores de cuota local
+    }
+  };
+
   const applyRowChange = (nextRows: number, pushUndo = true) => {
     setSessionRows((prev) => {
       if (pushUndo && prev !== nextRows) {
         setRowUndoStack((stack) => [...stack.slice(-9), prev]);
       }
-      updateSpecializedData({
-        knitting: {
-          ...(((session?.specializedData as Record<string, unknown>)?.knitting as Record<
-            string,
-            unknown
-          >) || {}),
-          rows_completed: nextRows,
-        },
-      });
+      persistRowDraft(nextRows);
+      if (isActive) {
+        updateSpecializedData({
+          knitting: {
+            ...(((session?.specializedData as Record<string, unknown>)?.knitting as Record<
+              string,
+              unknown
+            >) || {}),
+            rows_completed: nextRows,
+          },
+        });
+      }
       return nextRows;
     });
   };
 
   const handleIncrementRows = (delta: number) => {
-    if (!isActive) {
-      triggerHaptic("warning");
-      setNotification({
-        type: "warning",
-        message: "⏱️ Inicia primero el cronómetro del bastidor para ingresar tus vueltas.",
-      });
-      return;
-    }
     triggerHaptic("light");
     const nextRows = Math.max(0, sessionRows + delta);
     applyRowChange(nextRows, true);
   };
 
   const handleUndoRow = () => {
-    if (!isActive || rowUndoStack.length === 0) return;
+    if (rowUndoStack.length === 0) return;
     triggerHaptic("light");
     const previous = rowUndoStack[rowUndoStack.length - 1];
     setRowUndoStack((stack) => stack.slice(0, -1));
     applyRowChange(previous, false);
+  };
+
+  const handleSaveQuickRowsWithoutTimer = async () => {
+    if (sessionRows <= 0 || savingQuickRows) return;
+    setSavingQuickRows(true);
+    triggerHaptic("medium");
+    try {
+      const rowsToSave = sessionRows;
+      const opKey = `atelier-rows-${activeProject?.id || "general"}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      await onSubmitDirectSkillSession({
+        domain: "knitting",
+        title: activeProject ? `Avance en ${activeProject.name}` : "Avance de Crochet",
+        duration_minutes: Math.max(1, Math.min(30, rowsToSave)),
+        project_id: activeProject?.id,
+        rows_completed: rowsToSave,
+        stitches_notes: stitchesNotes.trim() || `Registro rápido de +${rowsToSave} vueltas`,
+        idempotency_key: opKey,
+      });
+      setSessionRows(0);
+      setRowUndoStack([]);
+      persistRowDraft(0);
+      setStitchesNotes("");
+      setNotification({
+        type: "success",
+        message: `✨ ¡+${rowsToSave} vuelta${rowsToSave === 1 ? "" : "s"} guardada${
+          rowsToSave === 1 ? "" : "s"
+        } en "${activeProject?.name || "tu proyecto"}" sin necesidad de cronómetro!`,
+      });
+      await onRefreshState();
+    } catch {
+      setNotification({
+        type: "error",
+        message: "No se pudieron guardar las vueltas ahora. Tu conteo local sigue a salvo.",
+      });
+    } finally {
+      setSavingQuickRows(false);
+    }
   };
 
   const handleFinishAndSave = async () => {
@@ -314,6 +381,7 @@ export function AtelierBuilding({
         });
         setSessionRows(0);
         setRowUndoStack([]);
+        persistRowDraft(0);
         setStitchesNotes("");
         setUploadedPhotoUrl(null);
         await onRefreshState();
@@ -758,7 +826,7 @@ export function AtelierBuilding({
                       className="flex items-center gap-2 min-h-[48px] px-5"
                     >
                       <Play className="h-4 w-4" />
-                      Iniciar Cronómetro de Tejido
+                      Iniciar Cronómetro (Opcional)
                     </CozyButton>
                   ) : (
                     <>
@@ -818,17 +886,13 @@ export function AtelierBuilding({
                 </div>
               </div>
 
-              {/* Contador Táctil Grande de Vueltas (Bloqueado hasta iniciar cronómetro) */}
-              <div
-                className={`rounded-2xl border-2 p-4 text-center space-y-3 ${
-                  isActive
-                    ? "border-[#3A2E2B] bg-[#FFFDF8]"
-                    : "border-[#3A2E2B]/35 bg-[#F4EEDC]/60"
-                }`}
-              >
+              {/* Contador Táctil Grande de Vueltas (Funciona con o sin cronómetro) */}
+              <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] p-4 text-center space-y-3">
                 <div className="flex items-center justify-between text-xs font-bold text-[#795548]">
-                  <span>Vueltas en esta sesión</span>
-                  {rowUndoStack.length > 0 && isActive && (
+                  <span>
+                    Vueltas por guardar {isActive ? "(con cronómetro)" : "(modo libre)"}
+                  </span>
+                  {rowUndoStack.length > 0 && (
                     <button
                       type="button"
                       onClick={handleUndoRow}
@@ -842,46 +906,47 @@ export function AtelierBuilding({
 
                 <div className="font-mono text-4xl font-black text-[#3A2E2B]">+{sessionRows}</div>
 
-                {!isActive ? (
-                  <div className="rounded-xl border border-[#8C6239]/40 bg-[#FFFDF8] p-3 text-xs text-[#5C381E] flex flex-col sm:flex-row items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 font-bold">
-                      <Lock className="h-4 w-4 text-[#C88973]" />
-                      Inicia el cronómetro para habilitar el contador de vueltas.
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleStartSession}
-                      className="rounded-lg bg-[#314C3C] px-3 py-1.5 text-[11px] font-black text-[#FFFDF8] hover:bg-[#3E5F4C] cursor-pointer"
+                <div className="grid grid-cols-4 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleIncrementRows(-1)}
+                    aria-label="Restar 1 vuelta"
+                    className="min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-base font-black text-[#3A2E2B] hover:bg-[#E7D69C] active:translate-y-0.5 cursor-pointer"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleIncrementRows(1)}
+                    aria-label="Sumar 1 vuelta"
+                    className="col-span-2 min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#314C3C] text-lg font-black text-[#FFFDF8] hover:bg-[#3E5F4C] shadow-[0_3px_0_#1A2B20] active:translate-y-0.5 cursor-pointer"
+                  >
+                    +1 Vuelta
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleIncrementRows(5)}
+                    aria-label="Sumar 5 vueltas"
+                    className="min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C] text-base font-black text-[#3A2E2B] hover:bg-[#F2E3B3] shadow-[0_3px_0_#3A2E2B] active:translate-y-0.5 cursor-pointer"
+                  >
+                    +5
+                  </button>
+                </div>
+
+                {!isActive && sessionRows > 0 && (
+                  <div className="pt-2">
+                    <CozyButton
+                      variant="sunlight"
+                      size="md"
+                      disabled={savingQuickRows}
+                      onClick={handleSaveQuickRowsWithoutTimer}
+                      className="w-full min-h-[48px] flex items-center justify-center gap-2"
                     >
-                      ▶ Iniciar ahora
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-4 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleIncrementRows(-1)}
-                      aria-label="Restar 1 vuelta"
-                      className="min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-base font-black text-[#3A2E2B] hover:bg-[#E7D69C] active:translate-y-0.5 cursor-pointer"
-                    >
-                      -1
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleIncrementRows(1)}
-                      aria-label="Sumar 1 vuelta"
-                      className="col-span-2 min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#314C3C] text-lg font-black text-[#FFFDF8] hover:bg-[#3E5F4C] shadow-[0_3px_0_#1A2B20] active:translate-y-0.5 cursor-pointer"
-                    >
-                      +1 Vuelta
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleIncrementRows(5)}
-                      aria-label="Sumar 5 vueltas"
-                      className="min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C] text-base font-black text-[#3A2E2B] hover:bg-[#F2E3B3] shadow-[0_3px_0_#3A2E2B] active:translate-y-0.5 cursor-pointer"
-                    >
-                      +5
-                    </button>
+                      <CheckCircle2 className="h-4 w-4" />
+                      {savingQuickRows
+                        ? "Guardando avance..."
+                        : `Guardar +${sessionRows} vuelta${sessionRows === 1 ? "" : "s"} sin cronómetro`}
+                    </CozyButton>
                   </div>
                 )}
               </div>
@@ -1033,9 +1098,7 @@ export function AtelierBuilding({
               notes={stitchesNotes}
               onNotesChange={setStitchesNotes}
               onApplySuggestedValues={(vals) => {
-                if (isActive) {
-                  applyRowChange(Math.max(0, vals.quantity), true);
-                }
+                applyRowChange(Math.max(0, vals.quantity), true);
                 if (vals.notes) {
                   setStitchesNotes((prev) =>
                     prev ? `${prev} • ${vals.notes}` : vals.notes || ""
