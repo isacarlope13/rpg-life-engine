@@ -146,5 +146,14 @@ describe("OAKHAVEN FASE 9 — PUEBLO VIVO 5.0 (WORLD EXPERIENCE)", () => {
     assert.match(cssSrc, /prefers-reduced-motion: reduce/);
 
     assert.match(dashSrc, /setIsCompanionsOpen\(true\)/);
+
+    // Regresiones Release 3.2: overflow móvil en header, D-pad sin solapamiento, wheel no-pasivo, foco teclado y zIndex de Rowan
+    const headerSrc = fs.readFileSync("src/components/cozy/cozy-header.tsx", "utf8");
+    const camSrc = fs.readFileSync("src/lib/sanctuary/use-village-camera.ts", "utf8");
+    assert.match(headerSrc, /flex-wrap items-center gap-1 max-w-full/);
+    assert.match(sceneSrc, /top-3 left-3 sm:top-auto sm:bottom-4 sm:left-4/);
+    assert.match(sceneSrc, /rowanSpeechOpen \? 60 : 28/);
+    assert.match(camSrc, /passive: false/);
+    assert.match(camSrc, /contenteditable/);
   });
 });

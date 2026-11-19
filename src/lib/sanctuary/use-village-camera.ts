@@ -258,33 +258,33 @@ export function useVillageCamera(options?: VillageCameraOptions) {
     [persistCamera]
   );
 
-  // MANEJADOR: Rueda del ratón con Zoom Focal
-  const onWheel = useCallback(
-    (e: React.WheelEvent) => {
-      e.preventDefault();
-      if (!containerRef.current) return;
+  // MANEJADOR NATIVO NO-PASIVO: Rueda del ratón con Zoom Focal (0 errores de passive listener)
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
 
-      const rect = containerRef.current.getBoundingClientRect();
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const handleNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
       const cursorX = e.clientX - rect.left;
       const cursorY = e.clientY - rect.top;
+      const current = cameraRef.current;
 
       const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
       const nextZoom = Math.min(
         opts.maxZoom,
-        Math.max(opts.minZoom, Number((camera.zoom * zoomFactor).toFixed(2)))
+        Math.max(opts.minZoom, Number((current.zoom * zoomFactor).toFixed(2)))
       );
 
-      if (nextZoom === camera.zoom) return;
+      if (nextZoom === current.zoom) return;
 
-      // Mantener el punto focal bajo el cursor
-      // worldPos = (cursorPos - cameraPos) / oldZoom
-      // newCameraPos = cursorPos - worldPos * newZoom
-      const worldX = (cursorX - camera.x) / camera.zoom;
-      const worldY = (cursorY - camera.y) / camera.zoom;
-
+      const worldX = (cursorX - current.x) / current.zoom;
+      const worldY = (cursorY - current.y) / current.zoom;
       const newCameraX = cursorX - worldX * nextZoom;
       const newCameraY = cursorY - worldY * nextZoom;
-
       const clamped = clampCamera(newCameraX, newCameraY, nextZoom);
 
       setCamera((prev) => {
@@ -297,14 +297,29 @@ export function useVillageCamera(options?: VillageCameraOptions) {
         persistCamera(next);
         return next;
       });
-    },
-    [camera.x, camera.y, camera.zoom, clampCamera, opts.maxZoom, opts.minZoom, persistCamera]
-  );
+    };
 
-  // MANEJADOR: Teclado Accesible (WASD / Flechas)
+    el.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleNativeWheel);
+  }, [clampCamera, opts.maxZoom, opts.minZoom, persistCamera]);
+
+  // No-op React prop kept for backwards compatibility (native non-passive listener handles wheel)
+  const onWheel = useCallback((_e: React.WheelEvent) => {}, []);
+
+  // MANEJADOR: Teclado Accesible (WASD / Flechas) con protección de foco en formularios y botones
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (!opts.enableKeyboard) return;
+
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest("input, textarea, select, [contenteditable='true']")) {
+        return;
+      }
+
+      const isInteractiveControl = Boolean(target && target.closest("button, a, [role='button']"));
+      if (isInteractiveControl && (e.key === " " || e.key === "Enter")) {
+        return;
+      }
 
       const step = 45;
       let dx = 0;

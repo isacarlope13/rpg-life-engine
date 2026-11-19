@@ -166,6 +166,10 @@ export function InteractiveVillageScene({
 
   const handleSceneKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest("input, textarea, select, [contenteditable='true']")) {
+        return;
+      }
       if (walkMode && !isEditMode) {
         if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
           e.preventDefault();
@@ -362,7 +366,6 @@ export function InteractiveVillageScene({
       onTouchStart={cameraHandlers.onTouchStart}
       onTouchMove={cameraHandlers.onTouchMove}
       onTouchEnd={cameraHandlers.onTouchEnd}
-      onWheel={cameraHandlers.onWheel}
       onKeyDown={handleSceneKeyDown}
       onDoubleClick={handleTerrainDoubleClick}
       className={`relative w-full h-[540px] sm:h-[680px] overflow-hidden rounded-3xl border-4 border-[#3A2E2B] shadow-[0_12px_0_#3A2E2B] select-none outline-none touch-none transition-colors duration-700 ${
@@ -594,7 +597,7 @@ export function InteractiveVillageScene({
             left: "700px",
             top: "312px",
             transform: "translate(-50%, -50%)",
-            zIndex: 28,
+            zIndex: rowanSpeechOpen ? 60 : 28,
           }}
           className="flex flex-col items-center select-none"
         >
@@ -840,7 +843,7 @@ export function InteractiveVillageScene({
          ========================================================================= */}
       <div
         data-prevent-camera-drag
-        className="pointer-events-auto absolute bottom-4 right-4 z-40 flex flex-col items-end gap-2"
+        className="pointer-events-auto absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-40 flex flex-col items-end gap-2 max-w-[calc(100%-1.5rem)]"
       >
         {/* Banner de colisión durante arrastre */}
         {isEditMode && collisionWarning && (
@@ -970,11 +973,11 @@ export function InteractiveVillageScene({
         </div>
       </div>
 
-      {/* D-Pad Táctil Accesible cuando Walk Mode está activo */}
+      {/* D-Pad Táctil Accesible cuando Walk Mode está activo (esquina superior izquierda en móvil para 0px de solapamiento con el HUD inferior) */}
       {walkMode && !isEditMode && (
         <div
           data-prevent-camera-drag
-          className="pointer-events-auto absolute bottom-4 left-4 z-40 grid grid-cols-3 gap-1 rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8]/95 p-1.5 shadow-[0_4px_0_#3A2E2B]"
+          className="pointer-events-auto absolute top-3 left-3 sm:top-auto sm:bottom-4 sm:left-4 z-40 grid grid-cols-3 gap-1 rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8]/95 p-1.5 shadow-[0_4px_0_#3A2E2B]"
           aria-label="Controles direccionales del avatar"
         >
           <span />

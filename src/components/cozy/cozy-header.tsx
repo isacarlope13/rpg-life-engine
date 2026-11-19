@@ -52,7 +52,7 @@ export function CozyHeader({
       </div>
 
       {/* Centro: Switcher de Vistas (Bento vs Pueblo vs Álbum) */}
-      <div className="flex items-center rounded-2xl border-[3px] border-[#3A2E2B] bg-[#F7F4EB] p-1 shadow-[0_3px_0_#3A2E2B]">
+      <div className="flex flex-wrap items-center gap-1 max-w-full rounded-2xl border-[3px] border-[#3A2E2B] bg-[#F7F4EB] p-1 shadow-[0_3px_0_#3A2E2B]">
         <button
           type="button"
           onClick={() => onViewModeChange("bento")}
@@ -104,7 +104,7 @@ export function CozyHeader({
       </div>
 
       {/* Derecha: Estado Offline, Monedas y Reloj en Vivo */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 max-w-full">
         {/* Indicador de Conexión Offline / Cola de Sincronización */}
         {isOffline ? (
           <div
