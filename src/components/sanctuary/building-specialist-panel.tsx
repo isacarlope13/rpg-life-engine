@@ -37,10 +37,20 @@ const SUGGESTIONS_BY_BUILDING: Record<string, string[]> = {
     "Hazme un examen de 3 preguntas",
     "Crea flashcards de este documento",
   ],
-  oficina: ["¿Qué proyectos de trabajo tengo pendientes?", "¿Cuál fue mi última sesión de trabajo?"],
+  oficina: [
+    "¿Qué proyectos de trabajo tengo pendientes?",
+    "¿Cuál fue mi última sesión de trabajo?",
+    "Prepara un sprint de trabajo con checklist",
+    "Analiza el documento técnico seleccionado",
+  ],
   gimnasio: ["¿Cuándo entrené por última vez?", "¿Cómo va mi constancia en el gym?"],
   club_puzzles: ["¿Cuál fue mi último récord de cubos?", "¿Cuál fue mi último solve?"],
-  libreria: ["¿Cuál fue mi último libro registrado?", "¿Qué libro terminé más recientemente?"],
+  libreria: [
+    "¿Qué libro estoy leyendo y cuántas páginas llevo?",
+    "¿Cuál fue mi último libro terminado y última sesión?",
+    "Muéstrame mis citas y propón una reflexión",
+    "Propón una reseña de mi libro actual",
+  ],
   cine: ["¿Qué serie estoy viendo?", "Agrega la película \"Mi Vecino Totoro\""],
   atelier: [
     "¿En qué vuelta quedé?",
@@ -83,7 +93,15 @@ export function BuildingSpecialistPanel({
   }, []);
 
   useEffect(() => {
-    if (!isOpen || (buildingId !== "atelier" && buildingId !== "biblioteca")) return;
+    if (
+      !isOpen ||
+      (buildingId !== "atelier" &&
+        buildingId !== "biblioteca" &&
+        buildingId !== "oficina" &&
+        buildingId !== "libreria")
+    ) {
+      return;
+    }
     fetch(`/api/resources?buildingId=${encodeURIComponent(buildingId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -209,13 +227,28 @@ export function BuildingSpecialistPanel({
             }),
           });
         }
+      } else if (
+        (proposal.actionType === "plan_work_sprint" || proposal.actionType === "add_reading_note") &&
+        proposal.payload.buildingId
+      ) {
+        const res = await fetch("/api/resources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(proposal.payload),
+        });
+        const resData = await res.json().catch(() => ({}));
+        if (!res.ok || !resData.success) {
+          throw new Error(resData.error || "No se pudo guardar el recurso en el servidor.");
+        }
       }
 
       setMessages((prev) =>
         prev.map((m) => (m.id === msgId ? { ...m, proposalStatus: "applied" } : m))
       );
-    } catch {
-      setErrorMsg("No se pudo aplicar la propuesta confirmada.");
+    } catch (err: unknown) {
+      setErrorMsg(
+        err instanceof Error ? err.message : "No se pudo aplicar la propuesta confirmada."
+      );
     } finally {
       setApplyingId(null);
     }
@@ -277,7 +310,13 @@ export function BuildingSpecialistPanel({
           {(buildingId === "atelier" || buildingId === "biblioteca") && buildingDocs.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#3A2E2B]/25 bg-[#F4EEDC] px-2.5 py-1.5 text-[10px]">
               <span className="font-black text-[#3A2E2B]">
-                {buildingId === "atelier" ? "📜 Patrón a consultar:" : "📚 Documento a estudiar:"}
+                {buildingId === "atelier"
+                  ? "📜 Patrón a consultar:"
+                  : buildingId === "biblioteca"
+                  ? "📚 Documento a estudiar:"
+                  : buildingId === "oficina"
+                  ? "📑 Documento técnico:"
+                  : "📖 Recurso literario:"}
               </span>
               <select
                 value={selectedResourceId}

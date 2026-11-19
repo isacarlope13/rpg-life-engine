@@ -115,12 +115,20 @@ export async function getLastReadBook(ctx: MayorToolContext): Promise<ToolExecut
       const list = books || [];
       const lastCreated = sortByTimestampDesc(list, (b) => b.created_at)[0] || null;
       const lastUpdated = sortByTimestampDesc(list, (b) => b.updated_at)[0] || null;
+      const currentlyReading = list.find((b) => b.status === "reading") || null;
       const lastCompleted =
         sortByTimestampDesc(
           list.filter((b) => b.status === "completed"),
           (b) => b.updated_at
         )[0] || null;
       const lastReadingSession = (logs || [])[0] || null;
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const pagesReadLast7Days = (logs || [])
+        .filter((l) => (Date.parse(String(l.completed_at || "")) || 0) >= sevenDaysAgo)
+        .reduce((sum, l) => {
+          const m = String(l.notes || "").match(/(\d+)\s*p[aá]g/i);
+          return sum + (m ? Number(m[1]) : 0);
+        }, 0);
 
       return {
         ok: true,
@@ -131,10 +139,13 @@ export async function getLastReadBook(ctx: MayorToolContext): Promise<ToolExecut
         hasData: list.length > 0 || Boolean(lastReadingSession),
         data: {
           totalBooks: list.length,
+          currentlyReadingBook: currentlyReading,
           lastCreatedBook: lastCreated,
           lastUpdatedBook: lastUpdated,
           lastCompletedBook: lastCompleted,
           lastReadingSession,
+          pagesReadLast7Days,
+          currentBookQuotes: [],
         },
       };
     }
@@ -144,8 +155,16 @@ export async function getLastReadBook(ctx: MayorToolContext): Promise<ToolExecut
       (ctx.store.skillSessions || []).filter((s) => s.domain === "reading"),
       (s) => s.timestamp
     );
+    const currentlyReadingBook = books.find((b) => b.status === "reading") || null;
     const lastCreatedBook = books[0] || null;
     const lastCompletedBook = books.find((b) => b.status === "completed") || null;
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const pagesReadLast7Days = readingLogs
+      .filter((l) => (Date.parse(l.timestamp) || 0) >= sevenDaysAgo)
+      .reduce((sum, l) => {
+        const m = String(l.details || "").match(/(\d+)\s*p[aá]g/i);
+        return sum + (m ? Number(m[1]) : 0);
+      }, 0);
 
     return {
       ok: true,
@@ -156,10 +175,13 @@ export async function getLastReadBook(ctx: MayorToolContext): Promise<ToolExecut
       hasData: books.length > 0 || readingLogs.length > 0,
       data: {
         totalBooks: books.length,
+        currentlyReadingBook,
         lastCreatedBook,
         lastUpdatedBook: lastCreatedBook,
         lastCompletedBook,
         lastReadingSession: readingLogs[0] || null,
+        pagesReadLast7Days,
+        currentBookQuotes: currentlyReadingBook?.quotes || [],
       },
     };
   } catch {
@@ -640,18 +662,45 @@ export async function getRecentCubeSolves(
 
 export async function getPendingWorkProjects(ctx: MayorToolContext): Promise<ToolExecutionResult> {
   const asOf = new Date().toISOString();
-  const workProjects = (ctx.store.workProjects || []).filter((p) => p.status !== "completed");
-  const workLogs = sortByTimestampDesc(
-    (ctx.store.skillSessions || []).filter((s) => s.domain === "work"),
-    (s) => s.timestamp
+  const workProjects = (ctx.store.workProjects || []).filter(
+    (p) =>
+      p.status !== "completed" &&
+      !String(p.id || "").toLowerCase().startsWith("demo-") &&
+      !String(p.id || "").toLowerCase().startsWith("template-")
   );
+
+  let lastWorkSession: Record<string, unknown> | null = null;
+  let source: DataSourceOrigin = "memory_store";
+
+  if (ctx.isSupabaseConfigured && ctx.db) {
+    const { data: dbLogs, error } = await ctx.db
+      .from("activity_logs")
+      .select("id, title, duration_minutes, notes, completed_at")
+      .eq("user_id", ctx.authenticatedUserId)
+      .eq("domain", "work")
+      .order("completed_at", { ascending: false })
+      .limit(1);
+    if (!error && dbLogs && dbLogs.length > 0) {
+      lastWorkSession = dbLogs[0] as Record<string, unknown>;
+      source = "supabase";
+    }
+  }
+
+  if (!lastWorkSession) {
+    const workLogs = sortByTimestampDesc(
+      (ctx.store.skillSessions || []).filter((s) => s.domain === "work"),
+      (s) => s.timestamp
+    );
+    lastWorkSession = (workLogs[0] as unknown as Record<string, unknown>) || null;
+  }
+
   return {
     ok: true,
     tool: "getPendingWorkProjects",
-    source: ctx.isSupabaseConfigured ? "memory_store" : "memory_store",
+    source,
     asOf,
     buildingId: "oficina",
-    hasData: workProjects.length > 0 || workLogs.length > 0,
+    hasData: workProjects.length > 0 || Boolean(lastWorkSession),
     data: {
       pendingProjectsCount: workProjects.length,
       pendingProjects: workProjects.slice(0, 10).map((p) => ({
@@ -659,9 +708,9 @@ export async function getPendingWorkProjects(ctx: MayorToolContext): Promise<Too
         name: p.name,
         status: p.status,
         current_stage: p.current_stage,
-        pendingTasksCount: (p.tasks || []).filter((t) => t.stage !== "done" && t.stage !== "Completado").length,
+        pendingTasksCount: (p.tasks || []).filter((t) => !t.is_completed && t.stage !== "done" && t.stage !== "Completado").length,
       })),
-      lastWorkSession: workLogs[0] || null,
+      lastWorkSession,
     },
   };
 }
