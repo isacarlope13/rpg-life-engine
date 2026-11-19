@@ -85,6 +85,7 @@ import {
 } from "./nora-silas-tools.ts";
 import type { PrivateBuildingResource } from "./building-resources-engine.ts";
 import type { RubikCubeType } from "../../types/rpg.ts";
+import { recordAiTelemetryEvent } from "./ai-observability.ts";
 
 export const MAX_TOOLS_PER_SPECIALIST_REQUEST = 4;
 
@@ -358,6 +359,7 @@ export async function askBuildingSpecialist(params: {
   /** Gancho opcional de instrumentación para pruebas de aislamiento de Gemini */
   onGeminiAttemptForTests?: () => void;
 }): Promise<SpecialistAnswerResponse> {
+  const startedAt = Date.now();
   const skill = getSpecialistSkillForBuilding(params.buildingId);
   if (!skill) {
     throw new Error(`No existe un especialista registrado para el edificio "${params.buildingId}".`);
@@ -1136,6 +1138,14 @@ export async function askBuildingSpecialist(params: {
     asOf: r.asOf,
     limitationNote: r.limitationNote,
   }));
+
+  recordAiTelemetryEvent({
+    agentId: skill.residentId,
+    buildingId: skill.buildingId,
+    mode,
+    durationMs: Date.now() - startedAt,
+    usedGemini: mode === "gemini_grounded",
+  });
 
   return {
     specialist: specialistMeta,

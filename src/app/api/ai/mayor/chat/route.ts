@@ -13,6 +13,7 @@ interface MayorChatRequestBody {
   history?: MayorChatTurn[];
   local_snapshot?: LocalClientSnapshot;
   ai_enabled?: boolean;
+  disabled_skill_ids?: string[];
 }
 
 const MAX_MESSAGE_CHARS = 600;
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
       question: message,
       history,
       allowGemini,
+      disabledSkillIds: Array.isArray(body.disabled_skill_ids) ? body.disabled_skill_ids : undefined,
       ctx: {
         authenticatedUserId: userId,
         db,
