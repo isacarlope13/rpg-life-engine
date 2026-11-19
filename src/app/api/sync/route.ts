@@ -32,6 +32,17 @@ export async function GET(req: Request) {
   if (!authCtx.ok) return authCtx.response;
   const { userId, db, mode } = authCtx;
 
+  if (process.env.OAKHAVEN_SYNC_ENABLED === "false") {
+    return NextResponse.json({
+      success: true,
+      synced: false,
+      syncDisabled: true,
+      status: "PENDIENTE_DE_SINCRONIZAR",
+      records: [],
+      notice: "Sincronización en nube pausada por kill-switch (OAKHAVEN_SYNC_ENABLED=false); tus datos locales permanecen intactos.",
+    });
+  }
+
   const url = new URL(req.url);
   const domain = (url.searchParams.get("domain") || "").trim();
   if (!isValidDomain(domain)) {
@@ -97,6 +108,17 @@ export async function POST(req: Request) {
   const authCtx = await requireShortcutUser(req);
   if (!authCtx.ok) return authCtx.response;
   const { userId, db, mode } = authCtx;
+
+  if (process.env.OAKHAVEN_SYNC_ENABLED === "false") {
+    return NextResponse.json({
+      success: true,
+      synced: false,
+      syncDisabled: true,
+      status: "PENDIENTE_DE_SINCRONIZAR",
+      records: [],
+      notice: "Sincronización en nube pausada por kill-switch (OAKHAVEN_SYNC_ENABLED=false); tus datos locales permanecen intactos.",
+    });
+  }
 
   const rawText = await req.text();
   if (Buffer.byteLength(rawText, "utf8") > MAX_SYNC_PAYLOAD_BYTES) {
@@ -167,46 +189,15 @@ export async function POST(req: Request) {
     });
   }
 
-  // Modo Supabase: verificación optimista de versión + lista blanca estricta (incluso bajo service_role, SIEMPRE filtra por user_id)
+  // Modo Supabase: Compare-And-Swap (CAS) atómico por (user_id, client_id, version) — cero pérdidas silenciosas
   if (domain === "gym_sets") {
-    const clientIds = cleanRecords.map((r) => r.clientId.slice(0, 120));
-    const { data: existingRows, error: fetchErr } = await db
-      .from("gym_workout_sets")
-      .select("client_id, version")
-      .eq("user_id", userId)
-      .in("client_id", clientIds);
+    let appliedCount = 0;
+    const conflicts: Array<{ clientId: string; expectedVersion: number; reason: string }> = [];
 
-    if (fetchErr) {
-      return NextResponse.json({
-        success: true,
-        synced: false,
-        migrationPending: true,
-        status: "PENDIENTE_DE_SINCRONIZAR",
-        notice: "Migración SQL de gym_workout_sets pendiente de aprobación/ejecución en Supabase.",
-      });
-    }
-
-    const remoteVersionByClient = new Map<string, number>();
-    for (const row of existingRows || []) {
-      remoteVersionByClient.set(String(row.client_id), Number(row.version || 1));
-    }
-
-    const conflicts: Array<{ clientId: string; remoteVersion: number; incomingVersion: number }> = [];
-    const safeToWrite = cleanRecords.filter((r) => {
+    for (const r of cleanRecords) {
       const cid = r.clientId.slice(0, 120);
-      const remoteVer = remoteVersionByClient.get(cid);
-      const incomingVer = Math.max(1, Math.floor(Number(r.version) || 1));
-      if (remoteVer !== undefined && incomingVer < remoteVer) {
-        conflicts.push({ clientId: cid, remoteVersion: remoteVer, incomingVersion: incomingVer });
-        return false;
-      }
-      return true;
-    });
-
-    if (safeToWrite.length > 0) {
-      const rows = safeToWrite.map((r) => ({
-        user_id: userId,
-        client_id: r.clientId.slice(0, 120),
+      const expectedVersion = (r as SyncRecordEnvelope & { expectedVersion?: number }).expectedVersion;
+      const baseFields = {
         session_id: r.payload.sessionId ? String(r.payload.sessionId).slice(0, 120) : null,
         exercise_name: String(r.payload.exerciseName || "Ejercicio").slice(0, 160),
         set_number: Math.max(1, Math.min(100, Math.floor(Number(r.payload.setNumber) || 1))),
@@ -214,20 +205,61 @@ export async function POST(req: Request) {
         weight_kg: Math.max(0, Math.min(1500, Number(r.payload.weightKg) || 0)),
         rpe: Math.max(1, Math.min(10, Number(r.payload.rpe) || 7)),
         completed: Boolean(r.payload.completed),
-        version: Math.max(1, Math.floor(Number(r.version) || 1)),
         deleted_at: r.deletedAt || null,
-        updated_at: new Date().toISOString(),
-      }));
+      };
 
-      const { error } = await db
-        .from("gym_workout_sets")
-        .upsert(rows, { onConflict: "user_id,client_id" });
+      if (typeof expectedVersion === "number" && expectedVersion >= 1) {
+        const { data: updated, error: updErr } = await db
+          .from("gym_workout_sets")
+          .update({ ...baseFields, version: expectedVersion + 1 })
+          .eq("user_id", userId)
+          .eq("client_id", cid)
+          .eq("version", expectedVersion)
+          .select("client_id, version");
 
-      if (error) {
-        return NextResponse.json(
-          { success: false, status: "ERROR_RECUPERABLE", error: "No se pudieron guardar las series en Supabase." },
-          { status: 500 }
-        );
+        if (updErr) {
+          return NextResponse.json({
+            success: true,
+            synced: false,
+            migrationPending: true,
+            status: "PENDIENTE_DE_SINCRONIZAR",
+            notice: "Migración SQL de gym_workout_sets pendiente de aprobación/ejecución en Supabase.",
+          });
+        }
+        if (!updated || updated.length === 0) {
+          conflicts.push({
+            clientId: cid,
+            expectedVersion,
+            reason: "Conflicto CAS: otro dispositivo ya actualizó esta versión.",
+          });
+          continue;
+        }
+        appliedCount += 1;
+      } else {
+        const { error: insErr } = await db.from("gym_workout_sets").insert({
+          user_id: userId,
+          client_id: cid,
+          ...baseFields,
+          version: 1,
+        });
+        if (insErr) {
+          if (insErr.code === "23505") {
+            conflicts.push({
+              clientId: cid,
+              expectedVersion: 0,
+              reason: "Conflicto de inserción concurrente (client_id ya existe en nube).",
+            });
+            continue;
+          }
+          return NextResponse.json({
+            success: true,
+            synced: false,
+            migrationPending: true,
+            status: "PENDIENTE_DE_SINCRONIZAR",
+            notice: "Migración SQL de gym_workout_sets pendiente de aprobación/ejecución en Supabase.",
+          });
+        }
+        appliedCount += 1;
       }
     }
 
@@ -235,50 +267,19 @@ export async function POST(req: Request) {
       success: true,
       synced: conflicts.length === 0,
       status: conflicts.length > 0 ? "CONFLICTO_REQUIERE_REVISION" : "SINCRONIZADO",
-      appliedCount: safeToWrite.length,
+      appliedCount,
       conflicts,
     });
   }
 
   if (domain === "work_projects") {
-    const clientIds = cleanRecords.map((r) => r.clientId.slice(0, 120));
-    const { data: existingRows, error: fetchErr } = await db
-      .from("work_projects")
-      .select("client_id, version")
-      .eq("user_id", userId)
-      .in("client_id", clientIds);
+    let appliedCount = 0;
+    const conflicts: Array<{ clientId: string; expectedVersion: number; reason: string }> = [];
 
-    if (fetchErr) {
-      return NextResponse.json({
-        success: true,
-        synced: false,
-        migrationPending: true,
-        status: "PENDIENTE_DE_SINCRONIZAR",
-        notice: "Migración SQL de work_projects pendiente de aprobación/ejecución en Supabase.",
-      });
-    }
-
-    const remoteVersionByClient = new Map<string, number>();
-    for (const row of existingRows || []) {
-      remoteVersionByClient.set(String(row.client_id), Number(row.version || 1));
-    }
-
-    const conflicts: Array<{ clientId: string; remoteVersion: number; incomingVersion: number }> = [];
-    const safeToWrite = cleanRecords.filter((r) => {
+    for (const r of cleanRecords) {
       const cid = r.clientId.slice(0, 120);
-      const remoteVer = remoteVersionByClient.get(cid);
-      const incomingVer = Math.max(1, Math.floor(Number(r.version) || 1));
-      if (remoteVer !== undefined && incomingVer < remoteVer) {
-        conflicts.push({ clientId: cid, remoteVersion: remoteVer, incomingVersion: incomingVer });
-        return false;
-      }
-      return true;
-    });
-
-    if (safeToWrite.length > 0) {
-      const rows = safeToWrite.map((r) => ({
-        user_id: userId,
-        client_id: r.clientId.slice(0, 120),
+      const expectedVersion = (r as SyncRecordEnvelope & { expectedVersion?: number }).expectedVersion;
+      const baseFields = {
         name: String(r.payload.name || "Proyecto").slice(0, 180),
         description: String(r.payload.description || "").slice(0, 800),
         methodology: ["none", "scrum", "kanban", "lean"].includes(String(r.payload.methodology))
@@ -289,20 +290,61 @@ export async function POST(req: Request) {
           ? String(r.payload.status)
           : "active",
         work_scope: r.payload.workScope === "personal" ? "personal" : "professional",
-        version: Math.max(1, Math.floor(Number(r.version) || 1)),
         deleted_at: r.deletedAt || null,
-        updated_at: new Date().toISOString(),
-      }));
+      };
 
-      const { error } = await db
-        .from("work_projects")
-        .upsert(rows, { onConflict: "user_id,client_id" });
+      if (typeof expectedVersion === "number" && expectedVersion >= 1) {
+        const { data: updated, error: updErr } = await db
+          .from("work_projects")
+          .update({ ...baseFields, version: expectedVersion + 1 })
+          .eq("user_id", userId)
+          .eq("client_id", cid)
+          .eq("version", expectedVersion)
+          .select("client_id, version");
 
-      if (error) {
-        return NextResponse.json(
-          { success: false, status: "ERROR_RECUPERABLE", error: "No se pudieron guardar los proyectos en Supabase." },
-          { status: 500 }
-        );
+        if (updErr) {
+          return NextResponse.json({
+            success: true,
+            synced: false,
+            migrationPending: true,
+            status: "PENDIENTE_DE_SINCRONIZAR",
+            notice: "Migración SQL de work_projects pendiente de aprobación/ejecución en Supabase.",
+          });
+        }
+        if (!updated || updated.length === 0) {
+          conflicts.push({
+            clientId: cid,
+            expectedVersion,
+            reason: "Conflicto CAS: otro dispositivo ya modificó este proyecto.",
+          });
+          continue;
+        }
+        appliedCount += 1;
+      } else {
+        const { error: insErr } = await db.from("work_projects").insert({
+          user_id: userId,
+          client_id: cid,
+          ...baseFields,
+          version: 1,
+        });
+        if (insErr) {
+          if (insErr.code === "23505") {
+            conflicts.push({
+              clientId: cid,
+              expectedVersion: 0,
+              reason: "Conflicto de inserción concurrente (client_id ya existe en nube).",
+            });
+            continue;
+          }
+          return NextResponse.json({
+            success: true,
+            synced: false,
+            migrationPending: true,
+            status: "PENDIENTE_DE_SINCRONIZAR",
+            notice: "Migración SQL de work_projects pendiente de aprobación/ejecución en Supabase.",
+          });
+        }
+        appliedCount += 1;
       }
     }
 
@@ -310,25 +352,36 @@ export async function POST(req: Request) {
       success: true,
       synced: conflicts.length === 0,
       status: conflicts.length > 0 ? "CONFLICTO_REQUIERE_REVISION" : "SINCRONIZADO",
-      appliedCount: safeToWrite.length,
+      appliedCount,
       conflicts,
     });
   }
 
   if (domain === "rubik_cubes") {
     let appliedCount = 0;
-    const conflicts: Array<{ clientId: string; remoteVersion: number; incomingVersion: number }> = [];
+    const conflicts: Array<{ clientId: string; expectedVersion: number; reason: string }> = [];
     for (const r of cleanRecords) {
       const cubeId = r.clientId.slice(0, 50);
-      const incomingVer = Math.max(1, Math.floor(Number(r.version) || 1));
-      const { data: existing, error: fetchErr } = await db
+      const expectedVersion = Math.max(
+        1,
+        Math.floor(Number((r as SyncRecordEnvelope & { expectedVersion?: number }).expectedVersion ?? r.version) || 1)
+      );
+      const { data: updated, error: updErr } = await db
         .from("rubik_cubes")
-        .select("cube_id, sync_version")
+        .update({
+          tension_notes: String(r.payload.tensionNotes || "").slice(0, 400),
+          lube_notes: String(r.payload.lubeNotes || "").slice(0, 400),
+          maintenance_needs: String(r.payload.maintenanceNeeds || "").slice(0, 400),
+          custom_notes: String(r.payload.customNotes || "").slice(0, 800),
+          algorithms_to_master: String(r.payload.algorithmsToMaster || "").slice(0, 600),
+          sync_version: expectedVersion + 1,
+        })
         .eq("user_id", userId)
         .eq("cube_id", cubeId)
-        .maybeSingle();
+        .eq("sync_version", expectedVersion)
+        .select("cube_id, sync_version");
 
-      if (fetchErr) {
+      if (updErr) {
         return NextResponse.json({
           success: true,
           synced: false,
@@ -337,27 +390,15 @@ export async function POST(req: Request) {
           notice: "Columnas aditivas de rubik_cubes pendientes de migración SQL en Supabase.",
         });
       }
-
-      if (existing && incomingVer < Number(existing.sync_version || 1)) {
-        conflicts.push({ clientId: cubeId, remoteVersion: Number(existing.sync_version || 1), incomingVersion: incomingVer });
+      if (!updated || updated.length === 0) {
+        conflicts.push({
+          clientId: cubeId,
+          expectedVersion,
+          reason: "Conflicto CAS en rubik_cubes: otro dispositivo ya actualizó estas notas.",
+        });
         continue;
       }
-
-      const { error: updErr } = await db
-        .from("rubik_cubes")
-        .update({
-          tension_notes: String(r.payload.tensionNotes || "").slice(0, 400),
-          lube_notes: String(r.payload.lubeNotes || "").slice(0, 400),
-          maintenance_needs: String(r.payload.maintenanceNeeds || "").slice(0, 400),
-          custom_notes: String(r.payload.customNotes || "").slice(0, 800),
-          algorithms_to_master: String(r.payload.algorithmsToMaster || "").slice(0, 600),
-          sync_version: incomingVer,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", userId)
-        .eq("cube_id", cubeId);
-
-      if (!updErr) appliedCount += 1;
+      appliedCount += 1;
     }
 
     return NextResponse.json({

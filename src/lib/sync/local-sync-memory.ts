@@ -24,7 +24,7 @@ export function listLocalSyncedRecords(userId: string, domain: SyncEntityDomain)
 export function upsertLocalSyncedRecord(
   userId: string,
   domain: SyncEntityDomain,
-  incoming: SyncRecordEnvelope
+  incoming: SyncRecordEnvelope & { expectedVersion?: number }
 ): { ok: true; record: SyncRecordEnvelope } | { ok: false; conflict: SyncRecordEnvelope } {
   const map = getMap();
   const key = bucketKey(userId, domain);
@@ -36,6 +36,7 @@ export function upsertLocalSyncedRecord(
       ...incoming,
       ownerId: userId,
       domain,
+      version: Math.max(1, Math.floor(Number(incoming.version) || 1)),
       dataOrigin: "real_synced",
     };
     map.set(key, [saved, ...list]);
@@ -43,16 +44,27 @@ export function upsertLocalSyncedRecord(
   }
 
   const existing = list[idx];
-  // Si la versión entrante es menor que la existente, señalar conflicto explícito
+  // Control atómico Compare-And-Swap (CAS): si expectedVersion no coincide con la versión actual -> conflicto
+  if (
+    typeof incoming.expectedVersion === "number" &&
+    existing.version !== incoming.expectedVersion
+  ) {
+    return { ok: false, conflict: existing };
+  }
   if (incoming.version < existing.version) {
     return { ok: false, conflict: existing };
   }
+
+  const nextVersion =
+    typeof incoming.expectedVersion === "number"
+      ? existing.version + 1
+      : Math.max(existing.version, incoming.version);
 
   const updated: SyncRecordEnvelope = {
     ...incoming,
     ownerId: userId,
     domain,
-    version: Math.max(existing.version, incoming.version),
+    version: nextVersion,
     dataOrigin: "real_synced",
   };
   const next = [...list];

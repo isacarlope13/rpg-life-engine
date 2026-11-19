@@ -143,6 +143,34 @@ test("2. Aislamiento estricto RLS (USER_A vs USER_B vs anon), unicidad (user_id,
   assert.equal(cubeCheck.rows[0].tension_notes, "Ajuste 3");
   assert.equal(cubeCheck.rows[0].sync_version, 2);
 
+  // Mínimo privilegio: authenticated NO tiene DELETE físico (solo archivado lógico vía deleted_at)
+  await assert.rejects(() =>
+    db.query("DELETE FROM public.gym_workout_sets WHERE client_id = 'set-a-1'")
+  );
+  await assert.rejects(() =>
+    db.query("DELETE FROM public.work_projects WHERE client_id = 'proj-a-1'")
+  );
+
+  // Prueba CAS atómica en PostgreSQL real: 2 dispositivos intentan actualizar v1 -> v2
+  const cas1 = await db.query<{ version: number }>(
+    `UPDATE public.gym_workout_sets
+     SET reps = 12, version = version + 1
+     WHERE user_id = $1 AND client_id = 'set-a-1' AND version = 1
+     RETURNING version`,
+    [USER_A]
+  );
+  assert.equal(cas1.rows.length, 1);
+  assert.equal(cas1.rows[0].version, 2);
+
+  const cas2Stale = await db.query<{ version: number }>(
+    `UPDATE public.gym_workout_sets
+     SET reps = 15, version = version + 1
+     WHERE user_id = $1 AND client_id = 'set-a-1' AND version = 1
+     RETURNING version`,
+    [USER_A]
+  );
+  assert.equal(cas2Stale.rows.length, 0, "Actualización CAS con versión obsoleta debe afectar 0 filas");
+
   // Cambiar identidad a USER_B -> debe ver 0 filas de USER_A y ser bloqueado al intentar escribir como USER_A
   await db.exec(`SELECT set_config('request.jwt.claim.sub', '${USER_B}', false);`);
 

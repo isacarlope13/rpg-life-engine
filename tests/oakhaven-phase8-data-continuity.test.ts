@@ -157,6 +157,23 @@ describe("OAKHAVEN FASE 8 — Data Continuity & Multi-Device Sync", () => {
     assert.equal(u1Retry.ok, true);
     assert.equal(listLocalSyncedRecords(USER_A, "gym_sets").length, 1);
     assert.equal(listLocalSyncedRecords(USER_B, "gym_sets").length, 0);
+
+    // Prueba CAS atómica: 2 dispositivos intentan actualizar simultáneamente desde v1 -> v2
+    const devA = upsertLocalSyncedRecord(USER_A, "gym_sets", {
+      ...rec,
+      expectedVersion: 1,
+      payload: { exerciseName: "Remo", reps: 12, weightKg: 22, completed: true },
+    });
+    assert.equal(devA.ok, true);
+    if (devA.ok) assert.equal(devA.record.version, 2);
+
+    const devBStale = upsertLocalSyncedRecord(USER_A, "gym_sets", {
+      ...rec,
+      expectedVersion: 1, // versión obsoleta: Dispositivo A ya avanzó a v2
+      payload: { exerciseName: "Remo", reps: 8, weightKg: 24, completed: true },
+    });
+    assert.equal(devBStale.ok, false, "Segundo dispositivo con versión obsoleta debe recibir conflicto CAS");
+    if (!devBStale.ok) assert.equal(devBStale.conflict.version, 2);
   });
 
   test("4. Integridad GP/XP/COP y no regresión de los 9 personajes (8 especialistas + Rowan)", async () => {

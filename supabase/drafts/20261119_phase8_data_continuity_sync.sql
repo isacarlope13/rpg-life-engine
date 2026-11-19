@@ -1,11 +1,12 @@
 -- ============================================================================
--- OAKHAVEN FASE 8 — DATA CONTINUITY & MULTI-DEVICE SYNC (BORRADOR ADITIVO)
+-- OAKHAVEN FASE 8 — DATA CONTINUITY & MULTI-DEVICE SYNC (BORRADOR FINAL v2)
 -- ============================================================================
--- IMPORTANTE:
--- 1. Migración 100% ADITIVA y re-ejecutable (idempotente). NO elimina tablas ni datos.
--- 2. EXCLUYE deliberadamente tablas y documentos financieros sensibles.
--- 3. NO ejecutar automáticamente en producción; requiere aprobación manual del usuario.
--- 4. Verificada en PostgreSQL aislado (PGlite) con pruebas de idempotencia y RLS.
+-- PRINCIPIOS DE MÍNIMO PRIVILEGIO Y SEGURIDAD:
+-- 1. 100% ADITIVA e idempotente (probada 2x consecutivas en PostgreSQL PGlite).
+-- 2. Mínimos privilegios: REVOKE ALL FROM public, anon; GRANT SELECT, INSERT,
+--    UPDATE TO authenticated (SIN DELETE físico: el archivado es lógico vía deleted_at).
+-- 3. EXCLUYE deliberadamente tablas y documentos financieros sensibles.
+-- 4. NO ejecutar automáticamente en producción; requiere aprobación humana.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.fn_phase8_set_updated_at()
@@ -43,8 +44,9 @@ CREATE INDEX IF NOT EXISTS idx_gym_workout_sets_user_performed
   WHERE deleted_at IS NULL;
 
 ALTER TABLE public.gym_workout_sets ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.gym_workout_sets FROM anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.gym_workout_sets TO authenticated;
+REVOKE ALL ON TABLE public.gym_workout_sets FROM PUBLIC, anon;
+REVOKE DELETE ON TABLE public.gym_workout_sets FROM authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.gym_workout_sets TO authenticated;
 
 DROP TRIGGER IF EXISTS trg_gym_workout_sets_updated_at ON public.gym_workout_sets;
 CREATE TRIGGER trg_gym_workout_sets_updated_at
@@ -68,9 +70,6 @@ CREATE POLICY "gym_workout_sets_update_own"
   WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "gym_workout_sets_delete_own" ON public.gym_workout_sets;
-CREATE POLICY "gym_workout_sets_delete_own"
-  ON public.gym_workout_sets FOR DELETE
-  USING (auth.uid() = user_id);
 
 -- 2. TRABAJO: Proyectos reales y tareas estructuradas multidispositivo
 CREATE TABLE IF NOT EXISTS public.work_projects (
@@ -96,8 +95,9 @@ CREATE INDEX IF NOT EXISTS idx_work_projects_user_updated
   WHERE deleted_at IS NULL;
 
 ALTER TABLE public.work_projects ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.work_projects FROM anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.work_projects TO authenticated;
+REVOKE ALL ON TABLE public.work_projects FROM PUBLIC, anon;
+REVOKE DELETE ON TABLE public.work_projects FROM authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.work_projects TO authenticated;
 
 DROP TRIGGER IF EXISTS trg_work_projects_updated_at ON public.work_projects;
 CREATE TRIGGER trg_work_projects_updated_at
@@ -121,9 +121,6 @@ CREATE POLICY "work_projects_update_own"
   WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "work_projects_delete_own" ON public.work_projects;
-CREATE POLICY "work_projects_delete_own"
-  ON public.work_projects FOR DELETE
-  USING (auth.uid() = user_id);
 
 CREATE TABLE IF NOT EXISTS public.work_project_tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -148,8 +145,9 @@ CREATE INDEX IF NOT EXISTS idx_work_project_tasks_user_project
   WHERE deleted_at IS NULL;
 
 ALTER TABLE public.work_project_tasks ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.work_project_tasks FROM anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.work_project_tasks TO authenticated;
+REVOKE ALL ON TABLE public.work_project_tasks FROM PUBLIC, anon;
+REVOKE DELETE ON TABLE public.work_project_tasks FROM authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.work_project_tasks TO authenticated;
 
 DROP TRIGGER IF EXISTS trg_work_project_tasks_updated_at ON public.work_project_tasks;
 CREATE TRIGGER trg_work_project_tasks_updated_at
@@ -173,9 +171,6 @@ CREATE POLICY "work_project_tasks_update_own"
   WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "work_project_tasks_delete_own" ON public.work_project_tasks;
-CREATE POLICY "work_project_tasks_delete_own"
-  ON public.work_project_tasks FOR DELETE
-  USING (auth.uid() = user_id);
 
 -- 3. CUBOS: Columnas aditivas compatibles con public.rubik_cubes existente (preserva rubik_solves)
 ALTER TABLE public.rubik_cubes
