@@ -6,6 +6,7 @@ import {
   askBuildingSpecialist,
   getSpecialistSkillForBuilding,
 } from "@/lib/ai/specialist-engine";
+import { listLocalUserResources } from "@/lib/ai/local-resources-memory";
 import type { LocalClientSnapshot } from "@/lib/ai/mayor-readonly-tools";
 
 interface SpecialistChatBody {
@@ -86,6 +87,7 @@ export async function POST(req: Request) {
       allowGemini: body.ai_enabled !== false,
       disabledSkillIds: Array.isArray(body.disabled_skill_ids) ? body.disabled_skill_ids : undefined,
       selectedResourceId: typeof body.selected_resource_id === "string" ? body.selected_resource_id : undefined,
+      memoryResources: !isSupabaseConfigured ? listLocalUserResources(userId) : undefined,
       ctx: {
         authenticatedUserId: userId,
         db,

@@ -4,8 +4,15 @@ import { requireShortcutUser } from "@/lib/request-auth";
 import {
   buildPrivateStoragePath,
   validatePrivateResourceFile,
+  type PrivateBuildingResource,
 } from "@/lib/ai/building-resources-engine";
 import { extractCompatibleDocument } from "@/lib/ai/document-extractor";
+import {
+  addLocalUserResource,
+  archiveLocalUserResource,
+  listLocalUserResources,
+  restoreLocalUserResource,
+} from "@/lib/ai/local-resources-memory";
 
 const PRIVATE_BUCKET = "oakhaven-private-resources";
 const SIGNED_URL_TTL_SECONDS = 300; // 5 minutos
@@ -22,7 +29,11 @@ export async function GET(req: Request) {
   const archivedOnly = url.searchParams.get("archivedOnly") === "1";
 
   if (mode !== "supabase" || !db) {
-    return NextResponse.json({ success: true, synced: false, resources: [] });
+    const localRows = listLocalUserResources(userId, {
+      buildingId: buildingId || undefined,
+      archivedOnly,
+    });
+    return NextResponse.json({ success: true, synced: false, resources: localRows });
   }
 
   // Generar URL firmada temporal para un recurso específico del propietario
@@ -230,25 +241,50 @@ export async function POST(req: Request) {
   );
 
   if (mode !== "supabase" || !db) {
-    return NextResponse.json({
-      success: true,
-      synced: false,
+    const nowIso = new Date().toISOString();
+    const localEntry: PrivateBuildingResource = {
+      id: resourceId,
+      owner_id: userId,
+      building_id: buildingId,
+      resource_type: resourceType,
+      project_id: projectId,
+      title: cleanTitle,
+      description: description.slice(0, 500),
+      original_filename: validation.safeFilename || "",
+      storage_path: storagePath,
+      mime_type: mimeType,
+      size_bytes: sizeBytes,
+      metadata: contentHash ? { content_hash: contentHash } : {},
+      tags,
+      created_at: nowIso,
+      updated_at: nowIso,
+      deleted_at: null,
+      processing_status: "ready",
+      extraction_status: extracted.extractionStatus as PrivateBuildingResource["extraction_status"],
+      extracted_text: extracted.sanitizedText || undefined,
+      is_sensitive_financial: Boolean(validation.isFinancialSensitive),
       sync_state: "GUARDADO_LOCALMENTE",
-      resource: {
-        id: resourceId,
-        owner_id: userId,
-        building_id: buildingId,
-        resource_type: resourceType,
-        title: cleanTitle,
-        original_filename: validation.safeFilename,
-        storage_path: storagePath,
-        mime_type: mimeType,
-        size_bytes: sizeBytes,
-        content_hash: contentHash,
-        is_sensitive_financial: Boolean(validation.isFinancialSensitive),
-        extraction_status: extracted.extractionStatus,
+    };
+    const resAdd = addLocalUserResource(userId, localEntry);
+    if (resAdd.duplicate) {
+      return NextResponse.json(
+        {
+          success: false,
+          duplicate: true,
+          error: `Este archivo ya existe en la biblioteca ("${resAdd.duplicate.title}").`,
+        },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json(
+      {
+        success: true,
+        synced: false,
+        sync_state: "GUARDADO_LOCALMENTE",
+        resource: localEntry,
       },
-    });
+      { status: 201 }
+    );
   }
 
   // Protección contra duplicados exactos por content_hash en el mismo edificio
@@ -369,7 +405,8 @@ export async function PATCH(req: Request) {
   }
 
   if (mode !== "supabase" || !db) {
-    return NextResponse.json({ success: true, synced: false });
+    const restored = restoreLocalUserResource(userId, body.id);
+    return NextResponse.json({ success: true, synced: false, restored });
   }
 
   const { error } = await db
@@ -393,7 +430,8 @@ export async function DELETE(req: Request) {
   }
 
   if (mode !== "supabase" || !db) {
-    return NextResponse.json({ success: true, synced: false, archived: true });
+    const archived = archiveLocalUserResource(userId, id);
+    return NextResponse.json({ success: true, synced: false, archived });
   }
 
   // Archivado lógico seguro (NUNCA borra físicamente registros ni archivos en Storage)

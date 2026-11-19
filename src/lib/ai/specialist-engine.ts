@@ -37,10 +37,31 @@ import {
   readCrochetPattern,
   readStudyResource,
 } from "./clara-lyra-tools.ts";
+import {
+  analyzeTechnicalDocument,
+  explainCodeSnippet,
+  getActiveWorkProjects,
+  getBookQuotesAndNotes,
+  getLastWorkSession,
+  getPendingWorkTasks,
+  getReadingBooks,
+  listReadingResources,
+  listWorkResources,
+  proposeBookReview,
+  proposeReadingReflection,
+  proposeWorkSessionSummary,
+  proposeWorkSprint,
+  readReadingResource,
+  readWorkDocument,
+  recommendNextBook,
+} from "./aura-eldrin-tools.ts";
 import type { PrivateBuildingResource } from "./building-resources-engine.ts";
+
+export const MAX_TOOLS_PER_SPECIALIST_REQUEST = 4;
 
 export interface SpecialistProposal {
   id: string;
+  idempotencyKey?: string;
   buildingId: string;
   specialistName: string;
   actionType:
@@ -54,6 +75,51 @@ export interface SpecialistProposal {
   summary: string;
   payload: Record<string, unknown>;
   requiresConfirmation: true;
+}
+
+/**
+ * Planificador determinista de herramientas por intención (Hito 1 — Fase 4).
+ * - El servidor decide qué herramientas ejecutar; el modelo NUNCA amplía sus propios permisos.
+ * - Limita estrictamente el número de herramientas por solicitud (MAX_TOOLS_PER_SPECIALIST_REQUEST).
+ */
+export function selectAuthorizedToolsForIntent(
+  skill: RuntimeBuildingSkill,
+  question: string,
+  hasSelectedResource: boolean
+): string[] {
+  const q = question.toLowerCase();
+  const planned: string[] = [];
+
+  if (skill.buildingId === "oficina") {
+    planned.push("getActiveWorkProjects");
+    if (/(tarea|pendiente|prioridad|backlog|sprint|divid)/i.test(q)) {
+      planned.push("getPendingWorkTasks");
+    }
+    if (/(sesi[oó]n|jornada|cierre|reciente|trabaj[eé]|avance)/i.test(q)) {
+      planned.push("getLastWorkSession");
+    }
+    if (hasSelectedResource) {
+      planned.push("readWorkDocument");
+    } else if (/(documento|spec|especificaci[oó]n|archivo|recurso|c[oó]digo|pdf|markdown)/i.test(q)) {
+      planned.push("listWorkResources");
+    }
+    return planned.slice(0, MAX_TOOLS_PER_SPECIALIST_REQUEST);
+  }
+
+  if (skill.buildingId === "libreria") {
+    planned.push("getReadingBooks");
+    if (/(cita|nota|rese[nñ]a|diario|reflexi[oó]n|frase)/i.test(q)) {
+      planned.push("getBookQuotesAndNotes");
+    }
+    if (hasSelectedResource) {
+      planned.push("readReadingResource");
+    } else if (/(recurso|archivo|pdf|portada|ficha)/i.test(q)) {
+      planned.push("listReadingResources");
+    }
+    return planned.slice(0, MAX_TOOLS_PER_SPECIALIST_REQUEST);
+  }
+
+  return skill.allowedTools.slice(0, 1);
 }
 
 export interface SpecialistAnswerResponse {
@@ -383,6 +449,224 @@ export async function askBuildingSpecialist(params: {
         .map((d) => `"${d.title}"`)
         .join(", ");
       extraLines.push(`📂 **Documentos en tu Estantería Académica:** ${names}. Selecciona uno arriba para analizarlo o generar un examen.`);
+    }
+
+    if (extraLines.length > 0) {
+      deterministicDraft = `${deterministicDraft}\n\n${extraLines.join("\n\n")}`;
+    }
+  } else if (skill.buildingId === "oficina") {
+    const plannedTools = selectAuthorizedToolsForIntent(skill, cleanQuestion, Boolean(params.selectedResourceId));
+    const extraLines: string[] = [];
+
+    const workProjects = await getActiveWorkProjects(params.ctx);
+    extraTools.push("getActiveWorkProjects");
+    const firstProject = workProjects.projects[0];
+
+    if (workProjects.projects.length > 0) {
+      const projList = workProjects.projects
+        .slice(0, 4)
+        .map(
+          (p) =>
+            `• **${p.name}** (${p.workScope === "personal" ? "Personal" : "Profesional"} • ${p.pendingTasks} pendientes / ${p.totalTasks} tareas)`
+        )
+        .join("\n");
+      extraLines.push(`💼 **[Tus proyectos reales en Trabajo]**\n${projList}`);
+    } else if (workProjects.limitationNote) {
+      extraLines.push(`ℹ️ **[Veracidad de proyectos]** ${workProjects.limitationNote}`);
+    }
+
+    if (plannedTools.includes("getPendingWorkTasks")) {
+      const pending = await getPendingWorkTasks(params.ctx, firstProject?.id);
+      extraTools.push("getPendingWorkTasks");
+      if (pending.count > 0) {
+        const taskList = pending.tasks
+          .slice(0, 4)
+          .map((t) => `• [${t.priority.toUpperCase()}] ${t.title} (${t.projectName})`)
+          .join("\n");
+        extraLines.push(`📋 **[Tareas pendientes prioritarias]**\n${taskList}`);
+      } else {
+        extraLines.push("📋 No tienes tareas pendientes registradas en proyectos reales.");
+      }
+    }
+
+    if (plannedTools.includes("getLastWorkSession")) {
+      const lastSession = await getLastWorkSession(params.ctx);
+      extraTools.push("getLastWorkSession");
+      if (lastSession.session) {
+        extraLines.push(
+          `⏱️ **[Última sesión de trabajo]** "${lastSession.session.title}" (${lastSession.session.duration_minutes} min, ${lastSession.session.timestamp.slice(0, 10)}, origen: ${lastSession.source}).`
+        );
+      } else {
+        extraLines.push("⏱️ Aún no registras sesiones de trabajo en tu historial.");
+      }
+    }
+
+    if (params.selectedResourceId) {
+      const docRead = await readWorkDocument(resCtx, params.selectedResourceId);
+      extraTools.push("readWorkDocument");
+      if (docRead.ok && docRead.data?.text) {
+        const docsList = await listWorkResources(resCtx);
+        const docMeta = Array.isArray(docsList.data)
+          ? (docsList.data as Array<{ id: string; title: string }>).find((d) => d.id === params.selectedResourceId)
+          : undefined;
+        const docTitle = docMeta?.title || "tu documento técnico";
+
+        if (/(explica|c[oó]digo|funci[oó]n|snippet|paso a paso)/i.test(cleanQuestion)) {
+          const codeExp = explainCodeSnippet(docTitle, docRead.data.text);
+          extraTools.push("explainCodeSnippet");
+          extraLines.push(
+            `💻 **[Explicación de código — "${docTitle}" (${codeExp.detectedLanguage})]**\n${codeExp.stepByStepSummary.join("\n")}` +
+              (codeExp.potentialEdgeCases.length > 0
+                ? `\n⚠️ Puntos a vigilar: ${codeExp.potentialEdgeCases.join(" | ")}`
+                : "")
+          );
+        } else {
+          const analysis = analyzeTechnicalDocument(docTitle, docRead.data.text);
+          extraTools.push("analyzeTechnicalDocument");
+          const riskSummary =
+            analysis.risksAndInconsistencies.length > 0
+              ? `\n⚠️ **Riesgos/pendientes detectados:** ${analysis.risksAndInconsistencies.slice(0, 3).join(" | ")}`
+              : "";
+          const citeSummary =
+            analysis.pageCitations.length > 0
+              ? `\n📎 **Citas verificables:** ${analysis.pageCitations.join(", ")}`
+              : "";
+          extraLines.push(
+            `📑 **[Análisis técnico — "${docTitle}"]**\n${docRead.data.text.slice(0, 550)}${docRead.data.text.length > 550 ? "..." : ""}${riskSummary}${citeSummary}`
+          );
+        }
+      } else {
+        extraLines.push(
+          `⚠️ **Documento de Trabajo:** ${docRead.error || "No tiene texto extraíble o pertenece a otro edificio; no inventaré especificaciones."}`
+        );
+      }
+    } else if (plannedTools.includes("listWorkResources")) {
+      const docsList = await listWorkResources(resCtx);
+      extraTools.push("listWorkResources");
+      if (Array.isArray(docsList.data) && docsList.data.length > 0) {
+        const names = (docsList.data as Array<{ title: string }>)
+          .slice(0, 3)
+          .map((d) => `"${d.title}"`)
+          .join(", ");
+        extraLines.push(`📂 **Archivo de Proyectos:** ${names}. Selecciona uno arriba para analizarlo.`);
+      }
+    }
+
+    if (/(sprint|plan de trabajo|divide|dividir|prop[oó]n.*tarea|checklist|entregable)/i.test(cleanQuestion)) {
+      proposal = proposeWorkSprint({
+        projectId: firstProject?.id,
+        projectName: firstProject?.name || "Proyecto activo",
+        objective: cleanQuestion.slice(0, 90),
+      });
+      extraTools.push("proposeWorkSprint");
+    } else if (/(cierre de jornada|resumen de cierre|cerrar el d[ií]a)/i.test(cleanQuestion)) {
+      const last = await getLastWorkSession(params.ctx);
+      proposal = proposeWorkSessionSummary({
+        projectName: firstProject?.name || "Jornada de Trabajo",
+        lastSessionTitle: last.session?.title,
+        durationMinutes: last.session?.duration_minutes,
+        notes: last.session?.notes,
+      });
+      extraTools.push("proposeWorkSessionSummary");
+    }
+
+    if (extraLines.length > 0) {
+      deterministicDraft = `${deterministicDraft}\n\n${extraLines.join("\n\n")}`;
+    }
+  } else if (skill.buildingId === "libreria") {
+    const plannedTools = selectAuthorizedToolsForIntent(skill, cleanQuestion, Boolean(params.selectedResourceId));
+    const extraLines: string[] = [];
+
+    const lib = await getReadingBooks(params.ctx);
+    extraTools.push("getReadingBooks");
+    const activeBook = lib.currentlyReading[0];
+
+    if (activeBook) {
+      const pct =
+        activeBook.total_pages > 0
+          ? Math.round(((activeBook.pages_read || 0) / activeBook.total_pages) * 100)
+          : 0;
+      extraLines.push(
+        `📖 **[Libro en curso]** "${activeBook.title}" de ${activeBook.author} — **${activeBook.pages_read}/${activeBook.total_pages} páginas (${pct}%)**.`
+      );
+    } else if (lib.totalBooks === 0) {
+      extraLines.push("📚 Aún no tienes libros registrados en tu Librería.");
+    } else {
+      extraLines.push("📖 No tienes ningún libro marcado actualmente en curso (tus libros en wishlist no se cuentan como leídos).");
+    }
+
+    if (/(agregado|terminado|[uú]ltimo|sesi[oó]n|semana|p[aá]gina)/i.test(cleanQuestion)) {
+      const detailParts: string[] = [];
+      if (lib.lastAddedBook) detailParts.push(`• **Último agregado:** "${lib.lastAddedBook.title}"`);
+      if (lib.lastReadBook) {
+        detailParts.push(
+          `• **Última sesión verificable:** "${lib.lastReadBook.title}" (${lib.lastReadBook.sessionDate.slice(0, 10)})`
+        );
+      } else {
+        detailParts.push("• **Última sesión verificable:** sin sesiones de lectura registradas aún.");
+      }
+      if (lib.lastCompletedBook) {
+        detailParts.push(`• **Último terminado:** "${lib.lastCompletedBook.title}"`);
+      } else {
+        detailParts.push("• **Último terminado:** aún no has marcado ningún libro como terminado.");
+      }
+      detailParts.push(`• **Páginas registradas esta semana:** ${lib.pagesReadLast7Days}`);
+      if (lib.limitations.length > 0) detailParts.push(`• *Nota:* ${lib.limitations[0]}`);
+      extraLines.push(`🕰️ **[Línea de tiempo literaria]**\n${detailParts.join("\n")}`);
+    }
+
+    if (plannedTools.includes("getBookQuotesAndNotes")) {
+      const notes = await getBookQuotesAndNotes(params.ctx, activeBook?.id);
+      extraTools.push("getBookQuotesAndNotes");
+      if (notes.totalQuotesCount > 0) {
+        const firstEntry = notes.entries[0];
+        const quoteSample = firstEntry.quotes
+          .slice(0, 2)
+          .map((q) => `> "${q.text}"${q.page ? ` (pág. ${q.page})` : ""}`)
+          .join("\n");
+        extraLines.push(`✒️ **[Tus citas guardadas de "${firstEntry.title}"]**\n${quoteSample}`);
+      } else {
+        extraLines.push("✒️ Aún no tienes citas o reseñas personales guardadas para este libro.");
+      }
+    }
+
+    if (/(reflexi[oó]n|diario|pregunta|personaje)/i.test(cleanQuestion) && activeBook) {
+      extraLines.push(proposeReadingReflection(activeBook));
+      extraTools.push("proposeReadingReflection");
+    }
+
+    if (/(pr[oó]xima lectura|recomienda|qu[eé] leer|siguiente libro)/i.test(cleanQuestion)) {
+      extraLines.push(recommendNextBook(lib));
+      extraTools.push("recommendNextBook");
+    }
+
+    if (/(rese[nñ]a|guardar.*nota|anotar.*cita|prop[oó]n.*rese[nñ]a)/i.test(cleanQuestion) && activeBook) {
+      proposal = proposeBookReview(activeBook);
+      extraTools.push("proposeBookReview");
+    }
+
+    if (params.selectedResourceId) {
+      const docRead = await readReadingResource(resCtx, params.selectedResourceId);
+      extraTools.push("readReadingResource");
+      if (docRead.ok && docRead.data?.text) {
+        extraLines.push(
+          `📜 **[Tu recurso literario]** ${docRead.data.text.slice(0, 550)}${docRead.data.text.length > 550 ? "..." : ""}`
+        );
+      } else {
+        extraLines.push(
+          `⚠️ **Recurso literario:** ${docRead.error || "No contiene texto extraíble o pertenece a otro edificio; no inventaré citas ni páginas."}`
+        );
+      }
+    } else if (plannedTools.includes("listReadingResources")) {
+      const docsList = await listReadingResources(resCtx);
+      extraTools.push("listReadingResources");
+      if (Array.isArray(docsList.data) && docsList.data.length > 0) {
+        const names = (docsList.data as Array<{ title: string }>)
+          .slice(0, 3)
+          .map((d) => `"${d.title}"`)
+          .join(", ");
+        extraLines.push(`📂 **Recursos en tu Librería:** ${names}.`);
+      }
     }
 
     if (extraLines.length > 0) {

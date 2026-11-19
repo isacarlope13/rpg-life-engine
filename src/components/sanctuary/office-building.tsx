@@ -51,38 +51,43 @@ interface ProjectTrack {
   totalTasks: number;
   icon: string;
   deliverable?: string;
+  /** Distinción estricta Fase 4: las plantillas demostrativas nunca se reportan a Aura como trabajo real */
+  dataOrigin: "demo_template" | "real_local" | "real_synced";
 }
 
 const DEFAULT_PROJECTS: ProjectTrack[] = [
   {
-    id: "proj-1",
-    name: "RPG Life-Engine v3.5 Arquitectura",
+    id: "demo-proj-1",
+    name: "Plantilla: Arquitectura & Lanzamiento",
     category: "estrategico",
-    progressPercent: 85,
-    completedTasks: 17,
-    totalTasks: 20,
-    icon: "🏰",
-    deliverable: "Lanzamiento y Auditoría Formal en Producción",
-  },
-  {
-    id: "proj-2",
-    name: "Automatización & Tareas Recurrentes",
-    category: "innovacion",
-    progressPercent: 70,
-    completedTasks: 7,
-    totalTasks: 10,
-    icon: "⚡",
-    deliverable: "Motor de cronjobs y scheduler circadiano",
-  },
-  {
-    id: "proj-3",
-    name: "Bitácora & Cierre Operativo Semanal",
-    category: "operativo",
-    progressPercent: 60,
-    completedTasks: 3,
+    progressPercent: 0,
+    completedTasks: 0,
     totalTasks: 5,
+    icon: "🏰",
+    deliverable: "Ejemplo demostrativo (crea un proyecto real para seguimiento de Aura)",
+    dataOrigin: "demo_template",
+  },
+  {
+    id: "demo-proj-2",
+    name: "Plantilla: Automatización & Sprints",
+    category: "innovacion",
+    progressPercent: 0,
+    completedTasks: 0,
+    totalTasks: 4,
+    icon: "⚡",
+    deliverable: "Ejemplo demostrativo (no cuenta como trabajo real)",
+    dataOrigin: "demo_template",
+  },
+  {
+    id: "demo-proj-3",
+    name: "Plantilla: Cierre Operativo Semanal",
+    category: "operativo",
+    progressPercent: 0,
+    completedTasks: 0,
+    totalTasks: 3,
     icon: "📋",
-    deliverable: "Revisión de métricas y conciliación financiera",
+    deliverable: "Ejemplo demostrativo (no cuenta como trabajo real)",
+    dataOrigin: "demo_template",
   },
 ];
 
@@ -100,7 +105,7 @@ export function OfficeBuilding({
 
   const [activeTab, setActiveTab] = useState<"timer" | "projects" | "deliverables" | "metrics" | "aura" | "meetings" | "evolucion">("timer");
   const [sessionNotes, setSessionNotes] = useState("");
-  const [selectedProjectId, setSelectedProjectId] = useState("proj-1");
+  const [selectedProjectId, setSelectedProjectId] = useState("demo-proj-1");
   const [manualDuration, setManualDuration] = useState(25);
   const [meetingNotes, setMeetingNotes] = useState("");
   const [meetingSubject, setMeetingSubject] = useState("");

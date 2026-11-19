@@ -175,13 +175,21 @@ export function buildDeterministicGroundedAnswer(
       if (!res.hasData) {
         sections.push("📚 **Lectura:** Todavía no tienes libros ni sesiones de lectura registrados.");
       } else {
+        const current = d.currentlyReadingBook as Record<string, unknown> | null;
         const created = d.lastCreatedBook as Record<string, unknown> | null;
         const completed = d.lastCompletedBook as Record<string, unknown> | null;
         const session = d.lastReadingSession as Record<string, unknown> | null;
+        const pages7 = Number(d.pagesReadLast7Days || 0);
+        const quotes = (d.currentBookQuotes as Array<{ text: string; page?: number }>) || [];
         const lines: string[] = [`📚 **Lectura** *(fuente: ${sourceLabel(res.source)})*:`];
+        if (current) {
+          lines.push(
+            `- **Libro en curso:** "${current.title}" (${current.pages_read || current.current_page || 0}/${current.total_pages || "?"} págs.).`
+          );
+        }
         if (created) {
           lines.push(
-            `- **Último libro registrado:** "${created.title}" (${created.current_page || 0}/${created.total_pages || "?"} págs., creado: ${formatDateEs(String(created.created_at || ""))}).`
+            `- **Último libro registrado:** "${created.title}" (${created.pages_read || created.current_page || 0}/${created.total_pages || "?"} págs., creado: ${formatDateEs(String(created.created_at || ""))}).`
           );
         }
         if (completed) {
@@ -195,6 +203,12 @@ export function buildDeterministicGroundedAnswer(
           lines.push(
             `- **Última sesión de lectura:** "${session.title}" (${session.duration_minutes || 0} min, fecha: ${formatDateEs(String(session.completed_at || session.timestamp || ""))}).`
           );
+        }
+        if (pages7 > 0) {
+          lines.push(`- **Páginas registradas esta semana:** ${pages7}.`);
+        }
+        if (quotes.length > 0) {
+          lines.push(`- **Citas guardadas en tu libro actual (${quotes.length}):** "${quotes[0].text.slice(0, 90)}"${quotes[0].page ? ` (pág. ${quotes[0].page})` : ""}.`);
         }
         sections.push(lines.join("\n"));
       }
