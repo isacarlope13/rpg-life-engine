@@ -13,6 +13,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RPGEngineMemoryStore } from "../demo-store.ts";
 import type { CinemaEntry } from "../sanctuary/cinema-store.ts";
+import type { GymSetRecord } from "../sanctuary/gym-engine.ts";
 import type { MayorReadOnlyToolName } from "./building-skills-registry.ts";
 
 export type DataSourceOrigin =
@@ -24,6 +25,7 @@ export type DataSourceOrigin =
 export interface LocalClientSnapshot {
   cinemaEntries?: CinemaEntry[];
   localPatternProjectsCount?: number;
+  gymSets?: GymSetRecord[];
 }
 
 export interface MayorToolContext {
@@ -556,16 +558,24 @@ export async function getLastWorkout(ctx: MayorToolContext): Promise<ToolExecuti
       (ctx.store.skillSessions || []).filter((s) => s.domain === "sports"),
       (s) => s.timestamp
     );
+    const realSets = (ctx.localSnapshot?.gymSets || []).filter(
+      (s) => !s.isDemo && s.dataOrigin !== "demo_template" && !String(s.id || "").toLowerCase().startsWith("demo-") && s.completed
+    );
+    const lastRealSet = realSets[realSets.length - 1] || null;
+    const totalVolumeKg = realSets.reduce((sum, s) => sum + (Number(s.reps) || 0) * (Number(s.weightKg) || 0), 0);
     return {
       ok: true,
       tool: "getLastWorkout",
       source: "memory_store",
       asOf,
       buildingId: "gimnasio",
-      hasData: workouts.length > 0,
+      hasData: workouts.length > 0 || realSets.length > 0,
       data: {
         workoutsCount: workouts.length,
         lastWorkout: workouts[0] || null,
+        realSetsCount: realSets.length,
+        totalVolumeKg: Math.round(totalVolumeKg * 100) / 100,
+        lastRealSet,
       },
     };
   } catch {
@@ -630,8 +640,12 @@ export async function getRecentCubeSolves(
     }
 
     const solves = sortByTimestampDesc(ctx.store.rubikSolves || [], (s) => s.timestamp).slice(0, limit);
+    const validSolves = solves.filter((s) => String(s.penalty || "NONE").toUpperCase() !== "DNF");
     const bestPb =
-      [...solves].sort((a, b) => a.time_seconds - b.time_seconds)[0] || null;
+      [...validSolves].sort((a, b) => a.time_seconds - b.time_seconds)[0] || null;
+    const lastPracticedAlgorithm =
+      solves.find((s) => typeof s.algorithm_practiced === "string" && s.algorithm_practiced.trim().length > 0)
+        ?.algorithm_practiced || null;
     return {
       ok: true,
       tool: "getRecentCubeSolves",
@@ -643,7 +657,8 @@ export async function getRecentCubeSolves(
         recentCount: solves.length,
         lastSolve: solves[0] || null,
         bestRecentSolve: bestPb,
-        lastMarkedPb: solves.find((s) => s.is_pb) || bestPb,
+        lastMarkedPb: validSolves.find((s) => s.is_pb) || bestPb,
+        lastPracticedAlgorithm,
       },
     };
   } catch {

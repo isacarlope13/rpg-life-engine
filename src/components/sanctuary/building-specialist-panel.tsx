@@ -43,8 +43,16 @@ const SUGGESTIONS_BY_BUILDING: Record<string, string[]> = {
     "Prepara un sprint de trabajo con checklist",
     "Analiza el documento técnico seleccionado",
   ],
-  gimnasio: ["¿Cuándo entrené por última vez?", "¿Cómo va mi constancia en el gym?"],
-  club_puzzles: ["¿Cuál fue mi último récord de cubos?", "¿Cuál fue mi último solve?"],
+  gimnasio: [
+    "¿Cuándo entrené por última vez y cuánto volumen hice?",
+    "¿Cómo va mi constancia en las últimas 2 semanas?",
+    "Propón una rutina gradual para mi próximo entrenamiento",
+  ],
+  club_puzzles: [
+    "¿Cuál es mi PB, Ao5 y Ao12 real de 3x3?",
+    "Explícame la notación WCA y F2L/OLL/PLL",
+    "Propón una sesión de práctica para 3x3",
+  ],
   libreria: [
     "¿Qué libro estoy leyendo y cuántas páginas llevo?",
     "¿Cuál fue mi último libro terminado y última sesión?",
@@ -98,7 +106,9 @@ export function BuildingSpecialistPanel({
       (buildingId !== "atelier" &&
         buildingId !== "biblioteca" &&
         buildingId !== "oficina" &&
-        buildingId !== "libreria")
+        buildingId !== "libreria" &&
+        buildingId !== "gimnasio" &&
+        buildingId !== "club_puzzles")
     ) {
       return;
     }
@@ -161,6 +171,15 @@ export function BuildingSpecialistPanel({
           local_snapshot: {
             cinemaEntries: readCinemaEntriesSafe(sessionOwner),
             localPatternProjectsCount: Object.keys(readAtelierPatternsSafe(sessionOwner)).length,
+            gymSets: (() => {
+              try {
+                const raw = window.localStorage.getItem("oakhaven_gym_sets_v1");
+                const parsed = raw ? JSON.parse(raw) : [];
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            })(),
           },
         }),
       });
@@ -228,7 +247,10 @@ export function BuildingSpecialistPanel({
           });
         }
       } else if (
-        (proposal.actionType === "plan_work_sprint" || proposal.actionType === "add_reading_note") &&
+        (proposal.actionType === "plan_work_sprint" ||
+          proposal.actionType === "add_reading_note" ||
+          proposal.actionType === "plan_gym_routine" ||
+          proposal.actionType === "plan_cube_practice") &&
         proposal.payload.buildingId
       ) {
         const res = await fetch("/api/resources", {
@@ -316,6 +338,10 @@ export function BuildingSpecialistPanel({
                   ? "📚 Documento a estudiar:"
                   : buildingId === "oficina"
                   ? "📑 Documento técnico:"
+                  : buildingId === "gimnasio"
+                  ? "🏋️ Rutina / plan:"
+                  : buildingId === "club_puzzles"
+                  ? "🧩 Hoja de algoritmos:"
                   : "📖 Recurso literario:"}
               </span>
               <select

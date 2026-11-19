@@ -11,6 +11,9 @@ export interface GymSetRecord {
   weightKg: number;
   rpe: number; // 1-10 escala Borg modificada
   completed: boolean;
+  /** Distinción estricta Fase 5: las series de ejemplo nunca se tratan como historial real */
+  isDemo?: boolean;
+  dataOrigin?: "demo_template" | "real_local" | "real_synced";
 }
 
 export type GymRoutineKey = "fuerza" | "cardio" | "movilidad" | "hipertrofia";
