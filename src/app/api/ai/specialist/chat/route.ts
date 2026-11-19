@@ -15,6 +15,7 @@ interface SpecialistChatBody {
   local_snapshot?: LocalClientSnapshot;
   ai_enabled?: boolean;
   disabled_skill_ids?: string[];
+  selected_resource_id?: string;
 }
 
 export async function POST(req: Request) {
@@ -84,6 +85,7 @@ export async function POST(req: Request) {
       history,
       allowGemini: body.ai_enabled !== false,
       disabledSkillIds: Array.isArray(body.disabled_skill_ids) ? body.disabled_skill_ids : undefined,
+      selectedResourceId: typeof body.selected_resource_id === "string" ? body.selected_resource_id : undefined,
       ctx: {
         authenticatedUserId: userId,
         db,

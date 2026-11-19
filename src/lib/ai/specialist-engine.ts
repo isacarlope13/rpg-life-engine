@@ -24,6 +24,20 @@ import {
   type MayorChatTurn,
   type MayorCitation,
 } from "./mayor-rowan-engine.ts";
+import {
+  buildResourceContextFromMemory,
+  estimateCrochetMaterials,
+  explainCrochetInstruction,
+  generateStudyQuizFromDocument,
+  getActiveCrochetProjects,
+  getActiveStudySubjects,
+  listCrochetPatterns,
+  listStudyResources,
+  proposeFlashcardsFromDocument,
+  readCrochetPattern,
+  readStudyResource,
+} from "./clara-lyra-tools.ts";
+import type { PrivateBuildingResource } from "./building-resources-engine.ts";
 
 export interface SpecialistProposal {
   id: string;
@@ -189,6 +203,8 @@ export async function askBuildingSpecialist(params: {
   ctx: MayorToolContext;
   allowGemini?: boolean;
   disabledSkillIds?: string[];
+  selectedResourceId?: string;
+  memoryResources?: PrivateBuildingResource[];
 }): Promise<SpecialistAnswerResponse> {
   const skill = getSpecialistSkillForBuilding(params.buildingId);
   if (!skill) {
@@ -236,10 +252,144 @@ export async function askBuildingSpecialist(params: {
   }
 
   // 3. Construir propuesta Nivel 2 (si aplica, siempre requiresConfirmation: true)
-  const proposal = buildLevel2ProposalIfRequested(skill, cleanQuestion);
+  let proposal = buildLevel2ProposalIfRequested(skill, cleanQuestion);
 
-  // 4. Respuesta determinista grounded
-  const deterministicDraft = buildDeterministicGroundedAnswer(cleanQuestion, results);
+  // 4. Respuesta determinista grounded + enriquecimiento activo Fase 3 para Clara (Crochet) y Lyra (Estudio)
+  let deterministicDraft = buildDeterministicGroundedAnswer(cleanQuestion, results);
+  const resCtx = buildResourceContextFromMemory(
+    params.ctx.authenticatedUserId,
+    params.ctx.db,
+    params.ctx.isSupabaseConfigured,
+    params.memoryResources
+  );
+  const extraTools: string[] = [];
+
+  if (skill.buildingId === "atelier") {
+    const activeProjs = await getActiveCrochetProjects(params.ctx);
+    const activeProj = activeProjs.projects[0] as Record<string, unknown> | undefined;
+    const patternsList = await listCrochetPatterns(resCtx);
+    extraTools.push("getActiveCrochetProjects", "listCrochetPatterns");
+
+    const extraLines: string[] = [];
+    if (/(vuelta|qued[eé]|progreso|avance)/i.test(cleanQuestion) && activeProj) {
+      const done = Number(activeProj.completed_rows || 0);
+      const target = Number(activeProj.total_rows_target || 60);
+      extraLines.push(
+        `🧶 **[Tus registros]** En "${activeProj.name}" llevas **${done}/${target} vueltas** (${Math.round((done / Math.max(1, target)) * 100)}%). Tu siguiente vuelta es la **#${done + 1}**.`
+      );
+    }
+    if (/(explica|abreviatura|punto|\bpb\b|\bpa\b|\bcad\b|\baum\b|\bdism\b|\bam\b|sc|dc)/i.test(cleanQuestion)) {
+      const exp = explainCrochetInstruction(cleanQuestion);
+      extraTools.push("explainCrochetInstruction");
+      extraLines.push(`📖 **[Conocimiento general de crochet]**\n${exp.stepExplanation}`);
+      if (exp.estimatedStitchesHint) extraLines.push(`💡 ${exp.estimatedStitchesHint}`);
+    }
+    if (/(hilo|lana|ovillo|material|cu[aá]nto)/i.test(cleanQuestion)) {
+      extraLines.push(
+        `🧺 **[Sugerencia orientativa]** ${estimateCrochetMaterials({
+          projectName: activeProj ? String(activeProj.name) : undefined,
+          targetRows: activeProj ? Number(activeProj.total_rows_target) : undefined,
+          technique: activeProj ? String(activeProj.technique) : undefined,
+        })}`
+      );
+    }
+    if (/(prepara|sesi[oó]n)/i.test(cleanQuestion) && activeProj) {
+      extraLines.push(
+        `⏱️ **[Sesión sugerida]** Te propongo un bloque tranquilo de 15–25 min en "${activeProj.name}" retomando desde la vuelta #${Number(activeProj.completed_rows || 0) + 1}. Puedes iniciar el contador en la Mesa con o sin cronómetro.`
+      );
+    }
+    if (params.selectedResourceId) {
+      const docRead = await readCrochetPattern(resCtx, params.selectedResourceId);
+      extraTools.push("readCrochetPattern");
+      if (docRead.ok && docRead.data?.text) {
+        extraLines.push(
+          `📜 **[Contenido de tu patrón]** ${docRead.data.text.slice(0, 600)}${docRead.data.text.length > 600 ? "..." : ""}`
+        );
+      } else {
+        extraLines.push(
+          `⚠️ **Recurso:** ${docRead.error || "Este patrón no tiene texto extraíble (por ejemplo, PDF escaneado o imagen sin OCR); no inventaré instrucciones."}`
+        );
+      }
+    } else if (Array.isArray(patternsList.data) && patternsList.data.length > 0) {
+      const names = (patternsList.data as Array<{ title: string }>)
+        .slice(0, 3)
+        .map((p) => `"${p.title}"`)
+        .join(", ");
+      extraLines.push(`📂 **Patrones en tu Carpeta:** ${names}.`);
+    }
+
+    if (extraLines.length > 0) {
+      deterministicDraft = `${deterministicDraft}\n\n${extraLines.join("\n\n")}`;
+    }
+  } else if (skill.buildingId === "biblioteca") {
+    const studyCtx = await getActiveStudySubjects(params.ctx);
+    const docsList = await listStudyResources(resCtx);
+    extraTools.push("getActiveStudySubjects", "listStudyResources");
+
+    const extraLines: string[] = [];
+    if (/(repas|hoy|pendiente|ruta|sesi[oó]n)/i.test(cleanQuestion)) {
+      extraLines.push(
+        `📚 **[Tu progreso real]** Materias recientes: ${studyCtx.subjects.slice(0, 3).join(", ") || "sin materias registradas aún"} • Tarjetas SM-2 pendientes de repaso: **${studyCtx.dueCardsCount}**.`
+      );
+    }
+
+    if (params.selectedResourceId) {
+      const docRead = await readStudyResource(resCtx, params.selectedResourceId);
+      extraTools.push("readStudyResource");
+      const docMeta = Array.isArray(docsList.data)
+        ? (docsList.data as Array<{ id: string; title: string }>).find((d) => d.id === params.selectedResourceId)
+        : undefined;
+      const docTitle = docMeta?.title || "tu documento de Estudio";
+
+      if (docRead.ok && docRead.data?.text) {
+        if (/(examen|quiz|pregunta|evalua|test)/i.test(cleanQuestion)) {
+          const countMatch = cleanQuestion.match(/(\d+)\s*pregunta/i);
+          const quiz = generateStudyQuizFromDocument({
+            resourceTitle: docTitle,
+            extractedText: docRead.data.text,
+            count: countMatch ? Number(countMatch[1]) : 3,
+          });
+          extraTools.push("generateStudyQuiz");
+          if (quiz.questions.length > 0) {
+            const qLines = quiz.questions
+              .map(
+                (q) =>
+                  `**${q.index}.** ${q.question}\n   a) ${q.options[0]}\n   b) ${q.options[1]}\n   *(Fuente: ${q.sourceCitation})*`
+              )
+              .join("\n");
+            extraLines.push(`📝 **[Examen basado en tu documento "${docTitle}"]**\n${qLines}`);
+          } else {
+            extraLines.push(`⚠️ El documento "${docTitle}" tiene muy poco texto extraíble para armar preguntas.`);
+          }
+        } else if (/(flashcard|tarjeta|sm-2)/i.test(cleanQuestion)) {
+          proposal = proposeFlashcardsFromDocument(docTitle, docRead.data.text);
+          extraTools.push("proposeFlashcards");
+          extraLines.push(
+            `🧠 **[Propuesta basada en tu documento "${docTitle}"]** Preparé flashcards SM-2 para que las confirmes antes de guardarlas.`
+          );
+        } else {
+          extraLines.push(
+            `📖 **[Contenido de tu documento "${docTitle}"]**\n${docRead.data.text.slice(0, 700)}${docRead.data.text.length > 700 ? "..." : ""}`
+          );
+        }
+      } else {
+        extraLines.push(
+          `⚠️ **Documento "${docTitle}":** ${docRead.error || "No contiene texto extraíble (ej. PDF escaneado sin capa de texto). No inventaré páginas ni citas."}`
+        );
+      }
+    } else if (Array.isArray(docsList.data) && docsList.data.length > 0) {
+      const names = (docsList.data as Array<{ title: string }>)
+        .slice(0, 3)
+        .map((d) => `"${d.title}"`)
+        .join(", ");
+      extraLines.push(`📂 **Documentos en tu Estantería Académica:** ${names}. Selecciona uno arriba para analizarlo o generar un examen.`);
+    }
+
+    if (extraLines.length > 0) {
+      deterministicDraft = `${deterministicDraft}\n\n${extraLines.join("\n\n")}`;
+    }
+  }
+
   let finalAnswer = proposal
     ? `${deterministicDraft}\n\n💡 **Propuesta lista para tu confirmación:** ${proposal.title}. Revisa los detalles abajo y pulsa **Confirmar** solo si deseas aplicarla.`
     : deterministicDraft;
@@ -278,7 +428,7 @@ export async function askBuildingSpecialist(params: {
     specialist: specialistMeta,
     answer: finalAnswer,
     mode,
-    toolsUsed: results.map((r) => r.tool),
+    toolsUsed: Array.from(new Set([...results.map((r) => r.tool), ...extraTools])),
     citations,
     proposal,
   };
