@@ -56,23 +56,23 @@ export const ALL_SKILL_DOMAINS: SkillDomain[] = [
   "general",
 ];
 
-// Configuración inicial recomendada (equilibrio cozy: trabajo, lectura, bienestar y finanzas)
+// Configuración inicial recomendada (enfocada en los edificios activos del pueblo personal; los demás quedan pausados sin borrar datos)
 export function getDefaultWorldConfig(userId = "default_user"): VillageWorldConfig {
   const initialSkills: Record<SkillDomain, UserSkillPreference> = {
     work: { domain: "work", status: "active", isFavorite: true },
     reading: { domain: "reading", status: "active", isFavorite: true },
-    knitting: { domain: "knitting", status: "active", isFavorite: false },
+    knitting: { domain: "knitting", status: "active", isFavorite: true },
     rubik: { domain: "rubik", status: "active", isFavorite: false },
     sports: { domain: "sports", status: "active", isFavorite: true },
-    journaling: { domain: "journaling", status: "active", isFavorite: false },
-    study: { domain: "study", status: "active", isFavorite: false },
-    gardening: { domain: "gardening", status: "active", isFavorite: false },
+    study: { domain: "study", status: "active", isFavorite: true },
+    journaling: { domain: "journaling", status: "paused", notes: "Fuera del pueblo base — datos preservados" },
+    gardening: { domain: "gardening", status: "paused", notes: "Fuera del pueblo base — datos preservados" },
     drawing: { domain: "drawing", status: "paused", notes: "En reposo" },
     ceramics: { domain: "ceramics", status: "paused", notes: "En reposo" },
     hiking: { domain: "hiking", status: "paused", notes: "En reposo" },
-    cooking: { domain: "cooking", status: "active", isFavorite: false },
+    cooking: { domain: "cooking", status: "paused", notes: "Fuera del pueblo base — datos preservados" },
     gaming: { domain: "gaming", status: "paused", notes: "En reposo" },
-    general: { domain: "general", status: "active", isFavorite: false },
+    general: { domain: "general", status: "paused", notes: "Fuera del pueblo base — datos preservados" },
   };
 
   return {

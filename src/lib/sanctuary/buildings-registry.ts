@@ -286,6 +286,23 @@ export function getBuildingByDomain(domain: SkillDomain): SanctuaryBuildingDefin
   );
 }
 
+const SANCTUARY_BUILDING_ALIASES: Record<string, string> = {
+  gimnasio: "dojo",
+  gym: "dojo",
+  trabajo: "oficina",
+  estudio: "biblioteca",
+  cubos: "club_puzzles",
+  lectura: "libreria",
+  crochet: "atelier",
+  cabana_diario: "santuario_zen",
+  pabellon_hiking: "puesto_guias",
+  estudio_arte: "taller_arte",
+  taller_ceramica: "alfareria",
+  ludoteca: "arcade",
+};
+
 export function getBuildingById(id: string): SanctuaryBuildingDefinition | undefined {
-  return SANCTUARY_BUILDINGS.find((b) => b.id === id);
+  const normalized = id.trim().toLowerCase();
+  const resolved = SANCTUARY_BUILDING_ALIASES[normalized] || id;
+  return SANCTUARY_BUILDINGS.find((b) => b.id === resolved);
 }

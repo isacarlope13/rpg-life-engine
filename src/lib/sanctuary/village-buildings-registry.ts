@@ -2,10 +2,45 @@ import type { SkillDomain, SkillDomainSummary, SkillSessionRecord } from "@/type
 
 export type BuildingDistrict = "plaza" | "saber" | "artes" | "naturaleza";
 
+export type PersonalBuildingKey =
+  | "banco"
+  | "estudio"
+  | "trabajo"
+  | "gym"
+  | "cubos"
+  | "lectura"
+  | "cine"
+  | "crochet";
+
+export const PERSONAL_VILLAGE_CORE_BUILDINGS: ReadonlyArray<{
+  key: PersonalBuildingKey;
+  buildingId: string;
+  label: string;
+  domainScope: "finance" | "cinema" | SkillDomain;
+  implemented: boolean;
+}> = [
+  { key: "banco", buildingId: "banco_oakhaven", label: "Banco", domainScope: "finance", implemented: true },
+  { key: "estudio", buildingId: "biblioteca", label: "Estudio", domainScope: "study", implemented: true },
+  { key: "trabajo", buildingId: "oficina", label: "Trabajo", domainScope: "work", implemented: true },
+  { key: "gym", buildingId: "gimnasio", label: "Gym", domainScope: "sports", implemented: true },
+  { key: "cubos", buildingId: "club_puzzles", label: "Cubos", domainScope: "rubik", implemented: true },
+  { key: "lectura", buildingId: "libreria", label: "Lectura", domainScope: "reading", implemented: true },
+  { key: "cine", buildingId: "cine", label: "Cine", domainScope: "cinema", implemented: false },
+  { key: "crochet", buildingId: "atelier", label: "Crochet", domainScope: "knitting", implemented: true },
+];
+
+export const PERSONAL_CORE_BUILDING_IDS = new Set<string>(
+  PERSONAL_VILLAGE_CORE_BUILDINGS.map((b) => b.buildingId)
+);
+
 export interface VillageBuildingDefinition {
   id: string; // Identificador estable
   name: string;
   domain: SkillDomain;
+  /** Alcance semántico separado para evitar colisión Banco ('finance') vs Oficina ('work') sin romper tipos históricos */
+  domainScope?: "finance" | SkillDomain;
+  canonicalKey?: PersonalBuildingKey;
+  isPersonalCore?: boolean;
   district: BuildingDistrict;
   tagline: string;
   description: string;
@@ -45,6 +80,9 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     id: "oficina",
     name: "Torre de Gestión & Oficina",
     domain: "work",
+    domainScope: "work",
+    canonicalKey: "trabajo",
+    isPersonalCore: true,
     district: "plaza",
     tagline: "Sprints, Scrum & Tareas Estratégicas",
     description: "Espacio central de mando para proyectos ágiles, bloques Pomodoro y foco profesional.",
@@ -101,6 +139,9 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     id: "libreria",
     name: "La Librería & Archivo Antiguo",
     domain: "reading",
+    domainScope: "reading",
+    canonicalKey: "lectura",
+    isPersonalCore: true,
     district: "saber",
     tagline: "Libros, Lectura Serena & Resúmenes",
     description: "Estantes de roble antiguo donde cada tomo leído forja sabiduría canónica y tranquilidad.",
@@ -142,6 +183,9 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     id: "biblioteca",
     name: "La Gran Biblioteca del Erudito",
     domain: "study",
+    domainScope: "study",
+    canonicalKey: "estudio",
+    isPersonalCore: true,
     district: "saber",
     tagline: "Academia, Repetición Espaciada SM-2 & Cátedra",
     description: "Atriles de estudio y ficheros nemotécnicos para consolidar aprendizajes duraderos sin memorización forzada.",
@@ -164,6 +208,9 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     id: "club_puzzles",
     name: "Club de Puzzles WCA",
     domain: "rubik",
+    domainScope: "rubik",
+    canonicalKey: "cubos",
+    isPersonalCore: true,
     district: "saber",
     tagline: "Speedcubing Oficial, Ao5 & Scrambles WCA",
     description: "Mesas de competición con tapetes Stackmat, cronómetros profesionales y scrambles de precisión.",
@@ -190,6 +237,9 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     id: "atelier",
     name: "El Atelier de Hilados & Textil",
     domain: "knitting",
+    domainScope: "knitting",
+    canonicalKey: "crochet",
+    isPersonalCore: true,
     district: "artes",
     tagline: "Tejido Artesanal, Patrones & Lana Merino",
     description: "Cestas de ovillos, husos de madera y telares donde cada hilada se traduce en presencia plena.",
@@ -330,6 +380,9 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     id: "gimnasio",
     name: "Gimnasio de Fuerza & Resistencia",
     domain: "sports",
+    domainScope: "sports",
+    canonicalKey: "gym",
+    isPersonalCore: true,
     district: "naturaleza",
     tagline: "Entrenamiento Funcional, Movilidad & Fortaleza",
     description: "Área abierta al aire libre con barras de roble, mancuernas de piedra y colchonetas de lona para cuidar el cuerpo.",
@@ -359,6 +412,9 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
     id: "banco_oakhaven",
     name: "Banco de OakHaven & Real Tesorería",
     domain: "work",
+    domainScope: "finance",
+    canonicalKey: "banco",
+    isPersonalCore: true,
     district: "plaza",
     tagline: "Libro Mayor, Cuentas en COP & Bóveda del Reino",
     description: "Sede central de custodia financiera de Oakhaven. Administra cuentas reales, presupuestos sin fugas y deudas como jefes de mazmorra.",
@@ -376,17 +432,41 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
   },
 ];
 
+const BUILDING_ID_ALIASES: Record<string, string> = {
+  pabellon_gardening: "invernadero",
+  banco: "banco_oakhaven",
+  banco_reino: "banco_oakhaven",
+  trabajo: "oficina",
+  estudio: "biblioteca",
+  academia: "biblioteca",
+  gym: "gimnasio",
+  dojo: "gimnasio",
+  cubos: "club_puzzles",
+  lectura: "libreria",
+  crochet: "atelier",
+};
+
 /**
- * Obtiene la definición de un edificio por su ID estable (soporta alias retrocompatibles como 'pabellon_gardening').
+ * Resuelve cualquier identificador o alias retrocompatible a su ID canónico del pueblo.
+ */
+export function resolveCanonicalBuildingId(id: string): string {
+  const normalized = id.trim().toLowerCase();
+  return BUILDING_ID_ALIASES[normalized] || id;
+}
+
+/**
+ * Indica si un edificio pertenece al núcleo definitivo de los 8 edificios personales.
+ */
+export function isPersonalCoreBuilding(id: string): boolean {
+  return PERSONAL_CORE_BUILDING_IDS.has(resolveCanonicalBuildingId(id));
+}
+
+/**
+ * Obtiene la definición de un edificio por su ID estable (soporta alias retrocompatibles).
  */
 export function getBuildingById(id: string): VillageBuildingDefinition | undefined {
-  if (id === "pabellon_gardening" || id === "invernadero") {
-    return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === "invernadero" || b.id === "pabellon_gardening");
-  }
-  if (id === "banco" || id === "banco_oakhaven" || id === "banco_reino") {
-    return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === "banco_oakhaven");
-  }
-  return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === id);
+  const canonicalId = resolveCanonicalBuildingId(id);
+  return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === canonicalId);
 }
 
 /**
