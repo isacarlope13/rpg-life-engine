@@ -18,6 +18,11 @@ import {
   type MayorToolContext,
   type ToolExecutionResult,
 } from "./mayor-readonly-tools.ts";
+import { recordAiTelemetryEvent } from "./ai-observability.ts";
+import {
+  buildRowanDailyPlan,
+  detectDailyPlanIntent,
+} from "./rowan-command-center.ts";
 
 export interface MayorChatTurn {
   role: "user" | "assistant";
@@ -60,10 +65,25 @@ const BUILDING_LINK_META: Record<string, MayorBuildingLink> = {
 
 const MAX_TOOL_CALLS_PER_TURN = 3;
 
+const EXPLICIT_FINANCIAL_INTENT_REGEX =
+  /(gast[eé]|gastos?|banco|dinero|\bcop\b|presupuesto|obligaci[oó]n|deuda|flujo de caja|ingresos?|quincena|compra)/i;
+
+export function isExplicitFinancialQuestion(message: string): boolean {
+  return EXPLICIT_FINANCIAL_INTENT_REGEX.test((message || "").toLowerCase());
+}
+
+export function stripFinancialHistoryForGemini(history: MayorChatTurn[]): MayorChatTurn[] {
+  return history.filter((turn) => {
+    const c = turn.content || "";
+    return !/(\bcop\b|\$\s?\d|banco|gastos?\s+[uú]ltimos|extracto|deuda|obligaci[oó]n|presupuesto|saldo)/i.test(c);
+  });
+}
+
 export function redactSensitiveForLogs(text: string): string {
   return (text || "")
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL_REDACTED]")
     .replace(/\b(?:\d[ -]*?){13,19}\b/g, "[CARD_REDACTED]")
+    .replace(/\b\d{6,12}\b/g, "[ACCOUNT_REDACTED]")
     .replace(/(sk-[a-zA-Z0-9]{12,}|AIza[0-9A-Za-z\-_]{20,}|eyJ[a-zA-Z0-9._-]{20,})/g, "[SECRET_REDACTED]");
 }
 
@@ -109,8 +129,9 @@ export function selectToolsForQuestion(message: string): Array<{
   if (/(pel[ií]cula|serie|musical|cine|viendo|marqu[eé]\s+como\s+vista|watchlist)/i.test(q)) {
     plan.push({ tool: "getLastWatchedMedia" });
   }
-  if (/(gast[eé]|gasto|banco|dinero|cop|semana|presupuesto|movimiento|compra)/i.test(q)) {
-    const days = /mes|mensual|30\s*d[ií]as/i.test(q) ? 30 : 7;
+  // P0 Privacidad (Fase 7): exigir intención financiera explícita; nunca activar por "semana" genérico
+  if (isExplicitFinancialQuestion(q)) {
+    const days = /mes|mensual|30\s*d[ií]as/i.test(q) ? 30 : /quincena|15\s*d[ií]as/i.test(q) ? 15 : 7;
     plan.push({ tool: "getRecentExpenses", args: { days, limit: 20 } });
   }
   if (/(entren|gym|gimnasio|ejercicio|rutina|deporte|fuerza)/i.test(q)) {
@@ -365,12 +386,12 @@ export function buildDeterministicGroundedAnswer(
         sections.push(lines.join("\n"));
       }
     } else if (res.tool === "getVillageSummary") {
-      const weeklyCop = Number(d.weeklySpentCop || 0);
+      // P0 Privacidad (Fase 7): no filtrar cifras COP automáticamente en resúmenes generales del pueblo
       sections.push(
         `🏛️ **Resumen del Pueblo** *(fuente: ${sourceLabel(res.source)})*:\n` +
           `- **Nivel:** ${d.playerLevel || 1} • **Billetera:** ${Number(d.walletGp || 0).toLocaleString("es-CO")} GP • **Bóveda restante:** ${Number(d.vaultRemainingGp || 0).toLocaleString("es-CO")} GP.\n` +
-          `- **Gastos últimos 7 días:** $${weeklyCop.toLocaleString("es-CO")} COP.\n` +
-          `- **Último entrenamiento:** ${formatDateEs(d.lastWorkoutAt as string | null)}.`
+          `- **Último entrenamiento:** ${formatDateEs(d.lastWorkoutAt as string | null)}.\n` +
+          `- *Nota:* Para revisar finanzas en COP, pregúntame explícitamente por gastos o consulta a Silas en el Banco.`
       );
     }
   }
@@ -386,15 +407,22 @@ async function tryGeminiPolish(
   question: string,
   deterministicDraft: string,
   toolResults: ToolExecutionResult[],
-  history: MayorChatTurn[]
-): Promise<string | null> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || process.env.OAKHAVEN_AI_ENABLED === "false") {
-    return null;
-  }
+  history: MayorChatTurn[],
+  onGeminiAttemptForTests?: (payload: { prompt: string }) => void
+): Promise<{ text: string | null; inputTokens?: number; outputTokens?: number; timedOut?: boolean }> {
+  const safeHistory = stripFinancialHistoryForGemini(history);
+  const safeToolResults = toolResults
+    .filter((r) => r.buildingId !== "banco_oakhaven" && r.tool !== "getRecentExpenses")
+    .map((r) => {
+      if (r.tool === "getVillageSummary" && r.data && typeof r.data === "object") {
+        const clone = { ...(r.data as Record<string, unknown>) };
+        delete clone.weeklySpentCop;
+        return { ...r, data: clone };
+      }
+      return r;
+    });
 
-  const ai = new GoogleGenAI({ apiKey });
-  const recentHistory = history
+  const recentHistory = safeHistory
     .slice(-4)
     .map((h) => `${h.role === "user" ? "Jugador" : "Rowan"}: ${h.content.slice(0, 220)}`)
     .join("\n");
@@ -404,15 +432,27 @@ async function tryGeminiPolish(
     "REGLA ESTRICTA: NO inventes ningún título, cifra, fecha ni logro que no esté en DATOS_VERIFICADOS. Conserva exactamente los números y fechas reales.",
     recentHistory ? `CONTEXTO RECIENTE:\n${recentHistory}` : "",
     `PREGUNTA DEL JUGADOR:\n${question}`,
-    `DATOS_VERIFICADOS:\n${JSON.stringify(toolResults).slice(0, 4000)}`,
+    `DATOS_VERIFICADOS:\n${JSON.stringify(safeToolResults).slice(0, 4000)}`,
     `BORRADOR_DETERMINISTA:\n${deterministicDraft}`,
     "Redacta una respuesta breve (máximo 120 palabras), amable, cálida y fiel a los hechos verificados.",
   ]
     .filter(Boolean)
     .join("\n\n");
 
-  const timeoutPromise = new Promise<null>((resolve) =>
-    setTimeout(() => resolve(null), 7000)
+  onGeminiAttemptForTests?.({ prompt });
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || process.env.OAKHAVEN_AI_ENABLED === "false") {
+    return { text: null };
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  let timedOut = false;
+  const timeoutPromise = new Promise<{ text: null; timedOut: true }>((resolve) =>
+    setTimeout(() => {
+      timedOut = true;
+      resolve({ text: null, timedOut: true });
+    }, 7000)
   );
 
   const genPromise = ai.models
@@ -424,8 +464,13 @@ async function tryGeminiPolish(
         maxOutputTokens: MAYOR_ROWAN_SKILL.providerConfig.maxOutputTokens,
       },
     })
-    .then((res) => (res.text && res.text.trim().length > 10 ? res.text.trim() : null))
-    .catch(() => null);
+    .then((res) => ({
+      text: res.text && res.text.trim().length > 10 ? res.text.trim() : null,
+      inputTokens: res.usageMetadata?.promptTokenCount,
+      outputTokens: res.usageMetadata?.candidatesTokenCount,
+      timedOut: false,
+    }))
+    .catch(() => ({ text: null, timedOut }));
 
   return Promise.race([genPromise, timeoutPromise]);
 }
@@ -435,12 +480,22 @@ export async function askMayorRowan(params: {
   history?: MayorChatTurn[];
   ctx: MayorToolContext;
   allowGemini?: boolean;
+  /** Gancho opcional de instrumentación para verificar aislamiento financiero hacia Gemini */
+  onGeminiAttemptForTests?: (payload: { prompt: string }) => void;
 }): Promise<MayorAnswerResponse> {
+  const startedAt = Date.now();
   const cleanQuestion = (params.question || "").trim().slice(0, 600);
 
   // 1. Defensa contra acciones prohibidas (pagos, GP/XP arbitrario, prompt injection)
   const safetyBlock = detectUnsafeActionRequest(cleanQuestion);
   if (safetyBlock) {
+    recordAiTelemetryEvent({
+      agentId: "rowan",
+      buildingId: "ayuntamiento",
+      mode: "blocked_safety",
+      durationMs: Date.now() - startedAt,
+      usedGemini: false,
+    });
     return {
       answer: safetyBlock,
       mode: "blocked_safety",
@@ -450,7 +505,12 @@ export async function askMayorRowan(params: {
     };
   }
 
-  // 2. Plan mínimo de herramientas de solo lectura (máximo 3)
+  // 2. Planificación cotidiana / memoria contextual no financiera (Hitos 2, 4, 5)
+  const dailyPlanMode = !isExplicitFinancialQuestion(cleanQuestion)
+    ? detectDailyPlanIntent(cleanQuestion)
+    : null;
+
+  // 3. Plan mínimo de herramientas de solo lectura (máximo 4)
   const planned = selectToolsForQuestion(cleanQuestion);
   const results: ToolExecutionResult[] = [];
   for (const step of planned) {
@@ -458,24 +518,58 @@ export async function askMayorRowan(params: {
     results.push(res);
   }
 
-  // 3. Respuesta determinista verificada (garantía anti-alucinación)
-  const deterministicAnswer = buildDeterministicGroundedAnswer(cleanQuestion, results);
+  let deterministicAnswer = buildDeterministicGroundedAnswer(cleanQuestion, results);
+  const extraLinkBuildings: string[] = [];
 
-  // 4. Pulido opcional con Gemini (siempre con fallback determinista)
+  if (dailyPlanMode) {
+    const planRes = await buildRowanDailyPlan(params.ctx, dailyPlanMode);
+    deterministicAnswer =
+      planned.length === 1 && planned[0].tool === "getVillageSummary"
+        ? planRes.answer
+        : `${planRes.answer}\n\n${deterministicAnswer}`;
+    extraLinkBuildings.push(...planRes.buildingIds);
+  }
+
+  // 4. Control estructural P0 (Hito 1): NUNCA enviar datos financieros a Gemini por defecto
+  const containsFinancialContext =
+    isExplicitFinancialQuestion(cleanQuestion) ||
+    results.some((r) => r.buildingId === "banco_oakhaven" || r.tool === "getRecentExpenses");
+
   let finalAnswer = deterministicAnswer;
   let mode: MayorAnswerResponse["mode"] = "deterministic_grounded";
-  if (params.allowGemini !== false) {
+  let usedGemini = false;
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  let timedOut = false;
+
+  if (params.allowGemini !== false && !containsFinancialContext) {
     const polished = await tryGeminiPolish(
       cleanQuestion,
       deterministicAnswer,
       results,
-      params.history || []
+      params.history || [],
+      params.onGeminiAttemptForTests
     );
-    if (polished) {
-      finalAnswer = polished;
+    inputTokens = polished.inputTokens;
+    outputTokens = polished.outputTokens;
+    timedOut = Boolean(polished.timedOut);
+    if (polished.text) {
+      finalAnswer = polished.text;
       mode = "gemini_grounded";
+      usedGemini = true;
     }
   }
+
+  recordAiTelemetryEvent({
+    agentId: "rowan",
+    buildingId: "ayuntamiento",
+    mode,
+    durationMs: Date.now() - startedAt,
+    usedGemini,
+    timedOut,
+    inputTokens,
+    outputTokens,
+  });
 
   const citations: MayorCitation[] = results.map((r) => ({
     tool: r.tool,
@@ -485,7 +579,9 @@ export async function askMayorRowan(params: {
     limitationNote: r.limitationNote,
   }));
 
-  const uniqueBuildings = Array.from(new Set(results.map((r) => r.buildingId)));
+  const uniqueBuildings = Array.from(
+    new Set([...results.map((r) => r.buildingId), ...extraLinkBuildings])
+  );
   const buildingLinks = uniqueBuildings
     .map((id) => BUILDING_LINK_META[id])
     .filter((link): link is MayorBuildingLink => Boolean(link));
@@ -493,7 +589,9 @@ export async function askMayorRowan(params: {
   return {
     answer: finalAnswer,
     mode,
-    toolsUsed: results.map((r) => r.tool),
+    toolsUsed: dailyPlanMode
+      ? Array.from(new Set([...results.map((r) => r.tool), `commandCenter:${dailyPlanMode}`]))
+      : results.map((r) => r.tool),
     citations,
     buildingLinks,
   };
