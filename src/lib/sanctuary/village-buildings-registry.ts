@@ -25,7 +25,7 @@ export const PERSONAL_VILLAGE_CORE_BUILDINGS: ReadonlyArray<{
   { key: "gym", buildingId: "gimnasio", label: "Gym", domainScope: "sports", implemented: true },
   { key: "cubos", buildingId: "club_puzzles", label: "Cubos", domainScope: "rubik", implemented: true },
   { key: "lectura", buildingId: "libreria", label: "Lectura", domainScope: "reading", implemented: true },
-  { key: "cine", buildingId: "cine", label: "Cine", domainScope: "cinema", implemented: false },
+  { key: "cine", buildingId: "cine", label: "Cine", domainScope: "cinema", implemented: true },
   { key: "crochet", buildingId: "atelier", label: "Crochet", domainScope: "knitting", implemented: true },
 ];
 
@@ -37,8 +37,8 @@ export interface VillageBuildingDefinition {
   id: string; // Identificador estable
   name: string;
   domain: SkillDomain;
-  /** Alcance semántico separado para evitar colisión Banco ('finance') vs Oficina ('work') sin romper tipos históricos */
-  domainScope?: "finance" | SkillDomain;
+  /** Alcance semántico separado para evitar colisión Banco ('finance') / Cine ('cinema') sin romper tipos históricos */
+  domainScope?: "finance" | "cinema" | SkillDomain;
   canonicalKey?: PersonalBuildingKey;
   isPersonalCore?: boolean;
   district: BuildingDistrict;
@@ -430,6 +430,31 @@ export const VILLAGE_BUILDINGS_CATALOG: VillageBuildingDefinition[] = [
       urgency: "normal",
     }),
   },
+  // ==========================================
+  // 6. CINE BOUTIQUE & TEATRO (PELÍCULAS, SERIES Y MUSICALES)
+  // ==========================================
+  {
+    id: "cine",
+    name: "Cine Boutique & Teatro",
+    domain: "reading",
+    domainScope: "cinema",
+    canonicalKey: "cine",
+    isPersonalCore: true,
+    district: "artes",
+    tagline: "Películas, Series, Musicales & Reseñas Cozy",
+    description: "Sala íntima de cortinas cálidas y boletos vintage para seguir tus series, películas y musicales favoritos sin presión.",
+    icon: "🎬",
+    accentColor: "#B5485D",
+    borderColor: "#7F2F3F",
+    bgGradient: "from-[#361A22] to-[#1E0E13]",
+    residentId: "eldrin",
+    mapCoordinates: { x: 52, y: 55, row: 2, col: 2 },
+    getPendingActivity: () => ({
+      hasPending: true,
+      label: "Cartelera abierta",
+      urgency: "normal",
+    }),
+  },
 ];
 
 const BUILDING_ID_ALIASES: Record<string, string> = {
@@ -443,6 +468,8 @@ const BUILDING_ID_ALIASES: Record<string, string> = {
   dojo: "gimnasio",
   cubos: "club_puzzles",
   lectura: "libreria",
+  cine: "cine",
+  cinema: "cine",
   crochet: "atelier",
 };
 
@@ -475,6 +502,9 @@ export function getBuildingById(id: string): VillageBuildingDefinition | undefin
 export function getBuildingByDomain(domain: SkillDomain): VillageBuildingDefinition | undefined {
   if (domain === "work") {
     return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === "oficina");
+  }
+  if (domain === "reading") {
+    return VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === "libreria");
   }
   return VILLAGE_BUILDINGS_CATALOG.find((b) => b.domain === domain);
 }

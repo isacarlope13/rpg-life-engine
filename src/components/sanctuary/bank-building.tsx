@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import type { FinancialMovementRecord, DebtStrategy } from "@/types/rpg";
 import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
-import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 import {
   calculateFinancialSummary,

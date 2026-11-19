@@ -26,7 +26,6 @@ import type { ReadingBook, SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyProgress, CozyNotification, CozyCard } from "@/components/cozy/ui";
 import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
-import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";

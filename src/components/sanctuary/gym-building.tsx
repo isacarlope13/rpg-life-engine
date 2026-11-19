@@ -28,7 +28,6 @@ import type { SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
 import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
-import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 import { CozyButton, CozyCard } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";

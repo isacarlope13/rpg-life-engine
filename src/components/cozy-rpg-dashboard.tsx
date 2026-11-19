@@ -68,6 +68,7 @@ import { OfficeBuilding } from "@/components/sanctuary/office-building";
 import { GymBuilding } from "@/components/sanctuary/gym-building";
 import { JournalingBuilding } from "@/components/sanctuary/journaling-building";
 import { BankBuilding } from "@/components/sanctuary/bank-building";
+import { CinemaBuilding } from "@/components/sanctuary/cinema-building";
 import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { VillageScrapbookModal } from "@/components/sanctuary/village-scrapbook-modal";
 import { InteriorDecorationsPanel } from "@/components/sanctuary/interior-decorations-panel";
@@ -778,7 +779,16 @@ export function CozyRpgDashboard() {
                 />
               )}
 
-              {(activeBuildingModal === "banco_oakhaven" || activeBuildingModal === "banco") && (
+              {(activeBuildingModal === "cine" || activeBuildingModal === "cinema") && (
+        <CinemaBuilding
+          playerLevel={playerLevel}
+          onRefreshState={fetchState}
+          onSubmitDirectSkillSession={handleSubmitSkillSession}
+          onClose={() => setActiveBuildingModal(null)}
+        />
+      )}
+
+      {(activeBuildingModal === "banco_oakhaven" || activeBuildingModal === "banco") && (
                 <BankBuilding
                   playerLevel={playerLevel}
                   skillLevel={state?.skill_summaries?.find((s) => s.domain === "work")?.level || 1}

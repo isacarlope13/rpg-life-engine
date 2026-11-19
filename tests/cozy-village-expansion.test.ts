@@ -162,7 +162,7 @@ test("Cozy Village Expansion 6: Filtrado por Distritos Comunitarios", () => {
 });
 
 test("Cozy Village Expansion 7: Consistencia de contadores dinámicos y ausencia de valores quemados", () => {
-  assert.equal(VILLAGE_BUILDINGS_CATALOG.length, 15, "El catálogo del pueblo debe tener exactamente 15 edificios (14 artes/saberes + Banco).");
+  assert.equal(VILLAGE_BUILDINGS_CATALOG.length, 16, "El catálogo del pueblo debe tener exactamente 16 edificios (14 artes/saberes + Banco + Cine).");
   assert.equal(COZY_VILLAGE_RESIDENTS.length, 14, "El censo de Oakhaven debe tener exactamente 14 residentes (13 artesanos + Silas).");
 
   // El edificio piloto 'atelier' debe existir y pertenecer al dominio knitting

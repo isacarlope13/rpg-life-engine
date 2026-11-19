@@ -35,6 +35,7 @@ export const OPTIMIZED_VILLAGE_COORDINATES: Record<string, MapCoordinates> = {
   // 3. DISTRITO DE ARTES & OFICIOS (Oeste y Suroeste)
   atelier: { x: 16, y: 55, row: 2, col: 0 },        // Atelier textil en el prado oeste
   estudio_arte: { x: 32, y: 55, row: 2, col: 1 },   // Estudio de dibujo junto al camino
+  cine: { x: 52, y: 55, row: 2, col: 2 },           // Cine Boutique en el corazón cultural
   ludoteca: { x: 74, y: 55, row: 2, col: 4 },       // Ludoteca estratégica en el este
   taller_ceramica: { x: 16, y: 78, row: 3, col: 0 },// Alfarería en el rincón suroeste
   cocina: { x: 34, y: 78, row: 3, col: 1 },         // Cocina comunitaria con fogón
