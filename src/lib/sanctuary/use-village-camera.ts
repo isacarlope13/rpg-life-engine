@@ -344,6 +344,45 @@ export function useVillageCamera(options?: VillageCameraOptions) {
     [opts.enableKeyboard, zoomIn, zoomOut, resetCamera, clampCamera, persistCamera]
   );
 
+  // MANEJADORES TÁCTILES: Pinch-to-Zoom de 2 dedos en móvil
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchDistanceRef.current = Math.hypot(dx, dy);
+      dragStartRef.current = null;
+    }
+  }, []);
+
+  const onTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length !== 2 || touchDistanceRef.current === null) return;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const currentDistance = Math.hypot(dx, dy);
+      const ratio = currentDistance / Math.max(1, touchDistanceRef.current);
+
+      if (Math.abs(ratio - 1) > 0.03) {
+        touchDistanceRef.current = currentDistance;
+        setCamera((prev) => {
+          const nextZoom = Math.min(
+            opts.maxZoom,
+            Math.max(opts.minZoom, Number((prev.zoom * ratio).toFixed(2)))
+          );
+          const clamped = clampCamera(prev.x, prev.y, nextZoom);
+          const next: CameraState = { ...prev, ...clamped, zoom: nextZoom };
+          persistCamera(next);
+          return next;
+        });
+      }
+    },
+    [opts.maxZoom, opts.minZoom, clampCamera, persistCamera]
+  );
+
+  const onTouchEnd = useCallback(() => {
+    touchDistanceRef.current = null;
+  }, []);
+
   // Estilo transform para el contenedor de la escena 2D (Acelerado por GPU)
   const worldTransformStyle: React.CSSProperties = useMemo(() => {
     return {
@@ -353,7 +392,7 @@ export function useVillageCamera(options?: VillageCameraOptions) {
       willChange: "transform",
       userSelect: "none",
     };
-  }, [camera.x, camera.y, camera.zoom]);
+  }, [camera.x, camera.y, camera.zoom, camera.isDragging]);
 
   return {
     camera,
@@ -370,6 +409,9 @@ export function useVillageCamera(options?: VillageCameraOptions) {
       onPointerCancel: onPointerUp,
       onWheel,
       onKeyDown,
+      onTouchStart,
+      onTouchMove,
+      onTouchEnd,
     },
   };
 }
