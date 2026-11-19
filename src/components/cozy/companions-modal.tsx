@@ -34,9 +34,9 @@ export function CompanionsModal({
   const filtered = filterDomain === "all"
     ? residents
     : residents.filter((r) => {
-        if (filterDomain === "saber") return ["reading", "study", "rubik", "general", "journaling"].includes(r.domain);
-        if (filterDomain === "artes") return ["knitting", "cooking", "gaming", "drawing", "ceramics"].includes(r.domain);
-        if (filterDomain === "naturaleza") return ["gardening", "hiking", "sports"].includes(r.domain);
+        if (filterDomain === "saber") return ["reading", "study", "rubik", "general", "journaling", "work", "finance"].includes(r.domain);
+        if (filterDomain === "artes") return ["knitting", "cooking", "gaming", "drawing", "ceramics", "cinema"].includes(r.domain);
+        if (filterDomain === "naturaleza") return ["gardening", "hiking", "sports", "fitness"].includes(r.domain);
         return true;
       });
 
