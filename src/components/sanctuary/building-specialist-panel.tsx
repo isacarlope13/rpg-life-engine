@@ -30,7 +30,12 @@ interface SpecialistMessage {
 }
 
 const SUGGESTIONS_BY_BUILDING: Record<string, string[]> = {
-  banco_oakhaven: ["¿Cuánto gasté esta semana?", "¿Cuál fue mi último gasto registrado?"],
+  banco_oakhaven: [
+    "¿Cuánto gasté esta semana y cuál es mi flujo neto?",
+    "¿Qué obligaciones tengo próximas?",
+    "Simula qué pasaría si ahorro 100.000 COP al mes",
+    "¿Cuál es la diferencia entre GP y COP?",
+  ],
   biblioteca: [
     "¿Qué debería repasar hoy?",
     "Explícame el tema de este documento",
@@ -59,7 +64,12 @@ const SUGGESTIONS_BY_BUILDING: Record<string, string[]> = {
     "Muéstrame mis citas y propón una reflexión",
     "Propón una reseña de mi libro actual",
   ],
-  cine: ["¿Qué serie estoy viendo?", "Agrega la película \"Mi Vecino Totoro\""],
+  cine: [
+    "¿Qué película vi por última vez y qué serie estoy viendo?",
+    "Recomiéndame algo de mi watchlist para hoy",
+    "Prepara una noche de musicales",
+    "Propón una reseña de mi última película vista",
+  ],
   atelier: [
     "¿En qué vuelta quedé?",
     "Explícame pb, aum y dism",
@@ -108,7 +118,8 @@ export function BuildingSpecialistPanel({
         buildingId !== "oficina" &&
         buildingId !== "libreria" &&
         buildingId !== "gimnasio" &&
-        buildingId !== "club_puzzles")
+        buildingId !== "club_puzzles" &&
+        buildingId !== "cine")
     ) {
       return;
     }
@@ -210,18 +221,25 @@ export function BuildingSpecialistPanel({
     setErrorMsg(null);
     try {
       if (proposal.actionType === "add_cinema_entry") {
-        const created = createCinemaEntry({
-          title: String(proposal.payload.title || "Nueva obra"),
-          kind: (proposal.payload.kind as CinemaMediaKind) || "movie",
-          status: "watchlist",
-        });
+        const title = String(proposal.payload.title || "Nueva obra").trim();
+        const kind = (proposal.payload.kind as CinemaMediaKind) || "movie";
         const existing = readCinemaEntriesSafe(sessionOwner);
-        saveCinemaEntriesSafe(sessionOwner, [created, ...existing]);
-        await fetch("/api/cinema", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(created),
-        }).catch(() => {});
+        const alreadyExists = existing.some(
+          (e) => e.title.toLowerCase() === title.toLowerCase() && e.kind === kind
+        );
+        if (!alreadyExists) {
+          const created = createCinemaEntry({
+            title,
+            kind,
+            status: "watchlist",
+          });
+          saveCinemaEntriesSafe(sessionOwner, [created, ...existing]);
+          await fetch("/api/cinema", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(created),
+          }).catch(() => {});
+        }
       } else if (proposal.actionType === "add_knitting_project") {
         const res = await fetch("/api/shortcuts/skill-session", {
           method: "POST",
@@ -250,7 +268,8 @@ export function BuildingSpecialistPanel({
         (proposal.actionType === "plan_work_sprint" ||
           proposal.actionType === "add_reading_note" ||
           proposal.actionType === "plan_gym_routine" ||
-          proposal.actionType === "plan_cube_practice") &&
+          proposal.actionType === "plan_cube_practice" ||
+          proposal.actionType === "add_cinema_review") &&
         proposal.payload.buildingId
       ) {
         const res = await fetch("/api/resources", {
@@ -342,6 +361,8 @@ export function BuildingSpecialistPanel({
                   ? "🏋️ Rutina / plan:"
                   : buildingId === "club_puzzles"
                   ? "🧩 Hoja de algoritmos:"
+                  : buildingId === "cine"
+                  ? "🎬 Reseña / recurso:"
                   : "📖 Recurso literario:"}
               </span>
               <select

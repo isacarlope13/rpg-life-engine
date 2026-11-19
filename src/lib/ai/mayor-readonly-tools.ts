@@ -15,6 +15,7 @@ import type { RPGEngineMemoryStore } from "../demo-store.ts";
 import type { CinemaEntry } from "../sanctuary/cinema-store.ts";
 import type { GymSetRecord } from "../sanctuary/gym-engine.ts";
 import type { MayorReadOnlyToolName } from "./building-skills-registry.ts";
+import { isDemoFinancialMovement } from "./nora-silas-tools.ts";
 
 export type DataSourceOrigin =
   | "supabase"
@@ -470,7 +471,9 @@ export async function getRecentExpenses(
     }
 
     const expenses = sortByTimestampDesc(
-      (ctx.store.financialMovements || []).filter((m) => m.tipo === "Gasto"),
+      (ctx.store.financialMovements || []).filter(
+        (m) => m.tipo === "Gasto" && !isDemoFinancialMovement(m)
+      ),
       (m) => m.created_at || m.fecha
     ).slice(0, limit);
     const inWindow = expenses.filter((tx) => {
