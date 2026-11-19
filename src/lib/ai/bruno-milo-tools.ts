@@ -142,20 +142,47 @@ export function detectMedicalOrInjuryQuery(question: string): string | null {
 export async function getLastRealWorkout(ctx: MayorToolContext) {
   const localSets = ctx.localSnapshot?.gymSets || [];
   const { realSets, excludedDemoCount } = filterRealGymSets(localSets);
-  const volume = calculateTrainingVolume(realSets);
+  let volume = calculateTrainingVolume(realSets);
+  let setsSource: "supabase" | "local_device_snapshot" | "none" =
+    realSets.length > 0 ? "local_device_snapshot" : "none";
 
   if (ctx.isSupabaseConfigured && ctx.db) {
-    const { data, error } = await ctx.db
-      .from("activity_logs")
-      .select("id, title, duration_minutes, notes, completed_at")
-      .eq("user_id", ctx.authenticatedUserId)
-      .eq("domain", "sports")
-      .order("completed_at", { ascending: false })
-      .limit(10);
+    const [{ data, error }, { data: dbSets, error: setsErr }] = await Promise.all([
+      ctx.db
+        .from("activity_logs")
+        .select("id, title, duration_minutes, notes, completed_at")
+        .eq("user_id", ctx.authenticatedUserId)
+        .eq("domain", "sports")
+        .order("completed_at", { ascending: false })
+        .limit(10),
+      ctx.db
+        .from("gym_workout_sets")
+        .select("id, client_id, exercise_name, set_number, reps, weight_kg, rpe, completed")
+        .eq("user_id", ctx.authenticatedUserId)
+        .is("deleted_at", null)
+        .order("performed_at", { ascending: false })
+        .limit(40),
+    ]);
+
+    if (!setsErr && Array.isArray(dbSets) && dbSets.length > 0) {
+      const mappedDbSets: GymSetRecord[] = dbSets.map((s) => ({
+        id: String(s.client_id || s.id),
+        exerciseName: String(s.exercise_name),
+        setNumber: Number(s.set_number || 1),
+        reps: Number(s.reps || 0),
+        weightKg: Number(s.weight_kg || 0),
+        rpe: Number(s.rpe || 7),
+        completed: Boolean(s.completed),
+        dataOrigin: "real_synced",
+      }));
+      volume = calculateTrainingVolume(mappedDbSets);
+      setsSource = "supabase";
+    }
 
     if (!error && Array.isArray(data)) {
       return {
         source: "supabase" as const,
+        setsSource,
         lastWorkout: data[0] || null,
         recentCount: data.length,
         realSetsVolume: volume,
@@ -170,6 +197,7 @@ export async function getLastRealWorkout(ctx: MayorToolContext) {
 
   return {
     source: "memory_store" as const,
+    setsSource,
     lastWorkout: workouts[0]
       ? {
           id: workouts[0].id,
@@ -422,9 +450,30 @@ export async function getCubeSolveHistory(ctx: MayorToolContext, cubeType: Rubik
 }
 
 export async function getRegisteredCubes(ctx: MayorToolContext) {
+  if (ctx.isSupabaseConfigured && ctx.db) {
+    const { data, error } = await ctx.db
+      .from("rubik_cubes")
+      .select("id, cube_type, brand, model_name, status, custom_notes, maintenance_needs")
+      .eq("user_id", ctx.authenticatedUserId)
+      .limit(30);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const mapped = data.map((c) => ({
+        id: String(c.id),
+        cube_type: String(c.cube_type || "3x3"),
+        brand: String(c.brand || ""),
+        model_name: String(c.model_name || "Cubo"),
+        status: String(c.status || "secondary"),
+      }));
+      const activeCube = mapped.find((c) => c.status === "active_main") || mapped[0] || null;
+      return { source: "supabase" as const, count: mapped.length, activeCube, cubes: mapped };
+    }
+  }
+
   const cubes = ctx.store.rubikCubes || [];
   const activeCube = cubes.find((c) => c.status === "active_main") || cubes[0] || null;
   return {
+    source: "memory_store" as const,
     count: cubes.length,
     activeCube,
     cubes,
