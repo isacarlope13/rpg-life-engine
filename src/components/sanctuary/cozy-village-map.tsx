@@ -55,6 +55,10 @@ import { InteractiveVillageScene } from "@/components/sanctuary/interactive-vill
 import { CozyButton, CozyCard } from "@/components/cozy/ui";
 import { triggerHaptic } from "@/lib/offline-sync";
 import { safeLocalStorage } from "@/lib/storage-safe";
+import {
+  loadAmbientMotionPreference,
+  saveAmbientMotionPreference,
+} from "@/lib/sanctuary/living-village-engine";
 
 export type VillageWeather = "sunny" | "rain" | "autumn" | "night";
 export type MapViewMode = "landscape" | "grid";
@@ -82,7 +86,9 @@ export function CozyVillageMap({
   onOpenCompanions,
   onSubmitSkillSession,
 }: CozyVillageMapProps) {
-  const [ambientAnimEnabled, setAmbientAnimEnabled] = useState(true);
+  const [ambientAnimEnabled, setAmbientAnimEnabled] = useState<boolean>(() =>
+    loadAmbientMotionPreference()
+  );
   const [viewMode, setViewMode] = useState<MapViewMode>("landscape");
   const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null);
   const [selectedBuildingDetail, setSelectedBuildingDetail] = useState<VillageBuildingDefinition | null>(null);
@@ -352,6 +358,27 @@ export function CozyVillageMap({
             {!isMuted ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
             <span>{!isMuted ? "Sonido Activo" : "Silencio"}</span>
           </button>
+
+          {/* Toggle de Animaciones Reducidas (Persistencia + prefers-reduced-motion) */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !ambientAnimEnabled;
+              setAmbientAnimEnabled(next);
+              saveAmbientMotionPreference(next);
+              triggerHaptic("light");
+            }}
+            aria-pressed={!ambientAnimEnabled}
+            className={`inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] px-3 py-1.5 text-xs font-black shadow-[0_2px_0_#3A2E2B] transition cursor-pointer ${
+              ambientAnimEnabled
+                ? "bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C]"
+                : "bg-[#3A2E2B] text-[#FFFDF8]"
+            }`}
+            title="Alternar animaciones ambientales o modo movimiento reducido"
+          >
+            <span>{ambientAnimEnabled ? "✨" : "⏸️"}</span>
+            <span>{ambientAnimEnabled ? "Movimiento" : "Reducido"}</span>
+          </button>
         </div>
       </div>
 
@@ -391,6 +418,33 @@ export function CozyVillageMap({
         <span className="text-xs font-bold text-[#795548]">
           Mostrando {filteredBuildings.length} de {VILLAGE_BUILDINGS_CATALOG.length} edificios
         </span>
+      </div>
+
+      {/* =========================================================================
+          2B. BARRA DE ACCESO DIRECTO PARA MÓVIL Y TECLADO (1 TOQUE SIN CAMINAR)
+         ========================================================================= */}
+      <div
+        className="flex items-center gap-2 overflow-x-auto pb-1 px-1"
+        role="navigation"
+        aria-label="Accesos rápidos a edificios del pueblo"
+      >
+        <span className="shrink-0 text-[10px] font-black uppercase text-[#795548]">
+          Ir directo:
+        </span>
+        {filteredBuildings.map((b) => (
+          <button
+            key={b.id}
+            type="button"
+            onClick={() => {
+              triggerHaptic("light");
+              onSelectBuilding(b.id, b.domain);
+            }}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] px-3 py-2 min-h-[40px] text-xs font-black text-[#3A2E2B] shadow-[0_2px_0_#3A2E2B] hover:bg-[#E7D69C] active:translate-y-0.5 transition cursor-pointer"
+          >
+            <span>{b.icon}</span>
+            <span>{b.name}</span>
+          </button>
+        ))}
       </div>
 
       {/* =========================================================================
@@ -486,6 +540,7 @@ export function CozyVillageMap({
               setActiveResidentDialogue(res);
             }
           }}
+          onOpenMayorRowan={() => setIsLedgerOpen(true)}
           isEditMode={isEditMode}
           setIsEditMode={setIsEditMode}
         />

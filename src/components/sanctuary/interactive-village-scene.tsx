@@ -37,6 +37,15 @@ import {
 import { VillagePixelBuilding } from "@/components/cozy/village-pixel-building";
 import { triggerHaptic } from "@/lib/offline-sync";
 import type { VillageWeather } from "@/components/sanctuary/cozy-village-map";
+import { getSkillByBuildingId } from "@/lib/ai/building-skills-registry";
+import {
+  DEFAULT_EXPLORER_POS,
+  clampExplorerPosition,
+  stepExplorerPosition,
+  findNearestBuilding,
+  loadDisabledAiSkills,
+  type ExplorerPosition,
+} from "@/lib/sanctuary/living-village-engine";
 
 const WORLD_WIDTH = 1400;
 const WORLD_HEIGHT = 900;
@@ -56,6 +65,7 @@ interface InteractiveVillageSceneProps {
   onSelectBuildingDetail: (building: VillageBuildingDefinition | null) => void;
   onEnterBuilding: (buildingId: string, domain: SkillDomain) => void;
   onSelectResident?: (resident: VillageResident) => void;
+  onOpenMayorRowan?: () => void;
   isEditMode: boolean;
   setIsEditMode: (editing: boolean) => void;
 }
@@ -75,6 +85,7 @@ export function InteractiveVillageScene({
   onSelectBuildingDetail,
   onEnterBuilding,
   onSelectResident,
+  onOpenMayorRowan,
   isEditMode,
   setIsEditMode,
 }: InteractiveVillageSceneProps) {
@@ -110,7 +121,105 @@ export function InteractiveVillageScene({
   const [isPlacementValid, setIsPlacementValid] = useState<boolean>(true);
   const [collisionWarning, setCollisionWarning] = useState<string | null>(null);
 
+  // 5. Pueblo Vivo 5.0: Avatar explorador opcional, pausa off-screen y presencia de Rowan
+  const [explorerPos, setExplorerPos] = useState<ExplorerPosition>(DEFAULT_EXPLORER_POS);
+  const [walkMode, setWalkMode] = useState<boolean>(false);
+  const [isSceneVisible, setIsSceneVisible] = useState<boolean>(true);
+  const [rowanSpeechOpen, setRowanSpeechOpen] = useState<boolean>(false);
+  const [disabledAiSkills, setDisabledAiSkills] = useState<string[]>([]);
+
+  useEffect(() => {
+    setDisabledAiSkills(loadDisabledAiSkills());
+  }, []);
+
+  // Pausar animaciones CSS cuando el mapa está fuera de pantalla (rendimiento móvil/desktop)
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined" || !containerRef.current) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]) setIsSceneVisible(entries[0].isIntersecting);
+      },
+      { threshold: 0.05 }
+    );
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, [containerRef]);
+
   const activeBuildingIds = React.useMemo(() => buildings.map((b) => b.id), [buildings]);
+
+  const nearbyBuilding = React.useMemo(
+    () => findNearestBuilding(explorerPos, buildings, customPositions, 155),
+    [explorerPos, buildings, customPositions]
+  );
+
+  const handleStepExplorer = useCallback(
+    (dir: ExplorerPosition["facing"]) => {
+      setExplorerPos((prev) => {
+        const next = stepExplorerPosition(prev, dir, 48);
+        centerOn(next.x, next.y);
+        return next;
+      });
+      triggerHaptic("light");
+    },
+    [centerOn]
+  );
+
+  const handleSceneKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest("input, textarea, select, [contenteditable='true']")) {
+        return;
+      }
+      if (walkMode && !isEditMode) {
+        if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+          e.preventDefault();
+          handleStepExplorer("left");
+          return;
+        }
+        if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+          e.preventDefault();
+          handleStepExplorer("right");
+          return;
+        }
+        if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") {
+          e.preventDefault();
+          handleStepExplorer("up");
+          return;
+        }
+        if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+          e.preventDefault();
+          handleStepExplorer("down");
+          return;
+        }
+        if (e.key === "Enter" && nearbyBuilding) {
+          e.preventDefault();
+          triggerHaptic("medium");
+          onEnterBuilding(nearbyBuilding.building.id, nearbyBuilding.building.domain);
+          return;
+        }
+      }
+      cameraHandlers.onKeyDown(e);
+    },
+    [walkMode, isEditMode, handleStepExplorer, nearbyBuilding, onEnterBuilding, cameraHandlers]
+  );
+
+  const handleTerrainDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (isEditMode || !containerRef.current) return;
+      const target = e.target as HTMLElement;
+      if (target.closest("button, [data-prevent-camera-drag]")) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left - camera.x) / camera.zoom;
+      const worldY = (e.clientY - rect.top - camera.y) / camera.zoom;
+      const clamped = clampExplorerPosition(worldX, worldY);
+      setExplorerPos((prev) => ({
+        ...clamped,
+        facing: clamped.x < prev.x ? "left" : clamped.x > prev.x ? "right" : prev.facing,
+      }));
+      triggerHaptic("light");
+    },
+    [isEditMode, containerRef, camera.x, camera.y, camera.zoom]
+  );
 
   // Centrar en Plaza Central al montar si no hay cámara previa
   useEffect(() => {
@@ -248,14 +357,18 @@ export function InteractiveVillageScene({
       ref={containerRef}
       tabIndex={0}
       role="region"
-      aria-label="Escena interactiva 2D de OakHaven. Usa ratón para arrastrar y zoom con la rueda. En teclado: WASD o flechas para moverte, + y - para zoom."
+      data-ambient-paused={!ambientAnimEnabled || !isSceneVisible ? "true" : "false"}
+      aria-label="Escena interactiva 2D de OakHaven. Usa ratón o dedo para arrastrar, pellizca o usa rueda para zoom. En teclado: WASD o flechas para moverte, + y - para zoom."
       onPointerDown={cameraHandlers.onPointerDown}
       onPointerMove={handleScenePointerMove}
       onPointerUp={handleScenePointerUp}
       onPointerCancel={handleScenePointerUp}
-      onWheel={cameraHandlers.onWheel}
-      onKeyDown={cameraHandlers.onKeyDown}
-      className={`relative w-full h-[620px] sm:h-[720px] overflow-hidden rounded-3xl border-4 border-[#3A2E2B] shadow-[0_12px_0_#3A2E2B] select-none outline-none transition-colors duration-700 ${
+      onTouchStart={cameraHandlers.onTouchStart}
+      onTouchMove={cameraHandlers.onTouchMove}
+      onTouchEnd={cameraHandlers.onTouchEnd}
+      onKeyDown={handleSceneKeyDown}
+      onDoubleClick={handleTerrainDoubleClick}
+      className={`relative w-full h-[540px] sm:h-[680px] overflow-hidden rounded-3xl border-4 border-[#3A2E2B] shadow-[0_12px_0_#3A2E2B] select-none outline-none touch-none transition-colors duration-700 ${
         weather === "sunny"
           ? "bg-[#C4DC9C]"
           : weather === "rain"
@@ -329,11 +442,11 @@ export function InteractiveVillageScene({
             />
             {/* Ondas en el agua animadas */}
             {ambientAnimEnabled && (
-              <>
+              <g className="oakhaven-ripple">
                 <path d="M 1010 390 Q 1025 383, 1040 390" stroke="#FFFDF8" strokeWidth="2.5" strokeLinecap="round" opacity="0.75" fill="none" />
                 <path d="M 890 560 Q 905 553, 920 560" stroke="#FFFDF8" strokeWidth="2.5" strokeLinecap="round" opacity="0.75" fill="none" />
                 <path d="M 780 780 Q 795 773, 810 780" stroke="#FFFDF8" strokeWidth="2.5" strokeLinecap="round" opacity="0.75" fill="none" />
-              </>
+              </g>
             )}
           </g>
 
@@ -422,42 +535,163 @@ export function InteractiveVillageScene({
         </svg>
 
         {/* ===================================================================
-            EFECTOS DE CLIMA Y PARTÍCULAS DEL MUNDO
+            EFECTOS DE CLIMA, ILUMINACIÓN Y PARTÍCULAS GPU (CSS PURO)
            =================================================================== */}
+        <div
+          className={`pointer-events-none absolute inset-0 transition-opacity duration-700 ${
+            weather === "sunny"
+              ? "bg-gradient-to-br from-amber-200/15 via-transparent to-emerald-200/10"
+              : weather === "rain"
+              ? "bg-gradient-to-b from-slate-700/20 via-cyan-900/10 to-slate-800/15"
+              : weather === "autumn"
+              ? "bg-gradient-to-br from-amber-500/15 via-orange-300/10 to-transparent"
+              : "bg-gradient-to-b from-indigo-950/35 via-slate-900/20 to-amber-950/15"
+          }`}
+          aria-hidden="true"
+        />
+
         {ambientAnimEnabled && (
-          <div className="pointer-events-none absolute inset-0 overflow-hidden select-none">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden select-none" aria-hidden="true">
             {weather === "sunny" && (
-              <div className="opacity-30">
-                <div className="absolute top-10 left-20 text-3xl animate-bounce">🍃</div>
-                <div className="absolute top-20 right-40 text-4xl animate-pulse">☀️</div>
-                <div className="absolute bottom-28 left-1/3 text-2xl animate-bounce">✨</div>
-                <div className="absolute bottom-40 right-1/4 text-2xl">🌿</div>
+              <div className="opacity-45">
+                <div className="absolute top-12 left-24 text-3xl oakhaven-drift">☁️</div>
+                <div className="absolute top-20 right-44 text-4xl oakhaven-drift">☁️</div>
+                <div className="absolute bottom-28 left-1/3 text-xl oakhaven-float">✨</div>
+                <div className="absolute bottom-40 right-1/4 text-xl oakhaven-float">🦋</div>
               </div>
             )}
             {weather === "rain" && (
-              <div className="opacity-45">
-                <div className="absolute top-10 left-32 text-3xl animate-pulse">🌧️</div>
-                <div className="absolute top-32 right-64 text-3xl animate-pulse">🌧️</div>
-                <div className="absolute bottom-24 left-1/2 text-2xl">💧</div>
+              <div className="opacity-55">
+                <div className="absolute top-14 left-36 h-8 w-0.5 rounded-full bg-cyan-100 oakhaven-rain" />
+                <div className="absolute top-24 left-1/3 h-9 w-0.5 rounded-full bg-cyan-100 oakhaven-rain" style={{ animationDelay: "0.3s" }} />
+                <div className="absolute top-16 left-2/3 h-8 w-0.5 rounded-full bg-cyan-100 oakhaven-rain" style={{ animationDelay: "0.7s" }} />
+                <div className="absolute top-40 right-48 h-9 w-0.5 rounded-full bg-cyan-100 oakhaven-rain" style={{ animationDelay: "0.5s" }} />
+                <div className="absolute bottom-32 left-1/2 h-8 w-0.5 rounded-full bg-cyan-100 oakhaven-rain" style={{ animationDelay: "0.9s" }} />
               </div>
             )}
             {weather === "autumn" && (
-              <div className="opacity-35">
-                <div className="absolute top-12 left-24 text-3xl animate-bounce">🍂</div>
-                <div className="absolute top-24 right-32 text-3xl">🍁</div>
-                <div className="absolute bottom-16 left-1/2 text-2xl animate-bounce">🍂</div>
+              <div className="opacity-55">
+                <div className="absolute top-14 left-28 text-2xl oakhaven-drift">🍂</div>
+                <div className="absolute top-28 right-36 text-2xl oakhaven-drift" style={{ animationDelay: "1.4s" }}>🍁</div>
+                <div className="absolute bottom-24 left-1/2 text-xl oakhaven-drift" style={{ animationDelay: "2.2s" }}>🍂</div>
               </div>
             )}
             {weather === "night" && (
-              <div className="opacity-55">
-                <div className="absolute top-8 right-32 text-4xl animate-pulse">🌙</div>
-                <div className="absolute top-16 left-32 text-2xl animate-ping duration-1000">✨</div>
-                <div className="absolute top-36 left-1/2 text-xl">⭐</div>
-                <div className="absolute bottom-24 right-1/3 text-2xl">✨</div>
+              <div className="opacity-75">
+                <div className="absolute top-8 right-32 text-3xl oakhaven-float">🌙</div>
+                <div className="absolute top-44 left-[44%] h-2.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_10px_#FDDA24] oakhaven-firefly" />
+                <div className="absolute top-64 left-[56%] h-2 w-2 rounded-full bg-amber-200 shadow-[0_0_10px_#FDDA24] oakhaven-firefly" style={{ animationDelay: "1.2s" }} />
+                <div className="absolute bottom-40 right-[34%] h-2.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_10px_#FDDA24] oakhaven-firefly" style={{ animationDelay: "2.1s" }} />
               </div>
             )}
           </div>
         )}
+
+        {/* ===================================================================
+            PRESIDENTE ROWAN EN PLAZA CENTRAL (0 LLAMADAS GEMINI EN IDLE)
+           =================================================================== */}
+        <div
+          data-prevent-camera-drag
+          style={{
+            position: "absolute",
+            left: "700px",
+            top: "312px",
+            transform: "translate(-50%, -50%)",
+            zIndex: rowanSpeechOpen ? 60 : 28,
+          }}
+          className="flex flex-col items-center select-none"
+        >
+          {rowanSpeechOpen && (
+            <div className="mb-2 w-56 rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-2.5 text-left shadow-[0_5px_0_#3A2E2B] animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-black text-[#314C3C]">🦉 Presidente Rowan</span>
+                <button
+                  type="button"
+                  onClick={() => setRowanSpeechOpen(false)}
+                  className="text-[10px] font-black text-[#795548] hover:text-[#3A2E2B] cursor-pointer"
+                  aria-label="Cerrar saludo de Rowan"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="mt-1 text-[10px] font-medium text-[#5C4033]">
+                {recentSessions.length > 0
+                  ? `${recentSessions.length} registros confirmados en el pueblo. ¿Revisamos tu panorama real?`
+                  : "Plaza en calma. Cuando registres una actividad, la verás reflejada aquí."}
+              </p>
+              {onOpenMayorRowan && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRowanSpeechOpen(false);
+                    onOpenMayorRowan();
+                  }}
+                  className="mt-1.5 w-full rounded-xl border-2 border-[#3A2E2B] bg-[#E7D69C] px-2 py-1 text-[10px] font-black text-[#3A2E2B] hover:bg-[#F2E3B3] cursor-pointer"
+                >
+                  Abrir Centro de Mando ➜
+                </button>
+              )}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("light");
+              setRowanSpeechOpen((prev) => !prev);
+            }}
+            aria-label="Hablar con el Presidente Rowan en la Plaza Central"
+            className={`flex h-11 w-11 items-center justify-center rounded-full border-3 border-[#3A2E2B] bg-[#E7D69C] text-xl shadow-[0_3px_0_#3A2E2B] hover:scale-110 active:scale-95 transition-transform cursor-pointer ${
+              ambientAnimEnabled ? "oakhaven-float" : ""
+            }`}
+            title="Presidente Rowan — Centro de Mando de OakHaven"
+          >
+            🦉
+          </button>
+          <span className="mt-0.5 rounded-md border border-[#3A2E2B]/30 bg-[#FFFDF8]/90 px-1.5 py-0.2 text-[9px] font-black text-[#3A2E2B]">
+            Rowan
+          </span>
+        </div>
+
+        {/* ===================================================================
+            AVATAR EXPLORADOR CAMINABLE (OPCIONAL — NUNCA BLOQUEA ACCESO DIRECTO)
+           =================================================================== */}
+        <div
+          data-prevent-camera-drag
+          style={{
+            position: "absolute",
+            left: `${explorerPos.x}px`,
+            top: `${explorerPos.y}px`,
+            transform: "translate(-50%, -50%)",
+            zIndex: 35,
+            transition: ambientAnimEnabled ? "left 160ms ease-out, top 160ms ease-out" : "none",
+          }}
+          className="flex flex-col items-center pointer-events-auto select-none"
+        >
+          {nearbyBuilding && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("medium");
+                onEnterBuilding(nearbyBuilding.building.id, nearbyBuilding.building.domain);
+              }}
+              className="mb-1 rounded-full border-2 border-[#3A2E2B] bg-[#FDDA24] px-2.5 py-0.5 text-[10px] font-black text-[#3A2E2B] shadow-[0_2px_0_#3A2E2B] hover:bg-[#FDE24F] whitespace-nowrap cursor-pointer"
+            >
+              {nearbyBuilding.building.icon} Entrar a {nearbyBuilding.building.name} {walkMode ? "(Enter)" : "➜"}
+            </button>
+          )}
+          <div
+            className={`flex h-9 w-9 items-center justify-center rounded-full border-3 border-[#3A2E2B] bg-[#314C3C] text-base text-[#FFFDF8] shadow-[0_3px_0_#1A2B20] ${
+              ambientAnimEnabled ? "oakhaven-float" : ""
+            }`}
+            title="Tu avatar explorador (doble clic en el terreno o activa modo Explorar)"
+            aria-label="Avatar explorador del jugador"
+          >
+            🧭
+          </div>
+          <span className="mt-0.5 rounded bg-[#3A2E2B]/80 px-1.5 text-[8px] font-black text-[#FFFDF8]">
+            Tú
+          </span>
+        </div>
 
         {/* ===================================================================
             CAPA DE EDIFICIOS PIXEL ART (EXPLORABLES O ARRASTRABLES)
@@ -565,6 +799,11 @@ export function InteractiveVillageScene({
                   isHovered={isHovered && !isEditMode}
                   isSelected={isSelected}
                   isSessionActive={isBuildingSessionActive}
+                  ambientAnimEnabled={ambientAnimEnabled}
+                  isAiMuted={Boolean(
+                    getSkillByBuildingId(building.id) &&
+                      disabledAiSkills.includes(getSkillByBuildingId(building.id)!.skillId)
+                  )}
                   onInspect={() => !isEditMode && onSelectBuildingDetail(building)}
                   onEnter={() => !isEditMode && onEnterBuilding(building.id, building.domain)}
                   onSelectResident={onSelectResident}
@@ -604,7 +843,7 @@ export function InteractiveVillageScene({
          ========================================================================= */}
       <div
         data-prevent-camera-drag
-        className="pointer-events-auto absolute bottom-4 right-4 z-40 flex flex-col items-end gap-2"
+        className="pointer-events-auto absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-40 flex flex-col items-end gap-2 max-w-[calc(100%-1.5rem)]"
       >
         {/* Banner de colisión durante arrastre */}
         {isEditMode && collisionWarning && (
@@ -615,7 +854,28 @@ export function InteractiveVillageScene({
         )}
 
         {/* Barra flotante de controles */}
-        <div className="flex items-center gap-1.5 rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8]/95 p-1.5 shadow-[0_4px_0_#3A2E2B] backdrop-blur-xs">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8]/95 p-1.5 shadow-[0_4px_0_#3A2E2B] backdrop-blur-xs">
+          {/* Modo Caminar / Explorar (opcional) */}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("light");
+              setWalkMode((prev) => !prev);
+            }}
+            aria-pressed={walkMode}
+            className={`flex h-9 items-center gap-1 rounded-xl border-2 px-2.5 text-xs font-black transition cursor-pointer ${
+              walkMode
+                ? "border-[#1A2B20] bg-[#314C3C] text-[#FFFDF8]"
+                : "border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C]"
+            }`}
+            title="Activar navegación con avatar (WASD/Flechas o D-pad táctil)"
+          >
+            <span>🧭</span>
+            <span className="hidden sm:inline">{walkMode ? "Caminando" : "Caminar"}</span>
+          </button>
+
+          <div className="h-5 w-[2px] bg-[#3A2E2B]/20 mx-0.5" />
+
           {/* Zoom In */}
           <button
             type="button"
@@ -623,8 +883,9 @@ export function InteractiveVillageScene({
               triggerHaptic("light");
               zoomIn();
             }}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C] transition cursor-pointer"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C] transition cursor-pointer"
             title="Acercar cámara (+)"
+            aria-label="Acercar cámara"
           >
             <Plus className="h-4 w-4" />
           </button>
@@ -641,8 +902,9 @@ export function InteractiveVillageScene({
               triggerHaptic("light");
               zoomOut();
             }}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C] transition cursor-pointer"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C] transition cursor-pointer"
             title="Alejar cámara (-)"
+            aria-label="Alejar cámara"
           >
             <Minus className="h-4 w-4" />
           </button>
@@ -656,8 +918,9 @@ export function InteractiveVillageScene({
               triggerHaptic("light");
               centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2 - 40, 1.0);
             }}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C] transition cursor-pointer"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C] transition cursor-pointer"
             title="Centrar en Plaza Central (Espacio)"
+            aria-label="Centrar en Plaza Central"
           >
             <Crosshair className="h-4 w-4" />
           </button>
@@ -709,6 +972,64 @@ export function InteractiveVillageScene({
           )}
         </div>
       </div>
+
+      {/* D-Pad Táctil Accesible cuando Walk Mode está activo (esquina superior izquierda en móvil para 0px de solapamiento con el HUD inferior) */}
+      {walkMode && !isEditMode && (
+        <div
+          data-prevent-camera-drag
+          className="pointer-events-auto absolute top-3 left-3 sm:top-auto sm:bottom-4 sm:left-4 z-40 grid grid-cols-3 gap-1 rounded-2xl border-3 border-[#3A2E2B] bg-[#FFFDF8]/95 p-1.5 shadow-[0_4px_0_#3A2E2B]"
+          aria-label="Controles direccionales del avatar"
+        >
+          <span />
+          <button
+            type="button"
+            onClick={() => handleStepExplorer("up")}
+            aria-label="Caminar hacia arriba"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-xs font-black text-[#3A2E2B] active:scale-95 cursor-pointer"
+          >
+            ▲
+          </button>
+          <span />
+          <button
+            type="button"
+            onClick={() => handleStepExplorer("left")}
+            aria-label="Caminar hacia la izquierda"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-xs font-black text-[#3A2E2B] active:scale-95 cursor-pointer"
+          >
+            ◀
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setExplorerPos(DEFAULT_EXPLORER_POS);
+              centerOn(DEFAULT_EXPLORER_POS.x, DEFAULT_EXPLORER_POS.y);
+            }}
+            aria-label="Volver a la plaza central"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#E7D69C] text-xs font-black text-[#3A2E2B] active:scale-95 cursor-pointer"
+            title="Volver a Plaza Central"
+          >
+            🧭
+          </button>
+          <button
+            type="button"
+            onClick={() => handleStepExplorer("right")}
+            aria-label="Caminar hacia la derecha"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-xs font-black text-[#3A2E2B] active:scale-95 cursor-pointer"
+          >
+            ▶
+          </button>
+          <span />
+          <button
+            type="button"
+            onClick={() => handleStepExplorer("down")}
+            aria-label="Caminar hacia abajo"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-xs font-black text-[#3A2E2B] active:scale-95 cursor-pointer"
+          >
+            ▼
+          </button>
+          <span />
+        </div>
+      )}
 
       {/* Guía visual en modo edición */}
       {isEditMode && (

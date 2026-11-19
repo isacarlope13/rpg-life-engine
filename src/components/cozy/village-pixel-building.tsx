@@ -13,6 +13,8 @@ interface VillagePixelBuildingProps {
   isHovered: boolean;
   isSelected?: boolean;
   isSessionActive?: boolean;
+  ambientAnimEnabled?: boolean;
+  isAiMuted?: boolean;
   onInspect: () => void;
   onEnter: () => void;
   onSelectResident?: (resident: VillageResident) => void;
@@ -32,6 +34,8 @@ export function VillagePixelBuilding({
   isHovered,
   isSelected = false,
   isSessionActive = false,
+  ambientAnimEnabled = true,
+  isAiMuted = false,
   onInspect,
   onEnter,
   onSelectResident,
@@ -295,9 +299,12 @@ export function VillagePixelBuilding({
           </div>
         </div>
 
-        {/* 3. AVATAR DEL RESIDENTE JUNTO A LA PUERTA */}
+        {/* 3. AVATAR DEL RESIDENTE JUNTO A LA PUERTA (IDLE ANIMADO + REACCIÓN + SILENCIO IA) */}
         {resident && (
           <span
+            role="button"
+            tabIndex={0}
+            aria-label={`Hablar con ${resident.name} (${resident.title})${isAiMuted ? " — IA silenciada" : ""}`}
             onClick={(e) => {
               e.stopPropagation();
               triggerHaptic("light");
@@ -305,12 +312,40 @@ export function VillagePixelBuilding({
                 onSelectResident(resident);
               }
             }}
-            className={`absolute -bottom-1 -right-2 z-30 flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#3A2E2B] bg-[#FFFDF8] text-sm shadow-[0_2px_0_#3A2E2B] hover:scale-125 transition-transform ${
-              isSessionActive ? "ring-2 ring-amber-400 animate-bounce" : ""
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                triggerHaptic("light");
+                if (onSelectResident) {
+                  onSelectResident(resident);
+                }
+              }
+            }}
+            className={`absolute -bottom-1 -right-2 z-30 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#3A2E2B] bg-[#FFFDF8] text-sm shadow-[0_2px_0_#3A2E2B] hover:scale-125 active:scale-95 transition-transform ${
+              isSessionActive
+                ? "ring-2 ring-amber-400 oakhaven-float"
+                : ambientAnimEnabled
+                ? "oakhaven-float"
+                : ""
             }`}
-            title={`Hablar con ${resident.name} (${resident.species})${isSessionActive ? " — ¡Acompañándote en tu sesión!" : ""}`}
+            title={`Hablar con ${resident.name} (${resident.species})${
+              isAiMuted
+                ? " — IA silenciada"
+                : isSessionActive
+                ? " — ¡Acompañándote en tu sesión!"
+                : ""
+            }`}
           >
-            {resident.avatar}
+            <span>{resident.avatar}</span>
+            {isAiMuted && (
+              <span
+                className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#3A2E2B] text-[8px] text-[#FFFDF8]"
+                title="Especialista IA silenciado"
+              >
+                🔇
+              </span>
+            )}
           </span>
         )}
       </button>

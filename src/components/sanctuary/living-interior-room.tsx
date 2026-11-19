@@ -20,6 +20,7 @@ import { CozyButton } from "@/components/cozy/ui";
 import { BuildingSpecialistPanel } from "@/components/sanctuary/building-specialist-panel";
 import { BuildingLibraryPanel } from "@/components/sanctuary/building-library-panel";
 import { triggerHaptic } from "@/lib/offline-sync";
+import { getInteriorRoomTheme } from "@/lib/sanctuary/living-village-engine";
 
 export interface InteriorStationDefinition {
   id: string;
@@ -129,6 +130,8 @@ export function LivingInteriorRoom({
   }, [handleKeyDown]);
 
   const activeStation = stations.find((s) => s.id === activeStationId) || stations[0];
+  const interiorTheme = getInteriorRoomTheme(buildingId);
+  const floorPatternId = `living_floor_${buildingId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   return (
     <div className="space-y-5 text-[#3A2E2B] font-sans antialiased">
@@ -227,38 +230,95 @@ export function LivingInteriorRoom({
       </div>
 
       {/* =========================================================================
-          2. ESCENARIO 2D COZY: MOBILIARIO Y ESTACIONES INTERACTIVAS (HOTSPOTS)
+          2. ESCENARIO 2D COZY: HABITACIÓN TEMÁTICA Y ESTACIONES INTERACTIVAS
          ========================================================================= */}
-      <div className="relative rounded-3xl border-4 border-[#3A2E2B] bg-[#2C241E] p-4 sm:p-5 shadow-[0_8px_0_#3A2E2B] overflow-hidden select-none">
-        {/* Fondo del interior: paredes de madera y piso entarimado SVG */}
-        <div className="absolute inset-0 pointer-events-none opacity-20">
-          <svg width="100%" height="100%">
+      <div
+        className={`relative rounded-3xl border-4 border-[#3A2E2B] bg-gradient-to-b ${interiorTheme.wallGradient} p-4 sm:p-5 shadow-[0_8px_0_#3A2E2B] overflow-hidden select-none`}
+      >
+        {/* Fondo del interior: piso entarimado temático por edificio */}
+        <div className="absolute inset-0 pointer-events-none opacity-25">
+          <svg width="100%" height="100%" aria-hidden="true">
             <defs>
-              <pattern id="living_floor_pattern" width="32" height="32" patternUnits="userSpaceOnUse">
-                <rect width="32" height="32" fill="#5C381E" />
-                <path d="M 0 16 L 32 16 M 16 0 L 16 32" stroke="#3A2E2B" strokeWidth="1.5" />
+              <pattern id={floorPatternId} width="32" height="32" patternUnits="userSpaceOnUse">
+                <rect width="32" height="32" fill={interiorTheme.floorPrimary} />
+                <path d="M 0 16 L 32 16 M 16 0 L 16 32" stroke={interiorTheme.floorLine} strokeWidth="1.5" />
               </pattern>
             </defs>
-            <rect width="100%" height="100%" fill="url(#living_floor_pattern)" />
+            <rect width="100%" height="100%" fill={`url(#${floorPatternId})`} />
           </svg>
         </div>
 
-        {/* Halo de luz cálida de lámparas o chimenea */}
-        <div className="pointer-events-none absolute -top-10 left-1/2 -translate-x-1/2 w-96 h-32 bg-amber-400/20 blur-2xl rounded-full" />
+        {/* Halo de luz cálida temático */}
+        <div
+          className={`pointer-events-none absolute -top-10 left-1/2 -translate-x-1/2 w-96 h-32 ${interiorTheme.accentGlow} blur-2xl rounded-full`}
+        />
 
-        {/* Barra superior del escenario con indicador de estación y atajos */}
-        <div className="relative z-10 flex items-center justify-between pb-3 text-xs font-black text-amber-200">
+        {/* Barra superior de la habitación con mobiliario interactivo */}
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 pb-3 text-xs font-black text-amber-200">
           <div className="flex items-center gap-1.5">
             <span>🛋️</span>
-            <span>Estaciones de Trabajo de la Habitación:</span>
+            <span>{interiorTheme.roomLabel}</span>
           </div>
-          <span className="text-[10px] text-amber-200/70 hidden sm:inline">
-            Usa las teclas [1-{stations.length}] para alternar rápidamente
-          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {interiorTheme.props.map((prop, pIdx) => {
+              const linkedStation = stations[pIdx % Math.max(1, stations.length)];
+              return (
+                <button
+                  key={prop.label}
+                  type="button"
+                  onClick={() => {
+                    if (linkedStation) {
+                      triggerHaptic("light");
+                      onSelectStation(linkedStation.id);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-200/35 bg-[#FFFDF8]/10 px-2.5 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-[#FFFDF8]/20 transition cursor-pointer"
+                  title={linkedStation ? `Ir a ${linkedStation.name}` : prop.label}
+                >
+                  <span>{prop.icon}</span>
+                  <span>{prop.label}</span>
+                </button>
+              );
+            })}
+            <span className="text-[10px] text-amber-200/70 hidden md:inline ml-1">
+              Teclas [1-{stations.length}]
+            </span>
+          </div>
+        </div>
+
+        {/* ALTERNATIVA ACCESIBLE PARA MÓVIL: BARRA DE ESTACIONES TÁCTILES (44px) */}
+        <div
+          className="relative z-10 mb-3 flex items-center gap-2 overflow-x-auto pb-1 sm:hidden"
+          role="tablist"
+          aria-label="Estaciones rápidas en móvil"
+        >
+          {stations.map((st) => {
+            const isSelected = st.id === activeStationId;
+            return (
+              <button
+                key={`mob-${st.id}`}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                onClick={() => {
+                  triggerHaptic("medium");
+                  onSelectStation(st.id);
+                }}
+                className={`shrink-0 inline-flex items-center gap-1.5 rounded-2xl border-2 px-3 min-h-[44px] text-xs font-black transition cursor-pointer ${
+                  isSelected
+                    ? "border-[#FDDA24] bg-[#FFFDF8] text-[#3A2E2B] shadow-[0_3px_0_#3A2E2B]"
+                    : "border-[#3A2E2B] bg-[#F4EEDC]/90 text-[#3A2E2B]"
+                }`}
+              >
+                <span>{st.icon}</span>
+                <span>{st.shortName || st.name}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* GRID DE ESTACIONES DE TRABAJO (HOTSPOTS INTERACTIVOS) */}
-        <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 sm:gap-3">
+        <div className="relative z-10 hidden sm:grid sm:grid-cols-3 md:grid-cols-5 gap-2.5 sm:gap-3">
           {stations.map((st, idx) => {
             const isSelected = st.id === activeStationId;
             const hotkeyNum = idx + 1;
@@ -327,7 +387,7 @@ export function LivingInteriorRoom({
           {resident && (
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-300/40 bg-amber-900/50 text-base shadow-xs">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-300/40 bg-amber-900/50 text-base shadow-xs oakhaven-float">
                   {resident.avatar}
                 </span>
                 <div>
