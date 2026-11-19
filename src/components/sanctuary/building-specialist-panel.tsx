@@ -31,13 +31,23 @@ interface SpecialistMessage {
 
 const SUGGESTIONS_BY_BUILDING: Record<string, string[]> = {
   banco_oakhaven: ["¿Cuánto gasté esta semana?", "¿Cuál fue mi último gasto registrado?"],
-  biblioteca: ["¿Cuánto he estudiado recientemente?", "¿Cuántas tarjetas SM-2 tengo?"],
+  biblioteca: [
+    "¿Qué debería repasar hoy?",
+    "Explícame el tema de este documento",
+    "Hazme un examen de 3 preguntas",
+    "Crea flashcards de este documento",
+  ],
   oficina: ["¿Qué proyectos de trabajo tengo pendientes?", "¿Cuál fue mi última sesión de trabajo?"],
   gimnasio: ["¿Cuándo entrené por última vez?", "¿Cómo va mi constancia en el gym?"],
   club_puzzles: ["¿Cuál fue mi último récord de cubos?", "¿Cuál fue mi último solve?"],
   libreria: ["¿Cuál fue mi último libro registrado?", "¿Qué libro terminé más recientemente?"],
   cine: ["¿Qué serie estoy viendo?", "Agrega la película \"Mi Vecino Totoro\""],
-  atelier: ["¿En qué proyecto de crochet trabajé por última vez?", "Crea un proyecto \"Manta Cozy\""],
+  atelier: [
+    "¿En qué vuelta quedé?",
+    "Explícame pb, aum y dism",
+    "¿Cuánto hilo podría necesitar?",
+    "Prepara mi sesión de crochet",
+  ],
 };
 
 const DISABLED_SKILLS_KEY = "oakhaven_disabled_ai_skills_v1";
@@ -65,10 +75,30 @@ export function BuildingSpecialistPanel({
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [disabledSkills, setDisabledSkills] = useState<string[]>([]);
+  const [buildingDocs, setBuildingDocs] = useState<Array<{ id: string; title: string; resource_type?: string }>>([]);
+  const [selectedResourceId, setSelectedResourceId] = useState<string>("");
 
   useEffect(() => {
     setDisabledSkills(readDisabledSkills());
   }, []);
+
+  useEffect(() => {
+    if (!isOpen || (buildingId !== "atelier" && buildingId !== "biblioteca")) return;
+    fetch(`/api/resources?buildingId=${encodeURIComponent(buildingId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.synced && Array.isArray(data.resources)) {
+          setBuildingDocs(
+            data.resources.map((r: Record<string, unknown>) => ({
+              id: String(r.id),
+              title: String(r.title || r.original_filename || "Documento"),
+              resource_type: r.resource_type ? String(r.resource_type) : undefined,
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+  }, [isOpen, buildingId]);
 
   if (!skill || skill.buildingId === "ayuntamiento") return null;
 
@@ -109,6 +139,7 @@ export function BuildingSpecialistPanel({
           message: text,
           history: nextHistory.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
           disabled_skill_ids: disabledSkills,
+          selected_resource_id: selectedResourceId || undefined,
           local_snapshot: {
             cinemaEntries: readCinemaEntriesSafe(sessionOwner),
             localPatternProjectsCount: Object.keys(readAtelierPatternsSafe(sessionOwner)).length,
@@ -161,6 +192,23 @@ export function BuildingSpecialistPanel({
           body: JSON.stringify(proposal.payload),
         });
         if (!res.ok) throw new Error("No se pudo crear el proyecto en el servidor.");
+      } else if (
+        proposal.actionType === "plan_study_block" &&
+        proposal.payload.action === "add_spaced_card_batch" &&
+        Array.isArray(proposal.payload.cards)
+      ) {
+        for (const card of proposal.payload.cards as Array<{ prompt: string; reflection: string; source: string }>) {
+          await fetch("/api/shortcuts/skill-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "add_spaced_card",
+              prompt: card.prompt,
+              reflection: card.reflection,
+              source: card.source,
+            }),
+          });
+        }
       }
 
       setMessages((prev) =>
@@ -225,6 +273,26 @@ export function BuildingSpecialistPanel({
               </button>
             </div>
           </div>
+
+          {(buildingId === "atelier" || buildingId === "biblioteca") && buildingDocs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#3A2E2B]/25 bg-[#F4EEDC] px-2.5 py-1.5 text-[10px]">
+              <span className="font-black text-[#3A2E2B]">
+                {buildingId === "atelier" ? "📜 Patrón a consultar:" : "📚 Documento a estudiar:"}
+              </span>
+              <select
+                value={selectedResourceId}
+                onChange={(e) => setSelectedResourceId(e.target.value)}
+                className="flex-1 rounded-lg border border-[#3A2E2B]/30 bg-[#FFFDF8] px-2 py-1 text-[10px] font-bold text-[#3A2E2B] outline-none"
+              >
+                <option value="">Ninguno seleccionado (consulta general)</option>
+                {buildingDocs.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {suggestions.length > 0 && (
             <div className="flex flex-wrap gap-1.5">

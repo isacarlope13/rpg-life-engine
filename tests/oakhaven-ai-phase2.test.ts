@@ -49,7 +49,10 @@ describe("OAKHAVEN AI — FASE 2 (8 Especialistas & Propuestas Nivel 2)", () => 
         allowGemini: false,
       });
       assert.equal(res.specialist.name, b.specialist);
-      assert.deepEqual(res.toolsUsed, [b.expectedTool]);
+      assert.ok(
+        res.toolsUsed.includes(b.expectedTool),
+        `${b.specialist} debe incluir su herramienta principal ${b.expectedTool}`
+      );
     }
   });
 

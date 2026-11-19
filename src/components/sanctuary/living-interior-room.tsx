@@ -18,6 +18,7 @@ import type { SkillDomain } from "@/types/rpg";
 import type { VillageResident } from "@/lib/sanctuary/village-tiers";
 import { CozyButton } from "@/components/cozy/ui";
 import { BuildingSpecialistPanel } from "@/components/sanctuary/building-specialist-panel";
+import { BuildingLibraryPanel } from "@/components/sanctuary/building-library-panel";
 import { triggerHaptic } from "@/lib/offline-sync";
 
 export interface InteriorStationDefinition {
@@ -341,7 +342,10 @@ export function LivingInteriorRoom({
               </p>
             </div>
           )}
-          <BuildingSpecialistPanel buildingId={buildingId} avatar={resident?.avatar || icon} />
+          <div className="flex flex-col gap-2">
+            <BuildingSpecialistPanel buildingId={buildingId} avatar={resident?.avatar || icon} />
+            <BuildingLibraryPanel buildingId={buildingId} />
+          </div>
         </div>
       </div>
 

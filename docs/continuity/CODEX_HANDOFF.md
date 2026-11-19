@@ -1,11 +1,14 @@
-# CODEX HANDOFF — OAKHAVEN AI FASES 1 Y 2 COMPLETADAS (2026-11-19)
+# CODEX HANDOFF — OAKHAVEN AI RELEASE 2.3 (2026-11-19)
 
-- **Estado**: **OakHaven AI Fase 1** desplegada en `main` (`962b5ba`) y **Fase 2** implementada localmente y lista para verificación/despliegue.
-- **Implementado en Fase 2**:
-  - `src/lib/ai/specialist-engine.ts`: Motor de los 8 especialistas por edificio con aislamiento estricto de herramientas por dominio, propuestas Nivel 2 con `requiresConfirmation: true`, bloqueo Nivel 3 e interruptor individual por skill.
-  - `src/app/api/ai/specialist/chat/route.ts`: Endpoint autenticado `POST /api/ai/specialist/chat` con rate limiting y validación.
-  - `src/app/api/resources/route.ts`: Endpoint autenticado `GET/POST/DELETE /api/resources` con validación estricta de `RESOURCE_CONTRACT_BY_BUILDING` (propietario, categoría, MIME, tamaño) sobre `building_resources`.
-  - `src/components/sanctuary/building-specialist-panel.tsx` integrado en `src/components/sanctuary/living-interior-room.tsx`: los 8 edificios definitivos (`Banco`, `Estudio`, `Trabajo`, `Gym`, `Cubos`, `Lectura`, `Cine`, `Crochet`) tienen acceso directo a su especialista con propuestas Nivel 2 confirmables e interruptor individual.
-  - `tests/oakhaven-ai-phase2.test.ts`: Suite de pruebas Fase 2.
-- **Pendiente del usuario en Supabase Dashboard**:
-  - Ejecutar `supabase/migrations/20261119_oakhaven_ai_phase1_sync.sql` en SQL Editor para activar persistencia en la nube de `cinema_entries` y `building_resources`.
+- **Estado**: **`LISTO PARA REVISIÓN MANUAL`** en rama `release/oakhaven-ai-phase2-phase3` (sin `push`, sin `merge` a `main`, sin despliegue automático, sin iniciar Fase 4).
+- **Informe principal**: `docs/ai/OAKHAVEN_AI_RELEASE_2_3.md`.
+- **Resultados QA verificados**:
+  - `npx tsc --noEmit`: **APROBADO** (`0` errores).
+  - `npm test`: **APROBADO** (**309 / 309 pruebas aprobadas**, `0` fallos, `10` suites).
+  - `npm run build`: **APROBADO** (exit code `0`, `✓ Compiled successfully`, `33/33` páginas estáticas y empaquetado `.next/standalone` completo).
+  - Supabase (solo lectura): `cinema_entries`, `building_resources` (columnas Fase 2), RLS activo y bucket `oakhaven-private-resources` (`public: false`) verificados en vivo.
+- **Mejora adicional integrada en Release 2.3**:
+  - Soporte `GET /api/resources?archivedOnly=1` + UI de **"Ver recursos archivados / Restaurar"** en `BuildingLibraryPanel` para completar el ciclo reversible de archivado y restauración sin duplicados.
+  - Nueva suite `tests/oakhaven-ai-release-2-3.test.ts` cubriendo Hitos 5–8.
+- **Siguiente paso (esperando autorización explícita del usuario)**:
+  - Ejecutar la prueba manual autenticada en navegador (Sección I de `OAKHAVEN_AI_RELEASE_2_3.md`), aprobar merge a `main` + `git push origin main`, y solo entonces iniciar Fase 4.
