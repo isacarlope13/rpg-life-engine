@@ -708,6 +708,10 @@ export function CozyVillageMap({
         recentSessions={recentSessions}
         activeBooksCount={activeBooksCount}
         activeKnittingProjectsCount={activeKnittingProjectsCount}
+        onOpenBuilding={(buildingId) => {
+          const target = VILLAGE_BUILDINGS_CATALOG.find((b) => b.id === buildingId);
+          onSelectBuilding(buildingId, target?.domain || "general");
+        }}
       />
 
       {/* MODAL DIARIO DE MISIONES VECINALES */}

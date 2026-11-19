@@ -85,7 +85,28 @@ export function CinemaBuilding({ onClose }: CinemaBuildingProps) {
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
-    setEntries(readCinemaEntriesSafe(sessionOwner));
+    const local = readCinemaEntriesSafe(sessionOwner);
+    setEntries(local);
+    let cancelled = false;
+    fetch("/api/cinema")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.synced || !Array.isArray(data.entries)) return;
+        // Regla segura: nunca sobrescribir registros locales con una respuesta vacía del servidor
+        if (data.entries.length > 0) {
+          const remoteIds = new Set((data.entries as CinemaEntry[]).map((e) => e.id));
+          const localOnly = local.filter((l) => !remoteIds.has(l.id));
+          const merged = [...(data.entries as CinemaEntry[]), ...localOnly];
+          setEntries(merged);
+          saveCinemaEntriesSafe(sessionOwner, merged);
+        }
+      })
+      .catch(() => {
+        // Silencioso: conserva datos locales sin errores
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [sessionOwner]);
 
   const persistEntries = (next: CinemaEntry[], successMsg?: string) => {
@@ -133,6 +154,23 @@ export function CinemaBuilding({ onClose }: CinemaBuildingProps) {
       [created, ...entries],
       `${KIND_META[kind].icon} "${created.title}" agregada a tu Cine Boutique.`
     );
+    // Sincronización en segundo plano con Supabase (si la migración ya está aplicada)
+    fetch("/api/cinema", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(created),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.synced && data.entry?.id) {
+          setEntries((prev) => {
+            const replaced = prev.map((item) => (item.id === created.id ? data.entry : item));
+            saveCinemaEntriesSafe(sessionOwner, replaced);
+            return replaced;
+          });
+        }
+      })
+      .catch(() => {});
     setTitle("");
     setFavoriteSongOrScene("");
     setNotes("");
@@ -148,12 +186,29 @@ export function CinemaBuilding({ onClose }: CinemaBuildingProps) {
       next,
       updated ? `📺 "${updated.title}" → T${updated.season} E${updated.episode}` : undefined
     );
+    if (updated) {
+      fetch("/api/cinema", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: updated.id,
+          status: updated.status,
+          season: updated.season,
+          episode: updated.episode,
+        }),
+      }).catch(() => {});
+    }
   };
 
   const handleChangeStatus = (entryId: string, nextStatus: CinemaEntryStatus) => {
     triggerHaptic("light");
     const next = updateCinemaEntryStatus(entries, entryId, nextStatus);
     persistEntries(next, `🎟️ Estado actualizado a ${STATUS_LABELS[nextStatus]}.`);
+    fetch("/api/cinema", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: entryId, status: nextStatus }),
+    }).catch(() => {});
   };
 
   const handleRemoveEntry = (entryId: string) => {
@@ -162,6 +217,7 @@ export function CinemaBuilding({ onClose }: CinemaBuildingProps) {
       entries.filter((e) => e.id !== entryId),
       "Obra retirada de tu cartelera."
     );
+    fetch(`/api/cinema?id=${encodeURIComponent(entryId)}`, { method: "DELETE" }).catch(() => {});
   };
 
   const handlePickRandomWatchlist = () => {
