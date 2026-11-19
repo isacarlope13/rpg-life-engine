@@ -451,19 +451,20 @@ export async function getCubeSolveHistory(ctx: MayorToolContext, cubeType: Rubik
 
 export async function getRegisteredCubes(ctx: MayorToolContext) {
   if (ctx.isSupabaseConfigured && ctx.db) {
+    // Columnas reales de public.rubik_cubes (20261109_v3_5_complete_engine_sync.sql)
     const { data, error } = await ctx.db
       .from("rubik_cubes")
-      .select("id, cube_type, brand, model_name, status, custom_notes, maintenance_needs")
+      .select("id, cube_id, cube_type, brand, model, is_favorite")
       .eq("user_id", ctx.authenticatedUserId)
       .limit(30);
 
     if (!error && Array.isArray(data) && data.length > 0) {
       const mapped = data.map((c) => ({
-        id: String(c.id),
+        id: String(c.cube_id || c.id),
         cube_type: String(c.cube_type || "3x3"),
         brand: String(c.brand || ""),
-        model_name: String(c.model_name || "Cubo"),
-        status: String(c.status || "secondary"),
+        model_name: String(c.model || "Cubo"),
+        status: c.is_favorite ? "active_main" : "secondary",
       }));
       const activeCube = mapped.find((c) => c.status === "active_main") || mapped[0] || null;
       return { source: "supabase" as const, count: mapped.length, activeCube, cubes: mapped };

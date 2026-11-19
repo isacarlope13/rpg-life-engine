@@ -2,11 +2,21 @@
 -- OAKHAVEN FASE 8 — DATA CONTINUITY & MULTI-DEVICE SYNC (BORRADOR ADITIVO)
 -- ============================================================================
 -- IMPORTANTE:
--- 1. Migración 100% ADITIVA y reversible (NO elimina tablas ni datos existentes).
--- 2. EXCLUYE deliberadamente tablas/documentos financieros sensibles.
--- 3. NO ejecutar automáticamente; requiere revisión y aprobación manual del usuario.
--- 4. Compatible hacia atrás con Release 3.0 (el código detecta si las tablas aún no existen).
+-- 1. Migración 100% ADITIVA y re-ejecutable (idempotente). NO elimina tablas ni datos.
+-- 2. EXCLUYE deliberadamente tablas y documentos financieros sensibles.
+-- 3. NO ejecutar automáticamente en producción; requiere aprobación manual del usuario.
+-- 4. Verificada en PostgreSQL aislado (PGlite) con pruebas de idempotencia y RLS.
 -- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.fn_phase8_set_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
 
 -- 1. PILOTO P0: GYM — Series reales de entrenamiento multidispositivo
 CREATE TABLE IF NOT EXISTS public.gym_workout_sets (
@@ -33,6 +43,13 @@ CREATE INDEX IF NOT EXISTS idx_gym_workout_sets_user_performed
   WHERE deleted_at IS NULL;
 
 ALTER TABLE public.gym_workout_sets ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.gym_workout_sets FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.gym_workout_sets TO authenticated;
+
+DROP TRIGGER IF EXISTS trg_gym_workout_sets_updated_at ON public.gym_workout_sets;
+CREATE TRIGGER trg_gym_workout_sets_updated_at
+  BEFORE UPDATE ON public.gym_workout_sets
+  FOR EACH ROW EXECUTE FUNCTION public.fn_phase8_set_updated_at();
 
 DROP POLICY IF EXISTS "gym_workout_sets_select_own" ON public.gym_workout_sets;
 CREATE POLICY "gym_workout_sets_select_own"
@@ -79,6 +96,13 @@ CREATE INDEX IF NOT EXISTS idx_work_projects_user_updated
   WHERE deleted_at IS NULL;
 
 ALTER TABLE public.work_projects ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.work_projects FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.work_projects TO authenticated;
+
+DROP TRIGGER IF EXISTS trg_work_projects_updated_at ON public.work_projects;
+CREATE TRIGGER trg_work_projects_updated_at
+  BEFORE UPDATE ON public.work_projects
+  FOR EACH ROW EXECUTE FUNCTION public.fn_phase8_set_updated_at();
 
 DROP POLICY IF EXISTS "work_projects_select_own" ON public.work_projects;
 CREATE POLICY "work_projects_select_own"
@@ -124,6 +148,13 @@ CREATE INDEX IF NOT EXISTS idx_work_project_tasks_user_project
   WHERE deleted_at IS NULL;
 
 ALTER TABLE public.work_project_tasks ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.work_project_tasks FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.work_project_tasks TO authenticated;
+
+DROP TRIGGER IF EXISTS trg_work_project_tasks_updated_at ON public.work_project_tasks;
+CREATE TRIGGER trg_work_project_tasks_updated_at
+  BEFORE UPDATE ON public.work_project_tasks
+  FOR EACH ROW EXECUTE FUNCTION public.fn_phase8_set_updated_at();
 
 DROP POLICY IF EXISTS "work_project_tasks_select_own" ON public.work_project_tasks;
 CREATE POLICY "work_project_tasks_select_own"
@@ -146,10 +177,17 @@ CREATE POLICY "work_project_tasks_delete_own"
   ON public.work_project_tasks FOR DELETE
   USING (auth.uid() = user_id);
 
--- 3. CUBOS: Columnas aditivas para notas técnicas y control de versión (preserva rubik_solves)
+-- 3. CUBOS: Columnas aditivas compatibles con public.rubik_cubes existente (preserva rubik_solves)
 ALTER TABLE public.rubik_cubes
   ADD COLUMN IF NOT EXISTS tension_notes text NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS lube_notes text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS maintenance_needs text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS custom_notes text NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS algorithms_to_master text NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS sync_version integer NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS sync_version integer NOT NULL DEFAULT 1 CHECK (sync_version >= 1),
   ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+DROP TRIGGER IF EXISTS trg_rubik_cubes_updated_at ON public.rubik_cubes;
+CREATE TRIGGER trg_rubik_cubes_updated_at
+  BEFORE UPDATE ON public.rubik_cubes
+  FOR EACH ROW EXECUTE FUNCTION public.fn_phase8_set_updated_at();
