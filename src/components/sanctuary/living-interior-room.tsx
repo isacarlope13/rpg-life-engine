@@ -44,6 +44,8 @@ export interface LivingInteriorRoomProps {
   activeStationId: string;
   onSelectStation: (stationId: string) => void;
   onClose?: () => void;
+  /** Desactiva atajos 1-9 y Escape (ej. mientras corre el cronómetro WCA en Cubos) */
+  disableHotkeys?: boolean;
   submissionError?: string | null;
   activeSessionBanner?: {
     isActive: boolean;
@@ -77,6 +79,7 @@ export function LivingInteriorRoom({
   activeStationId,
   onSelectStation,
   onClose,
+  disableHotkeys = false,
   submissionError,
   activeSessionBanner,
   metrics = [],
@@ -90,6 +93,7 @@ export function LivingInteriorRoom({
   // Manejo de atajos de teclado (1-5 para seleccionar estaciones, Escape para volver al pueblo)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (disableHotkeys) return;
       // Ignorar si el usuario está escribiendo en un input o textarea
       const target = e.target as HTMLElement;
       if (target.matches("input, textarea, select, [contenteditable='true']")) {
@@ -114,7 +118,7 @@ export function LivingInteriorRoom({
         }
       }
     },
-    [stations, activeStationId, onSelectStation, onClose]
+    [disableHotkeys, stations, activeStationId, onSelectStation, onClose]
   );
 
   useEffect(() => {

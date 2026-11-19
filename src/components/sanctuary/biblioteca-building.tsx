@@ -23,7 +23,8 @@ import type { SpacedRepetitionCard, SkillSessionRecord } from "@/types/rpg";
 import { SpacedRepetitionDuelingWidget } from "@/components/rpg-advanced-widgets";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
-import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
+import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
+import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
@@ -176,8 +177,56 @@ export function BibliotecaBuilding({
     }
   };
 
+  const stations: InteriorStationDefinition[] = [
+    {
+      id: "estudio",
+      name: "Pupitre de Estudio",
+      shortName: "Estudio",
+      icon: "🎓",
+      badge: isActive ? (isPaused ? "⏸️" : "⏱️") : undefined,
+      badgeVariant: isRunning ? "success" : "info",
+      hotkey: "1",
+      description: "Bloques Pomodoro 25/5, Deep Study 50/10 y registro de ejercicios sin distracciones.",
+    },
+    {
+      id: "repasos",
+      name: "Fichero SM-2",
+      shortName: "Repasos SM-2",
+      icon: "🧠",
+      badge: cards.length,
+      hotkey: "2",
+      description: "Duelo de repetición espaciada y creación de tarjetas de memoria activa.",
+    },
+    {
+      id: "materias",
+      name: "Estantería de Materias",
+      shortName: "Materias",
+      icon: "📚",
+      hotkey: "3",
+      description: "Temas activos, recursos de estudio y bóveda de apuntes.",
+    },
+    {
+      id: "historial",
+      name: "Bitácora Académica",
+      shortName: "Historial",
+      icon: "📜",
+      badge: studySessions.length,
+      hotkey: "4",
+      description: "Registro histórico de bloques completados y horas de formación.",
+    },
+    {
+      id: "evolucion",
+      name: "Vitrina de Diplomas",
+      shortName: "Evolución",
+      icon: "✨",
+      badge: progression.tierBadge,
+      hotkey: "5",
+      description: "Progreso visual de la Academia y logros desbloqueados.",
+    },
+  ];
+
   return (
-    <BuildingInteriorShell
+    <LivingInteriorRoom
       submissionError={submissionError}
       buildingId="biblioteca"
       buildingName="La Gran Biblioteca del Erudito"
@@ -185,33 +234,29 @@ export function BibliotecaBuilding({
       districtName="Distrito del Saber"
       icon="🏛️"
       tagline="Atriles de nogal, duelos de memoria espaciada SM-2 y forja de conocimiento duradero."
-      playerLevel={playerLevel}
-      skillLevel={skillLevel}
-      totalGpEarned={totalGpEarned}
-      specificMetrics={[
+      resident={COZY_VILLAGE_RESIDENTS.find((r) => r.id === "lyra")}
+      stations={stations}
+      activeStationId={activeTab}
+      onSelectStation={(tabId) => setActiveTab(tabId as typeof activeTab)}
+      onClose={onClose}
+      activeSessionBanner={{
+        isActive,
+        isPaused,
+        formattedTime,
+        label: `Estudiando "${studySubject}" (${studyMethod})`,
+        onViewSession: () => setActiveTab("estudio"),
+      }}
+      metrics={[
         { label: "Nivel de Edificio", value: progression.tierName },
         { label: "Tarjetas SM-2", value: cards.length },
         { label: "Horas de Estudio", value: `${Math.round(totalStudyMinutes / 60)}h ${totalStudyMinutes % 60}m` },
         { label: "Diplomas / Códice", value: progression.trophies.filter((t) => t.unlocked).length },
       ]}
-      lastSessionSummary={
-        studySubject ? `Continuar estudio de "${studySubject}" (${studyMethod})` : undefined
-      }
-      continueActionLabel="Iniciar bloque de estudio"
-      onContinueLastSession={() => {
-        setActiveTab("estudio");
-        handleStartStudy();
+      roomTheme={{
+        wallColor: "#2D2540",
+        floorPattern: "wood",
+        ambientWarmth: "candlelight",
       }}
-      activeTab={activeTab}
-      tabs={[
-        { id: "estudio", label: "Sesión de Estudio", icon: <GraduationCap className="h-3.5 w-3.5" /> },
-        { id: "repasos", label: "Repasos SM-2", icon: <Brain className="h-3.5 w-3.5" />, badge: cards.length },
-        { id: "evolucion", label: "Evolución & Diplomas", icon: <Sparkles className="h-3.5 w-3.5" />, badge: progression.tierBadge },
-        { id: "materias", label: "Materias & Temas", icon: <Layers className="h-3.5 w-3.5" /> },
-        { id: "historial", label: "Historial de Estudio", icon: <History className="h-3.5 w-3.5" />, badge: studySessions.length },
-      ]}
-      onTabChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-      onClose={onClose}
     >
       {notification && (
         <div className="mb-4">
@@ -635,6 +680,6 @@ export function BibliotecaBuilding({
           buildingName="La Gran Biblioteca del Erudito"
         />
       )}
-    </BuildingInteriorShell>
+    </LivingInteriorRoom>
   );
 }

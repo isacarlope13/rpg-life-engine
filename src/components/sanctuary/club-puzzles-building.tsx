@@ -34,7 +34,7 @@ import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 import { projectRubikProgression } from "@/lib/sanctuary/visual-village-progression";
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
-import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
+import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
 import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
 
 interface ClubPuzzlesBuildingProps {
@@ -202,6 +202,28 @@ export function ClubPuzzlesBuilding({
     setPracticeTimerRunning(false);
     setPracticeElapsedMs(0);
   };
+
+  // Atajo de barra espaciadora para el cronómetro WCA (sin conflicto con inputs ni LivingInteriorRoom)
+  useEffect(() => {
+    if (rubikSubMode !== "practice") return;
+    const onSpaceKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat) return;
+      const target = e.target as HTMLElement | null;
+      if (target && target.matches("input, textarea, select, button, a, [contenteditable='true']")) {
+        return;
+      }
+      e.preventDefault();
+      if (practiceTimerRunning) {
+        setPracticeTimerRunning(false);
+        setManualSolveSec((practiceElapsedMs / 1000).toFixed(2));
+      } else {
+        setPracticeElapsedMs(0);
+        setPracticeTimerRunning(true);
+      }
+    };
+    window.addEventListener("keydown", onSpaceKey);
+    return () => window.removeEventListener("keydown", onSpaceKey);
+  }, [rubikSubMode, practiceTimerRunning, practiceElapsedMs]);
 
   // Guardar solve WCA
   const handleSaveSolve = async () => {
@@ -377,8 +399,56 @@ export function ClubPuzzlesBuilding({
 
   const miloResident = COZY_VILLAGE_RESIDENTS.find((r) => r.id === "milo");
 
+  const stations: InteriorStationDefinition[] = [
+    {
+      id: "practice",
+      name: "Tapete Stackmat WCA",
+      shortName: "Práctica WCA",
+      icon: "⚡",
+      badge: practiceTimerRunning ? "⏱️" : undefined,
+      badgeVariant: practiceTimerRunning ? "success" : "info",
+      hotkey: "1",
+      description: "Cronómetro oficial WCA (barra espaciadora), scrambles y registro de tiempos Ao5/Ao12.",
+    },
+    {
+      id: "study",
+      name: "Cuaderno de Algoritmos",
+      shortName: "Algoritmos",
+      icon: "🎓",
+      badge: isStudyActive ? (isStudyPaused ? "⏸️" : "⏱️") : undefined,
+      hotkey: "2",
+      description: "Sesiones enfocadas de F2L, OLL, PLL y Lookahead con temporizador universal.",
+    },
+    {
+      id: "notes",
+      name: "Mesa de Ajustes & Notas",
+      shortName: "Notas",
+      icon: "📔",
+      hotkey: "3",
+      description: "Tensiones, lubricación y mantenimiento de tu cubo activo.",
+    },
+    {
+      id: "arsenal",
+      name: "Vitrina de Cubos",
+      shortName: "Arsenal WCA",
+      icon: "🧩",
+      badge: cubes.length,
+      hotkey: "4",
+      description: "Inventario físico de tu colección de puzzles y especificaciones.",
+    },
+    {
+      id: "evolucion",
+      name: "Tablero de Récords",
+      shortName: "Evolución",
+      icon: "🏆",
+      badge: progression.tierBadge,
+      hotkey: "5",
+      description: "Hitos de speedcubing, evolución del Club y trofeos WCA.",
+    },
+  ];
+
   return (
-    <BuildingInteriorShell
+    <LivingInteriorRoom
       submissionError={submissionError}
       buildingId="club_puzzles"
       buildingName="Club de Puzzles & Speedcubing WCA"
@@ -386,12 +456,20 @@ export function ClubPuzzlesBuilding({
       districtName="Distrito del Saber"
       icon="🧩"
       tagline="Arsenal de hardware, cronómetro reglamentario, trimmed average Ao5/Ao12 y forja de reflejos."
-      playerLevel={playerLevel}
-      skillLevel={skillLevel}
-      totalGpEarned={totalGpEarned}
       resident={miloResident}
-      sessionsCount={activeRubikStats.total_solves || activeRubikStats.recent_solves.length}
-      specificMetrics={[
+      stations={stations}
+      activeStationId={rubikSubMode}
+      onSelectStation={(tabId) => setRubikSubMode(tabId as typeof rubikSubMode)}
+      onClose={onClose}
+      disableHotkeys={practiceTimerRunning}
+      activeSessionBanner={{
+        isActive: isStudyActive,
+        isPaused: isStudyPaused,
+        formattedTime: studyFormattedTime,
+        label: `Practicando ${studyFocus} (${cubeType})`,
+        onViewSession: () => setRubikSubMode("study"),
+      }}
+      metrics={[
         {
           label: "Single PB",
           value: activeRubikStats.pb_seconds ? `${activeRubikStats.pb_seconds.toFixed(2)}s` : "--",
@@ -413,16 +491,11 @@ export function ClubPuzzlesBuilding({
           icon: "📦",
         },
       ]}
-      activeTab={rubikSubMode}
-      tabs={[
-        { id: "practice", label: "Práctica WCA", icon: <Zap className="h-4 w-4" /> },
-        { id: "study", label: "Estudio & Algoritmos", icon: <GraduationCap className="h-4 w-4" /> },
-        { id: "notes", label: "Notas & Ajustes", icon: <BookMarked className="h-4 w-4" /> },
-        { id: "arsenal", label: "Arsenal WCA", icon: <Box className="h-4 w-4" />, badge: cubes.length },
-        { id: "evolucion", label: "Evolución & Trofeos", icon: <Trophy className="h-4 w-4" />, badge: progression.tierBadge },
-      ]}
-      onTabChange={(tabId) => setRubikSubMode(tabId as typeof rubikSubMode)}
-      onClose={onClose}
+      roomTheme={{
+        wallColor: "#162B34",
+        floorPattern: "tile",
+        ambientWarmth: "sunny",
+      }}
     >
       {/* SELECTOR RÁPIDO DE CUBO ACTIVO */}
       <div className="flex items-center justify-end gap-2 pb-2">
@@ -1207,6 +1280,6 @@ export function ClubPuzzlesBuilding({
           buildingName="Club de Puzzles & Speedcubing WCA"
         />
       )}
-    </BuildingInteriorShell>
+    </LivingInteriorRoom>
   );
 }
