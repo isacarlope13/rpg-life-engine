@@ -70,6 +70,19 @@ import {
   readAlgorithmSheet,
   readWorkoutPlan,
 } from "./bruno-milo-tools.ts";
+import {
+  explainGpVsCop,
+  getCinemaCollection,
+  getRecordedObligations,
+  getVerifiedFinancialMovements,
+  listCinemaResources,
+  proposeCinemaReview,
+  proposeMovieNight,
+  readCinemaReview,
+  recommendFromWatchlist,
+  simulateBudgetScenario,
+  simulateDebtPaymentImpact,
+} from "./nora-silas-tools.ts";
 import type { PrivateBuildingResource } from "./building-resources-engine.ts";
 import type { RubikCubeType } from "../../types/rpg.ts";
 
@@ -82,6 +95,7 @@ export interface SpecialistProposal {
   specialistName: string;
   actionType:
     | "add_cinema_entry"
+    | "add_cinema_review"
     | "add_knitting_project"
     | "add_reading_note"
     | "plan_study_block"
@@ -158,6 +172,33 @@ export function selectAuthorizedToolsForIntent(
       planned.push("readAlgorithmSheet");
     } else if (/(algoritmo|hoja|gu[ií]a|documento|archivo|pdf)/i.test(q)) {
       planned.push("listCubeTrainingResources");
+    }
+    return planned.slice(0, MAX_TOOLS_PER_SPECIALIST_REQUEST);
+  }
+
+  if (skill.buildingId === "cine") {
+    planned.push("getCinemaCollection");
+    if (/(recomienda|qu[eé] ver|noche|pendiente|watchlist|musical)/i.test(q)) {
+      planned.push("recommendFromWatchlist");
+    }
+    if (hasSelectedResource) {
+      planned.push("readCinemaReview");
+    } else if (/(rese[nñ]a|documento|recurso|archivo)/i.test(q)) {
+      planned.push("listCinemaResources");
+    }
+    return planned.slice(0, MAX_TOOLS_PER_SPECIALIST_REQUEST);
+  }
+
+  if (skill.buildingId === "banco_oakhaven") {
+    planned.push("getVerifiedFinancialMovements");
+    if (/(obligaci[oó]n|deuda|vencimiento|fijo|cuota|disponible)/i.test(q)) {
+      planned.push("getRecordedObligations");
+    }
+    if (/(simula|ahorro|ahorrar|escenario|qu[eé] pasar[ií]a|impacto)/i.test(q)) {
+      planned.push("simulateBudgetScenario");
+    }
+    if (/(gp|moneda|diferencia|conversi[oó]n)/i.test(q)) {
+      planned.push("explainGpVsCop");
     }
     return planned.slice(0, MAX_TOOLS_PER_SPECIALIST_REQUEST);
   }
@@ -314,6 +355,8 @@ export async function askBuildingSpecialist(params: {
   disabledSkillIds?: string[];
   selectedResourceId?: string;
   memoryResources?: PrivateBuildingResource[];
+  /** Gancho opcional de instrumentación para pruebas de aislamiento de Gemini */
+  onGeminiAttemptForTests?: () => void;
 }): Promise<SpecialistAnswerResponse> {
   const skill = getSpecialistSkillForBuilding(params.buildingId);
   if (!skill) {
@@ -886,6 +929,173 @@ export async function askBuildingSpecialist(params: {
     if (extraLines.length > 0) {
       deterministicDraft = `${deterministicDraft}\n\n${extraLines.join("\n\n")}`;
     }
+  } else if (skill.buildingId === "cine") {
+    const plannedTools = selectAuthorizedToolsForIntent(skill, cleanQuestion, Boolean(params.selectedResourceId));
+    const extraLines: string[] = [];
+
+    const col = await getCinemaCollection(params.ctx);
+    extraTools.push("getCinemaCollection");
+
+    if (col.entries.length > 0) {
+      const parts: string[] = [];
+      if (col.lastWatchedMovie) {
+        parts.push(
+          `• **Última película vista:** "${col.lastWatchedMovie.title}" (${(col.lastWatchedMovie.watchedAt || col.lastWatchedMovie.updatedAt).slice(0, 10)})`
+        );
+      }
+      if (col.watching.length > 0) {
+        const s = col.watching[0];
+        const ep = s.kind === "series" ? ` — T${s.season || 1} E${s.episode || 0}` : "";
+        parts.push(`• **Viendo ahora:** "${s.title}" (${s.kind}${ep})`);
+      }
+      const pendingMusicals = col.watchlist.filter((e) => e.kind === "musical");
+      if (pendingMusicals.length > 0) {
+        parts.push(`• **Musicales pendientes (${pendingMusicals.length}):** ${pendingMusicals.slice(0, 3).map((m) => `"${m.title}"`).join(", ")}`);
+      }
+      if (col.topRated.length > 0) {
+        parts.push(`• **Mejor valorada:** "${col.topRated[0].title}" (${col.topRated[0].rating}/5)`);
+      }
+      if (col.limitationNote) parts.push(`• *Origen:* ${col.limitationNote}`);
+      if (parts.length > 0) {
+        extraLines.push(`🎬 **[Tu Cartelera Cultural (${col.source})]**\n${parts.join("\n")}`);
+      }
+    }
+
+    const wantsMusical = /musical/i.test(cleanQuestion);
+    if (/(noche de|marat[oó]n|prepara)/i.test(cleanQuestion)) {
+      extraLines.push(proposeMovieNight(col, wantsMusical ? "musical" : undefined));
+      extraTools.push("proposeMovieNight");
+    } else if (plannedTools.includes("recommendFromWatchlist")) {
+      const rec = recommendFromWatchlist(col, wantsMusical ? "musical" : undefined);
+      extraLines.push(rec.message);
+      extraTools.push("recommendFromWatchlist");
+    }
+
+    if (/(prop[oó]n.*rese[nñ]a|escrib.*rese[nñ]a|guardar.*rese[nñ]a)/i.test(cleanQuestion)) {
+      const target = col.lastWatchedMovie || col.favorites[0] || col.entries[0];
+      if (target) {
+        proposal = proposeCinemaReview(target);
+        extraTools.push("proposeCinemaReview");
+      }
+    }
+
+    if (params.selectedResourceId) {
+      const docRead = await readCinemaReview(resCtx, params.selectedResourceId);
+      extraTools.push("readCinemaReview");
+      if (docRead.ok && docRead.data?.text) {
+        extraLines.push(
+          `📜 **[Tu recurso en Cine]** ${docRead.data.text.slice(0, 550)}${docRead.data.text.length > 550 ? "..." : ""}`
+        );
+      } else {
+        extraLines.push(
+          `⚠️ **Recurso de Cine:** ${docRead.error || "No tiene texto extraíble o pertenece a otro edificio."}`
+        );
+      }
+    } else if (plannedTools.includes("listCinemaResources")) {
+      const docsList = await listCinemaResources(resCtx);
+      extraTools.push("listCinemaResources");
+      if (Array.isArray(docsList.data) && docsList.data.length > 0) {
+        const names = (docsList.data as Array<{ title: string }>)
+          .slice(0, 3)
+          .map((d) => `"${d.title}"`)
+          .join(", ");
+        extraLines.push(`📂 **Cartelera Personal (documentos):** ${names}.`);
+      }
+    }
+
+    if (extraLines.length > 0) {
+      deterministicDraft = `${deterministicDraft}\n\n${extraLines.join("\n\n")}`;
+    }
+  } else if (skill.buildingId === "banco_oakhaven") {
+    // Defensa estricta adicional para Silas: jamás modifica saldos, cuentas, deudas ni pagos
+    if (/(modifica|cambia|actualiza|crea|borra|elimina|liquida|paga|transfiere)\s+(mi\s+|un\s+|una\s+|el\s+|la\s+)?(saldo|cuenta|deuda|obligaci[oó]n|pago|transferencia|movimiento)/i.test(cleanQuestion)) {
+      return {
+        specialist: specialistMeta,
+        answer:
+          "🛡️ **Bloqueo financiero de Silas:** Analizo tu información en modo de solo lectura, pero **no muevo dinero ni modifico saldos, pagos u obligaciones**. Usa los controles manuales del Banco para registrar cualquier operación real.",
+        mode: "blocked_safety",
+        toolsUsed: [],
+        citations: [],
+      };
+    }
+
+    const plannedTools = selectAuthorizedToolsForIntent(skill, cleanQuestion, false);
+    const periodDays = /mes|mensual|30/i.test(cleanQuestion) ? 30 : /semana|7/i.test(cleanQuestion) ? 7 : 15;
+    const fin = await getVerifiedFinancialMovements(params.ctx, periodDays);
+    extraTools.push("getVerifiedFinancialMovements");
+
+    const lines: string[] = [
+      `🏦 **[HECHO REGISTRADO — ${fin.currency}, últimos ${fin.periodDays} días • origen: ${fin.provenance}]**`,
+      `• Ingresos verificados: **$${fin.totalIncomeCop.toLocaleString("es-CO")} COP**`,
+      `• Gastos verificados: **$${fin.totalExpenseCop.toLocaleString("es-CO")} COP**`,
+      `• Flujo neto (cálculo determinista): **$${fin.netCashflowCop.toLocaleString("es-CO")} COP** (${fin.verifiedCount} movimientos)`,
+    ];
+
+    if (fin.breakdownByCategory.length > 0) {
+      const topCats = fin.breakdownByCategory
+        .slice(0, 3)
+        .map((c) => `${c.category}: $${c.totalCop.toLocaleString("es-CO")} COP`)
+        .join(" • ");
+      lines.push(`• Principales categorías de gasto: ${topCats}`);
+    }
+    if (fin.potentialDuplicates.length > 0) {
+      lines.push(
+        `• ⚠️ **Posibles duplicados para revisión manual (${fin.potentialDuplicates.length}):** "${fin.potentialDuplicates[0].description}" por $${fin.potentialDuplicates[0].amountCop.toLocaleString("es-CO")} COP (${fin.potentialDuplicates[0].date}).`
+      );
+    }
+    if (fin.isStale) {
+      lines.push(
+        `• ℹ️ **Frescura de datos:** ${fin.latestMovementDate ? `último registro fechado ${fin.latestMovementDate.slice(0, 10)} (posiblemente desactualizado)` : "sin movimientos recientes verificados"}.`
+      );
+    }
+    if (fin.limitationNote) {
+      lines.push(`• *Nota:* ${fin.limitationNote}`);
+    }
+
+    if (plannedTools.includes("getRecordedObligations")) {
+      const ob = await getRecordedObligations(params.ctx);
+      extraTools.push("getRecordedObligations");
+      lines.push(
+        `📅 **[OBLIGACIONES REGISTRADAS (${ob.provenance})]** Costos fijos: **$${ob.totalFixedObligationsCop.toLocaleString("es-CO")} COP** (${ob.fixedCostsCount}) • Cuotas mínimas de deudas activas: **$${ob.totalMinDebtPaymentsCop.toLocaleString("es-CO")} COP** (${ob.activeDebtsCount}). *Nota: no se asume pago automático sin evidencia.*`
+      );
+    }
+
+    if (plannedTools.includes("simulateBudgetScenario")) {
+      const amountMatch = cleanQuestion.match(/(\d[\d.,]*)\s*(cop|pesos)?/i);
+      const parsedAmount = amountMatch ? Number(amountMatch[1].replace(/[.,]/g, "")) : 100000;
+      const safeAmount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : 100000;
+      if (/deuda|abono|pago extra/i.test(cleanQuestion)) {
+        const ob = await getRecordedObligations(params.ctx);
+        const firstDebt = ob.debts[0];
+        const sim = simulateDebtPaymentImpact({
+          debtName: firstDebt?.name || "Deuda de ejemplo",
+          currentBalanceCop: firstDebt?.currentBalanceCop || safeAmount * 4,
+          extraPaymentCop: safeAmount,
+        });
+        extraTools.push("simulateDebtPaymentImpact");
+        lines.push(
+          `🧮 **[ESCENARIO HIPOTÉTICO — SIN ESCRITURA]** Si aplicaras un abono extra de **$${sim.hypotheticalExtraPaymentCop.toLocaleString("es-CO")} COP** a "${sim.debtName}", el saldo proyectado bajaría de $${sim.currentBalanceCop.toLocaleString("es-CO")} a **$${sim.projectedBalanceCop.toLocaleString("es-CO")} COP** (-${sim.reductionPercent}%). ${sim.disclaimer}`
+        );
+      } else {
+        const sim = simulateBudgetScenario({
+          monthlySavingCop: safeAmount,
+          months: 6,
+          currentNetCashflowCop: fin.netCashflowCop,
+        });
+        extraTools.push("simulateBudgetScenario");
+        lines.push(
+          `🧮 **[ESCENARIO HIPOTÉTICO — SIN ESCRITURA]** Si ahorraras **$${sim.monthlySavingCop.toLocaleString("es-CO")} COP/mes** durante ${sim.months} meses, acumularías **$${sim.projectedSavedCop.toLocaleString("es-CO")} COP** (flujo remanente estimado: $${sim.remainingCashflowCop.toLocaleString("es-CO")} COP). ${sim.disclaimer}`
+        );
+      }
+    }
+
+    if (plannedTools.includes("explainGpVsCop")) {
+      extraTools.push("explainGpVsCop");
+      lines.push(explainGpVsCop());
+    }
+
+    // Privacidad financiera estricta: Silas responde 100% desde cálculos deterministas locales sin enviar datos a Gemini
+    deterministicDraft = lines.join("\n");
   }
 
   let finalAnswer = proposal
@@ -893,7 +1103,12 @@ export async function askBuildingSpecialist(params: {
     : deterministicDraft;
   let mode: SpecialistAnswerResponse["mode"] = "deterministic_grounded";
 
-  if (params.allowGemini !== false) {
+  // Regla obligatoria Fase 6 (Hito 7): NUNCA enviar datos financieros de Silas a Gemini por defecto
+  const canUseGeminiForBuilding =
+    params.allowGemini !== false && skill.buildingId !== "banco_oakhaven";
+
+  if (canUseGeminiForBuilding) {
+    params.onGeminiAttemptForTests?.();
     const polished = await trySpecialistGeminiPolish(
       skill,
       cleanQuestion,
