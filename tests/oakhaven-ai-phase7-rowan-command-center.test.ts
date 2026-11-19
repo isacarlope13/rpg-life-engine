@@ -101,6 +101,35 @@ describe("OAKHAVEN AI FASE 7 — Presidente Rowan 2.0 (Command Center, Privacida
     assert.equal(finRes.mode, "deterministic_grounded");
     assert.ok(finRes.toolsUsed.includes("getRecentExpenses"));
 
+    // 2b. Consultas mixtas financieras (Hito 2 Release 3.0) -> 0 llamadas a Gemini en todas
+    for (const mixedQ of [
+      "¿Qué hice esta semana y cuánto gasté?",
+      "Resume todas mis actividades, incluido Banco.",
+      "¿Qué me recomienda Rowan para organizar mi presupuesto?",
+    ]) {
+      let mixedGeminiCalls = 0;
+      const mixedRes = await askMayorRowan({
+        question: mixedQ,
+        ctx,
+        allowGemini: true,
+        onGeminiAttemptForTests: () => {
+          mixedGeminiCalls += 1;
+        },
+      });
+      assert.equal(mixedGeminiCalls, 0, `Fuga financiera a Gemini en consulta mixta: ${mixedQ}`);
+      assert.equal(mixedRes.mode, "deterministic_grounded");
+    }
+
+    // 2c. Rowan respeta disabledSkillIds (Hito 4 Release 3.0)
+    const disabledBankRes = await askMayorRowan({
+      question: "¿Cuánto gasté en el Banco?",
+      ctx,
+      allowGemini: false,
+      disabledSkillIds: ["oakhaven.specialist.banco.silas"],
+    });
+    assert.equal(disabledBankRes.toolsUsed.length, 0);
+    assert.ok(disabledBankRes.answer.includes("desactivado"));
+
     // 3. Historial financiero previo es depurado antes de pasar contexto a Gemini en consultas no financieras
     const dirtyHistory = [
       { role: "user" as const, content: "Gasté $450.000 COP en el Banco" },

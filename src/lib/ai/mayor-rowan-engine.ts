@@ -475,11 +475,23 @@ async function tryGeminiPolish(
   return Promise.race([genPromise, timeoutPromise]);
 }
 
+const TOOL_TO_SKILL_ID: Partial<Record<MayorReadOnlyToolName, string>> = {
+  getRecentExpenses: "oakhaven.specialist.banco.silas",
+  getStudyProgress: "oakhaven.specialist.estudio.lyra",
+  getPendingWorkProjects: "oakhaven.specialist.trabajo.aura",
+  getLastWorkout: "oakhaven.specialist.gym.bruno",
+  getRecentCubeSolves: "oakhaven.specialist.cubos.milo",
+  getLastReadBook: "oakhaven.specialist.lectura.eldrin",
+  getLastWatchedMedia: "oakhaven.specialist.cine.nora",
+  getLastKnittingActivity: "oakhaven.specialist.crochet.clara",
+};
+
 export async function askMayorRowan(params: {
   question: string;
   history?: MayorChatTurn[];
   ctx: MayorToolContext;
   allowGemini?: boolean;
+  disabledSkillIds?: string[];
   /** Gancho opcional de instrumentación para verificar aislamiento financiero hacia Gemini */
   onGeminiAttemptForTests?: (payload: { prompt: string }) => void;
 }): Promise<MayorAnswerResponse> {
@@ -510,15 +522,31 @@ export async function askMayorRowan(params: {
     ? detectDailyPlanIntent(cleanQuestion)
     : null;
 
-  // 3. Plan mínimo de herramientas de solo lectura (máximo 4)
-  const planned = selectToolsForQuestion(cleanQuestion);
+  // 3. Plan mínimo de herramientas de solo lectura (máximo 3), respetando skills desactivadas
+  const disabledSet = new Set(params.disabledSkillIds || []);
+  const rawPlanned = selectToolsForQuestion(cleanQuestion);
+  const skippedDisabledTools: string[] = [];
+  const planned = rawPlanned.filter((step) => {
+    const skillId = TOOL_TO_SKILL_ID[step.tool];
+    if (skillId && disabledSet.has(skillId)) {
+      skippedDisabledTools.push(step.tool);
+      return false;
+    }
+    return true;
+  });
+
   const results: ToolExecutionResult[] = [];
   for (const step of planned) {
     const res = await executeMayorReadOnlyTool(step.tool, params.ctx, step.args);
     results.push(res);
   }
 
-  let deterministicAnswer = buildDeterministicGroundedAnswer(cleanQuestion, results);
+  let deterministicAnswer =
+    results.length > 0
+      ? buildDeterministicGroundedAnswer(cleanQuestion, results)
+      : skippedDisabledTools.length > 0
+      ? "El especialista correspondiente a esta consulta está desactivado en tus preferencias. Puedes reactivarlo cuando desees."
+      : buildDeterministicGroundedAnswer(cleanQuestion, results);
   const extraLinkBuildings: string[] = [];
 
   if (dailyPlanMode) {
