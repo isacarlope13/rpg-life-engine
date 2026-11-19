@@ -150,6 +150,9 @@ test("2. Aislamiento estricto RLS (USER_A vs USER_B vs anon), unicidad (user_id,
   await assert.rejects(() =>
     db.query("DELETE FROM public.work_projects WHERE client_id = 'proj-a-1'")
   );
+  await assert.rejects(() =>
+    db.query("DELETE FROM public.work_project_tasks WHERE client_id = 'task-a-1'")
+  );
 
   // Prueba CAS atómica en PostgreSQL real: 2 dispositivos intentan actualizar v1 -> v2
   const cas1 = await db.query<{ version: number }>(
@@ -189,6 +192,81 @@ test("2. Aislamiento estricto RLS (USER_A vs USER_B vs anon), unicidad (user_id,
        VALUES ($1, 'hijack-1', 'Robo')`,
       [USER_A]
     )
+  );
+
+  await db.exec("RESET ROLE;");
+});
+
+test("3. Integridad referencial multiusuario: FK compuesta (user_id, project_id) bloquea asociación cruzada en authenticated y service_role", async () => {
+  // USER_B crea su propio proyecto legítimo
+  await db.exec(`
+    SET ROLE authenticated;
+    SELECT set_config('request.jwt.claim.sub', '${USER_B}', false);
+  `);
+  const projBInsert = await db.query<{ id: string }>(
+    `INSERT INTO public.work_projects (user_id, client_id, name, methodology, status, work_scope, version)
+     VALUES ($1, 'proj-b-1', 'Proyecto Privado B', 'kanban', 'active', 'personal', 1)
+     RETURNING id`,
+    [USER_B]
+  );
+  const projectIdB = projBInsert.rows[0].id;
+
+  // USER_B sí puede crear tareas dentro de su propio proyecto
+  await db.query(
+    `INSERT INTO public.work_project_tasks (user_id, project_id, client_id, title, priority, version)
+     VALUES ($1, $2, 'task-b-1', 'Tarea propia B', 'medium', 1)`,
+    [USER_B, projectIdB]
+  );
+
+  // USER_A intenta crear tarea con su user_id pero apuntando al proyecto de USER_B -> BLOQUEADO por FK compuesta
+  await db.exec(`SELECT set_config('request.jwt.claim.sub', '${USER_A}', false);`);
+  await assert.rejects(
+    () =>
+      db.query(
+        `INSERT INTO public.work_project_tasks (user_id, project_id, client_id, title, priority, version)
+         VALUES ($1, $2, 'task-cross-user', 'Asociación cruzada ilegal', 'high', 1)`,
+        [USER_A, projectIdB]
+      ),
+    /work_project_tasks_user_project_fkey|foreign key/i
+  );
+
+  // USER_A intenta reasignar una tarea válida suya al proyecto de USER_B -> BLOQUEADO por FK compuesta
+  await assert.rejects(
+    () =>
+      db.query(
+        `UPDATE public.work_project_tasks
+         SET project_id = $1
+         WHERE client_id = 'task-a-1'`,
+        [projectIdB]
+      ),
+    /work_project_tasks_user_project_fkey|foreign key/i
+  );
+
+  // Incluso bajo service_role (BYPASSRLS), la FK compuesta de PostgreSQL impide la asociación cruzada
+  await db.exec(`
+    RESET ROLE;
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.work_projects, public.work_project_tasks TO service_role;
+    SET ROLE service_role;
+  `);
+
+  await assert.rejects(
+    () =>
+      db.query(
+        `INSERT INTO public.work_project_tasks (user_id, project_id, client_id, title, priority, version)
+         VALUES ($1, $2, 'task-service-role-cross', 'Bypass RLS intento cruzado', 'critical', 1)`,
+        [USER_A, projectIdB]
+      ),
+    /work_project_tasks_user_project_fkey|foreign key/i
+  );
+
+  // Verificar que los registros y relaciones válidas siguen 100% intactos
+  const validTasks = await db.query<{ user_id: string; client_id: string }>(
+    "SELECT user_id, client_id FROM public.work_project_tasks ORDER BY client_id"
+  );
+  assert.equal(validTasks.rows.length, 2);
+  assert.deepEqual(
+    validTasks.rows.map((r) => r.client_id),
+    ["task-a-1", "task-b-1"]
   );
 
   await db.exec("RESET ROLE;");

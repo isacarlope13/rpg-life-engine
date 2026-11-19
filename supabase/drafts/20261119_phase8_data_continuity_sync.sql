@@ -1,12 +1,15 @@
 -- ============================================================================
--- OAKHAVEN FASE 8 — DATA CONTINUITY & MULTI-DEVICE SYNC (BORRADOR FINAL v2)
+-- OAKHAVEN FASE 8 — DATA CONTINUITY & MULTI-DEVICE SYNC (BORRADOR FINAL v3)
 -- ============================================================================
--- PRINCIPIOS DE MÍNIMO PRIVILEGIO Y SEGURIDAD:
+-- PRINCIPIOS DE MÍNIMO PRIVILEGIO, INTEGRIDAD MULTIUSUARIO Y SEGURIDAD:
 -- 1. 100% ADITIVA e idempotente (probada 2x consecutivas en PostgreSQL PGlite).
 -- 2. Mínimos privilegios: REVOKE ALL FROM public, anon; GRANT SELECT, INSERT,
 --    UPDATE TO authenticated (SIN DELETE físico: el archivado es lógico vía deleted_at).
--- 3. EXCLUYE deliberadamente tablas y documentos financieros sensibles.
--- 4. NO ejecutar automáticamente en producción; requiere aprobación humana.
+-- 3. Integridad referencial multiusuario: work_project_tasks referencia
+--    (user_id, project_id) -> work_projects(user_id, id), impidiendo asociaciones
+--    cruzadas entre usuarios incluso bajo service_role.
+-- 4. EXCLUYE deliberadamente tablas y documentos financieros sensibles.
+-- 5. NO ejecutar automáticamente en producción; requiere aprobación humana.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.fn_phase8_set_updated_at()
@@ -87,8 +90,23 @@ CREATE TABLE IF NOT EXISTS public.work_projects (
   deleted_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT work_projects_user_client_unique UNIQUE (user_id, client_id)
+  CONSTRAINT work_projects_user_client_unique UNIQUE (user_id, client_id),
+  CONSTRAINT work_projects_user_id_id_unique UNIQUE (user_id, id)
 );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'work_projects_user_id_id_unique'
+      AND conrelid = 'public.work_projects'::regclass
+  ) THEN
+    ALTER TABLE public.work_projects
+      ADD CONSTRAINT work_projects_user_id_id_unique UNIQUE (user_id, id);
+  END IF;
+END;
+$$;
 
 CREATE INDEX IF NOT EXISTS idx_work_projects_user_updated
   ON public.work_projects (user_id, updated_at DESC)
@@ -125,7 +143,7 @@ DROP POLICY IF EXISTS "work_projects_delete_own" ON public.work_projects;
 CREATE TABLE IF NOT EXISTS public.work_project_tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  project_id uuid NOT NULL REFERENCES public.work_projects(id) ON DELETE CASCADE,
+  project_id uuid NOT NULL,
   client_id text NOT NULL,
   title text NOT NULL CHECK (char_length(trim(title)) > 0 AND char_length(title) <= 220),
   description text NOT NULL DEFAULT '',
@@ -137,8 +155,32 @@ CREATE TABLE IF NOT EXISTS public.work_project_tasks (
   deleted_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT work_project_tasks_user_client_unique UNIQUE (user_id, client_id)
+  CONSTRAINT work_project_tasks_user_client_unique UNIQUE (user_id, client_id),
+  CONSTRAINT work_project_tasks_user_project_fkey
+    FOREIGN KEY (user_id, project_id)
+    REFERENCES public.work_projects (user_id, id)
+    ON DELETE CASCADE
 );
+
+ALTER TABLE public.work_project_tasks
+  DROP CONSTRAINT IF EXISTS work_project_tasks_project_id_fkey;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'work_project_tasks_user_project_fkey'
+      AND conrelid = 'public.work_project_tasks'::regclass
+  ) THEN
+    ALTER TABLE public.work_project_tasks
+      ADD CONSTRAINT work_project_tasks_user_project_fkey
+      FOREIGN KEY (user_id, project_id)
+      REFERENCES public.work_projects (user_id, id)
+      ON DELETE CASCADE;
+  END IF;
+END;
+$$;
 
 CREATE INDEX IF NOT EXISTS idx_work_project_tasks_user_project
   ON public.work_project_tasks (user_id, project_id)

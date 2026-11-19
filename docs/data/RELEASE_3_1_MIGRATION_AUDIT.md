@@ -3,7 +3,7 @@
 **Fecha:** 2026-11-19  
 **Rama:** `feat/oakhaven-phase8-data-continuity` (base `main` @ `8220155`, Release 3.0)  
 **Archivo SQL final:** `supabase/drafts/20261119_phase8_data_continuity_sync.sql`  
-**Estado:** **`RELEASE 3.1 — LISTO PARA DECISIÓN HUMANA DE MIGRACIÓN Y DESPLIEGUE`** *(sin ejecutar SQL en producción, sin `push`, sin `merge`, sin despliegue)*
+**Estado:** **`RELEASE 3.1 — INTEGRIDAD MULTIUSUARIO VERIFICADA. LISTO PARA APROBACIÓN FINAL`** *(sin ejecutar SQL en producción, sin `push`, sin `merge`, sin despliegue)*
 
 ---
 
@@ -38,6 +38,17 @@
 ### 1.4 Compatibilidad de Esquema y Exclusión Financiera
 - `getRegisteredCubes()` (`src/lib/ai/bruno-milo-tools.ts`) alineado con columnas reales de `public.rubik_cubes` (`model`, `is_favorite`) + columnas aditivas `tension_notes`, `lube_notes`, `maintenance_needs`, `custom_notes`, `algorithms_to_master`, `sync_version`, `updated_at`.
 - **Exclusión financiera absoluta:** Cero sentencias sobre `financial_transactions`, `player_treasury`, `fixed_costs`, `debt_bosses` ni `rubik_solves`.
+
+### 1.5 Integridad Referencial Multiusuario (Clave Foránea Compuesta `work_project_tasks`)
+- **Riesgo corregido:** Anteriormente, `public.work_project_tasks.project_id` referenciaba únicamente `public.work_projects(id)`, lo que teóricamente permitía asociar una tarea de `USER_A` a un proyecto de `USER_B` (especialmente en operaciones con `service_role` que omiten RLS).
+- **Corrección aplicada en `supabase/drafts/20261119_phase8_data_continuity_sync.sql`:**
+  - En `public.work_projects`: añadida restricción `CONSTRAINT work_projects_user_id_id_unique UNIQUE (user_id, id)` (con bloque `DO $$ ... END $$;` idempotente).
+  - En `public.work_project_tasks`: reemplazada la FK simple por `CONSTRAINT work_project_tasks_user_project_fkey FOREIGN KEY (user_id, project_id) REFERENCES public.work_projects (user_id, id) ON DELETE CASCADE` (con limpieza idempotente de `work_project_tasks_project_id_fkey` si existiera).
+- **Prueba en PostgreSQL real (`tests/phase8-migration-sql.test.ts`):**
+  - `USER_A` y `USER_B` crean tareas en sus propios proyectos sin problema.
+  - `USER_A` es bloqueado al insertar o reasignar (`UPDATE`) una tarea apuntando al proyecto de `USER_B`.
+  - Bajo `service_role` (`BYPASSRLS`), el intento de asociación cruzada también es rechazado por `work_project_tasks_user_project_fkey`.
+  - Registros válidos, RLS, CAS, ausencia de `DELETE` para `authenticated`, `rubik_solves` y `financial_transactions` permanecen intactos tras ejecutar la migración 2 veces.
 
 ---
 
@@ -141,7 +152,7 @@ Detener el proceso de inmediato y **NO desplegar código** si:
 | Nivel | Comando / Entorno | Resultado |
 |---|---|---|
 | **TypeScript estricto** | `npx tsc --noEmit` | **APROBADO** (`0` errores) |
-| **Pruebas unitarias, integración, CAS y SQL PGlite** | `npm test` | **328 / 328 pruebas aprobadas** (`15` suites, incluye CAS 2 dispositivos y denegación de `DELETE` en PGlite) |
+| **Pruebas unitarias, integración, CAS y SQL PGlite** | `npm test` | **329 / 329 pruebas aprobadas** (`15` suites, incluye FK compuesta multiusuario en `authenticated` y `service_role`, CAS 2 dispositivos y denegación de `DELETE` en PGlite) |
 | **Build de producción Next.js** | `npm run build` | **APROBADO (exit code `0`)** (`35/35` rutas + `.next/standalone`) |
 | **E2E multidispositivo (2 navegadores reales en producción)** | Pendiente de aplicación manual del SQL | **PENDIENTE (NO SIMULADO)** |
 
