@@ -55,7 +55,23 @@ import {
   readWorkDocument,
   recommendNextBook,
 } from "./aura-eldrin-tools.ts";
+import {
+  detectMedicalOrInjuryQuery,
+  explainCubeNotation,
+  getCubeSolveHistory,
+  getGymPersonalRecords,
+  getLastRealWorkout,
+  getRegisteredCubes,
+  getTrainingConsistency,
+  listCubeTrainingResources,
+  listGymResources,
+  proposeCubePracticeSession,
+  proposeNextWorkout,
+  readAlgorithmSheet,
+  readWorkoutPlan,
+} from "./bruno-milo-tools.ts";
 import type { PrivateBuildingResource } from "./building-resources-engine.ts";
+import type { RubikCubeType } from "../../types/rpg.ts";
 
 export const MAX_TOOLS_PER_SPECIALIST_REQUEST = 4;
 
@@ -70,7 +86,8 @@ export interface SpecialistProposal {
     | "add_reading_note"
     | "plan_study_block"
     | "plan_work_sprint"
-    | "plan_gym_routine";
+    | "plan_gym_routine"
+    | "plan_cube_practice";
   title: string;
   summary: string;
   payload: Record<string, unknown>;
@@ -115,6 +132,32 @@ export function selectAuthorizedToolsForIntent(
       planned.push("readReadingResource");
     } else if (/(recurso|archivo|pdf|portada|ficha)/i.test(q)) {
       planned.push("listReadingResources");
+    }
+    return planned.slice(0, MAX_TOOLS_PER_SPECIALIST_REQUEST);
+  }
+
+  if (skill.buildingId === "gimnasio") {
+    planned.push("getLastRealWorkout");
+    if (/(constancia|semana|descanso|frecuencia|racha|tendencia)/i.test(q)) {
+      planned.push("getTrainingConsistency");
+    }
+    if (hasSelectedResource) {
+      planned.push("readWorkoutPlan");
+    } else if (/(rutina|plan|documento|archivo|pdf)/i.test(q)) {
+      planned.push("listGymResources");
+    }
+    return planned.slice(0, MAX_TOOLS_PER_SPECIALIST_REQUEST);
+  }
+
+  if (skill.buildingId === "club_puzzles") {
+    planned.push("getCubeSolveHistory");
+    if (/(cubo|hardware|arsenal|registrado|activo)/i.test(q)) {
+      planned.push("getRegisteredCubes");
+    }
+    if (hasSelectedResource) {
+      planned.push("readAlgorithmSheet");
+    } else if (/(algoritmo|hoja|gu[ií]a|documento|archivo|pdf)/i.test(q)) {
+      planned.push("listCubeTrainingResources");
     }
     return planned.slice(0, MAX_TOOLS_PER_SPECIALIST_REQUEST);
   }
@@ -667,6 +710,177 @@ export async function askBuildingSpecialist(params: {
           .join(", ");
         extraLines.push(`📂 **Recursos en tu Librería:** ${names}.`);
       }
+    }
+
+    if (extraLines.length > 0) {
+      deterministicDraft = `${deterministicDraft}\n\n${extraLines.join("\n\n")}`;
+    }
+  } else if (skill.buildingId === "gimnasio") {
+    const plannedTools = selectAuthorizedToolsForIntent(skill, cleanQuestion, Boolean(params.selectedResourceId));
+    const extraLines: string[] = [];
+
+    const medGuard = detectMedicalOrInjuryQuery(cleanQuestion);
+    if (medGuard) {
+      extraLines.push(medGuard);
+    }
+
+    const workout = await getLastRealWorkout(params.ctx);
+    extraTools.push("getLastRealWorkout");
+    const vol = workout.realSetsVolume;
+
+    if (vol.completedSetsCount > 0) {
+      const prs = getGymPersonalRecords(params.ctx.localSnapshot?.gymSets || []);
+      const topEx = prs[0];
+      extraLines.push(
+        `🏋️ **[Tus series reales registradas]** ${vol.completedSetsCount} series completadas • Volumen total: **${vol.totalVolumeKg} kg**` +
+          (vol.averageRpe !== null ? ` • RPE medio: **${vol.averageRpe}/10**` : "") +
+          (topEx ? ` • Último peso en ${topEx.exerciseName}: **${topEx.lastWeightKg} kg x ${topEx.lastReps} reps** (máx. ${topEx.maxWeightKg} kg).` : ".")
+      );
+    } else if (!workout.lastWorkout) {
+      extraLines.push(
+        "🏋️ Aún no tienes entrenamientos ni series reales registradas (las series de ejemplo precargadas no se cuentan como historial tuyo)."
+      );
+    }
+
+    if (plannedTools.includes("getTrainingConsistency")) {
+      const consistency = await getTrainingConsistency(params.ctx, 14);
+      extraTools.push("getTrainingConsistency");
+      extraLines.push(
+        `📅 **[Constancia 14 días]** ${consistency.sessionsInWindow} sesiones registradas.` +
+          (consistency.restNote ? ` ${consistency.restNote}` : "")
+      );
+    }
+
+    if (params.selectedResourceId) {
+      const docRead = await readWorkoutPlan(resCtx, params.selectedResourceId);
+      extraTools.push("readWorkoutPlan");
+      if (docRead.ok && docRead.data?.text) {
+        extraLines.push(
+          `📋 **[Tu plan en Pizarra de Rutinas]** ${docRead.data.text.slice(0, 550)}${docRead.data.text.length > 550 ? "..." : ""}`
+        );
+      } else {
+        extraLines.push(
+          `⚠️ **Recurso de Gym:** ${docRead.error || "No tiene texto extraíble o pertenece a otro edificio; no inventaré rutinas."}`
+        );
+      }
+    } else if (plannedTools.includes("listGymResources")) {
+      const docsList = await listGymResources(resCtx);
+      extraTools.push("listGymResources");
+      if (Array.isArray(docsList.data) && docsList.data.length > 0) {
+        const names = (docsList.data as Array<{ title: string }>)
+          .slice(0, 3)
+          .map((d) => `"${d.title}"`)
+          .join(", ");
+        extraLines.push(`📂 **Pizarra de Rutinas:** ${names}.`);
+      }
+    }
+
+    if (!medGuard && /(prop[oó]n|rutina|pr[oó]ximo entrenamiento|prepara.*sesi[oó]n|progresi[oó]n)/i.test(cleanQuestion)) {
+      const prs = getGymPersonalRecords(params.ctx.localSnapshot?.gymSets || []);
+      const last = prs[0];
+      proposal = proposeNextWorkout({
+        focus: cleanQuestion.slice(0, 70),
+        lastExercise: last?.exerciseName,
+        lastWeightKg: last?.lastWeightKg,
+        lastReps: last?.lastReps,
+      });
+      extraTools.push("proposeNextWorkout");
+    }
+
+    if (extraLines.length > 0) {
+      deterministicDraft = `${deterministicDraft}\n\n${extraLines.join("\n\n")}`;
+    }
+  } else if (skill.buildingId === "club_puzzles") {
+    const plannedTools = selectAuthorizedToolsForIntent(skill, cleanQuestion, Boolean(params.selectedResourceId));
+    const extraLines: string[] = [];
+
+    const cubeTypeMatch = cleanQuestion.match(/\b(2x2|3x3|4x4|pyraminx|megaminx)\b/i);
+    const detectedCubeType: RubikCubeType = cubeTypeMatch
+      ? ((cubeTypeMatch[1].toLowerCase() === "pyraminx"
+          ? "Pyraminx"
+          : cubeTypeMatch[1].toLowerCase() === "megaminx"
+          ? "Megaminx"
+          : cubeTypeMatch[1].toLowerCase()) as RubikCubeType)
+      : "3x3";
+
+    const historyRes = await getCubeSolveHistory(params.ctx, detectedCubeType);
+    extraTools.push("getCubeSolveHistory");
+    const st = historyRes.stats;
+
+    if (st.totalSolves > 0) {
+      const ao5Label =
+        st.ao5.status === "valid"
+          ? `${st.ao5.averageSeconds}s`
+          : st.ao5.status === "dnf"
+          ? "DNF"
+          : `pendiente (${st.ao5.haveSolves}/5 solves)`;
+      const ao12Label =
+        st.ao12.status === "valid"
+          ? `${st.ao12.averageSeconds}s`
+          : st.ao12.status === "dnf"
+          ? "DNF"
+          : `pendiente (${st.ao12.haveSolves}/12 solves)`;
+      extraLines.push(
+        `🧩 **[Estadísticas WCA reales — ${st.cubeType} (${historyRes.source})]** ` +
+          `Solves: **${st.totalSolves}** (DNFs: ${st.dnfCount}) • PB: **${st.pbSeconds !== null ? `${st.pbSeconds}s` : "sin tiempo válido"}** • ` +
+          `Ao5: **${ao5Label}** • Ao12: **${ao12Label}**` +
+          (st.stdDevSeconds !== null ? ` • Consistencia (σ): **±${st.stdDevSeconds}s**` : "") +
+          (st.lastPracticedAlgorithm ? ` • Último algoritmo practicado: **${st.lastPracticedAlgorithm}**.` : ".")
+      );
+    } else {
+      extraLines.push(
+        `🧩 Aún no tienes solves reales registrados para **${detectedCubeType}** (los valores precargados en inputs no se cuentan como historial).`
+      );
+    }
+
+    if (plannedTools.includes("getRegisteredCubes")) {
+      const cubes = await getRegisteredCubes(params.ctx);
+      extraTools.push("getRegisteredCubes");
+      if (cubes.activeCube) {
+        extraLines.push(
+          `🧊 **[Tu cubo activo]** ${cubes.activeCube.brand} ${cubes.activeCube.model_name} (${cubes.activeCube.cube_type}) • Total registrados: ${cubes.count}.`
+        );
+      } else {
+        extraLines.push("🧊 Aún no tienes cubos físicos registrados en tu estantería.");
+      }
+    }
+
+    if (/(notaci[oó]n|qu[eé] significa|r'|u2|f2l|oll|pll|movimiento)/i.test(cleanQuestion)) {
+      extraLines.push(explainCubeNotation(cleanQuestion));
+      extraTools.push("explainCubeNotation");
+    }
+
+    if (params.selectedResourceId) {
+      const docRead = await readAlgorithmSheet(resCtx, params.selectedResourceId);
+      extraTools.push("readAlgorithmSheet");
+      if (docRead.ok && docRead.data?.text) {
+        extraLines.push(
+          `📜 **[Tu hoja de algoritmos]** ${docRead.data.text.slice(0, 550)}${docRead.data.text.length > 550 ? "..." : ""}`
+        );
+      } else {
+        extraLines.push(
+          `⚠️ **Recurso de Cubos:** ${docRead.error || "No tiene texto extraíble o pertenece a otro edificio; no inventaré algoritmos."}`
+        );
+      }
+    } else if (plannedTools.includes("listCubeTrainingResources")) {
+      const docsList = await listCubeTrainingResources(resCtx);
+      extraTools.push("listCubeTrainingResources");
+      if (Array.isArray(docsList.data) && docsList.data.length > 0) {
+        const names = (docsList.data as Array<{ title: string }>)
+          .slice(0, 3)
+          .map((d) => `"${d.title}"`)
+          .join(", ");
+        extraLines.push(`📂 **Cuaderno de Algoritmos:** ${names}.`);
+      }
+    }
+
+    if (/(plan|pr[aá]ctica|rutina|mejorar|prop[oó]n.*sesi[oó]n|estudiar.*algoritmo)/i.test(cleanQuestion)) {
+      proposal = proposeCubePracticeSession({
+        cubeType: detectedCubeType,
+        focus: cleanQuestion.slice(0, 70),
+        currentAo5: st.ao5.averageSeconds,
+      });
+      extraTools.push("proposeCubePracticeSession");
     }
 
     if (extraLines.length > 0) {

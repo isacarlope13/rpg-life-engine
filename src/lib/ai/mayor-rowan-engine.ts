@@ -288,9 +288,19 @@ export function buildDeterministicGroundedAnswer(
         sections.push("🏋️ **Gym:** No tienes sesiones de entrenamiento registradas todavía.");
       } else {
         const w = d.lastWorkout as Record<string, unknown> | null;
-        sections.push(
-          `🏋️ **Gym** *(fuente: ${sourceLabel(res.source)})*:\n- **Último entrenamiento:** "${w?.title || "Sesión de gimnasio"}" (${w?.duration_minutes || 0} min, fecha: ${formatDateEs(String(w?.completed_at || w?.timestamp || ""))}).`
-        );
+        const lastSet = d.lastRealSet as { exerciseName?: string; weightKg?: number; reps?: number } | null;
+        const lines: string[] = [`🏋️ **Gym** *(fuente: ${sourceLabel(res.source)})*:`];
+        if (w) {
+          lines.push(
+            `- **Último entrenamiento:** "${w.title || "Sesión de gimnasio"}" (${w.duration_minutes || 0} min, fecha: ${formatDateEs(String(w.completed_at || w.timestamp || ""))}).`
+          );
+        }
+        if (lastSet) {
+          lines.push(
+            `- **Última serie real registrada:** ${lastSet.exerciseName} — ${lastSet.weightKg} kg x ${lastSet.reps} reps (volumen total: ${Number(d.totalVolumeKg || 0)} kg).`
+          );
+        }
+        sections.push(lines.join("\n"));
       }
     } else if (res.tool === "getRecentCubeSolves") {
       if (!res.hasData) {
@@ -298,6 +308,7 @@ export function buildDeterministicGroundedAnswer(
       } else {
         const last = d.lastSolve as Record<string, unknown> | null;
         const pb = d.lastMarkedPb as Record<string, unknown> | null;
+        const lastAlg = d.lastPracticedAlgorithm as string | null;
         const lines: string[] = [`🧩 **Cubos (WCA)** *(fuente: ${sourceLabel(res.source)})*:`];
         if (pb) {
           lines.push(
@@ -308,6 +319,9 @@ export function buildDeterministicGroundedAnswer(
           lines.push(
             `- **Último solve registrado:** ${Number(last.time_seconds).toFixed(2)}s en ${last.cube_type || "3x3"} (${formatDateEs(String(last.created_at || last.timestamp || ""))}).`
           );
+        }
+        if (lastAlg) {
+          lines.push(`- **Último algoritmo practicado:** ${lastAlg}.`);
         }
         sections.push(lines.join("\n"));
       }

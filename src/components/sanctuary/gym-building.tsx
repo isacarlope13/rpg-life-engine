@@ -84,31 +84,37 @@ export function GymBuilding({
     } catch {}
     return [
       {
-        id: "set-1",
+        id: "demo-set-1",
         exerciseName: "Sentadilla Goblet",
         setNumber: 1,
         reps: 10,
         weightKg: 16,
         rpe: 7,
-        completed: true,
+        completed: false,
+        isDemo: true,
+        dataOrigin: "demo_template",
       },
       {
-        id: "set-2",
+        id: "demo-set-2",
         exerciseName: "Sentadilla Goblet",
         setNumber: 2,
         reps: 10,
         weightKg: 16,
         rpe: 8,
-        completed: true,
+        completed: false,
+        isDemo: true,
+        dataOrigin: "demo_template",
       },
       {
-        id: "set-3",
+        id: "demo-set-3",
         exerciseName: "Sentadilla Goblet",
         setNumber: 3,
         reps: 8,
         weightKg: 18,
         rpe: 8,
         completed: false,
+        isDemo: true,
+        dataOrigin: "demo_template",
       },
     ];
   });
