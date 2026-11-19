@@ -17,6 +17,7 @@ import {
 import type { SkillDomain } from "@/types/rpg";
 import type { VillageResident } from "@/lib/sanctuary/village-tiers";
 import { CozyButton } from "@/components/cozy/ui";
+import { BuildingSpecialistPanel } from "@/components/sanctuary/building-specialist-panel";
 import { triggerHaptic } from "@/lib/offline-sync";
 
 export interface InteriorStationDefinition {
@@ -320,25 +321,28 @@ export function LivingInteriorRoom({
           })}
         </div>
 
-        {/* MINI PORCHE CON EL RESIDENTE COMPAÑERO */}
-        {resident && (
-          <div className="relative z-10 mt-3 pt-3 border-t border-amber-200/20 flex items-center justify-between gap-3 text-xs text-amber-100">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-300/40 bg-amber-900/50 text-base shadow-xs">
-                {resident.avatar}
-              </span>
-              <div>
-                <span className="font-black text-amber-200">{resident.name}</span>
-                <span className="text-[10px] text-amber-200/70 ml-1.5">
-                  ({resident.title})
+        {/* MINI PORCHE CON EL RESIDENTE COMPAÑERO & ESPECIALISTA IA (FASE 2) */}
+        <div className="relative z-10 mt-3 pt-3 border-t border-amber-200/20 text-xs text-amber-100">
+          {resident && (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-300/40 bg-amber-900/50 text-base shadow-xs">
+                  {resident.avatar}
                 </span>
+                <div>
+                  <span className="font-black text-amber-200">{resident.name}</span>
+                  <span className="text-[10px] text-amber-200/70 ml-1.5">
+                    ({resident.title})
+                  </span>
+                </div>
               </div>
+              <p className="text-[11px] italic text-amber-200/80 hidden sm:inline">
+                "{resident.greetingQuote}"
+              </p>
             </div>
-            <p className="text-[11px] italic text-amber-200/80 hidden sm:inline">
-              "{resident.greetingQuote}"
-            </p>
-          </div>
-        )}
+          )}
+          <BuildingSpecialistPanel buildingId={buildingId} avatar={resident?.avatar || icon} />
+        </div>
       </div>
 
       {/* =========================================================================
