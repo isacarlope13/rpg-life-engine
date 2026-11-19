@@ -110,6 +110,40 @@ export async function getActiveWorkProjects(ctx: MayorToolContext): Promise<{
   excludedDemoCount: number;
   limitationNote?: string;
 }> {
+  if (ctx.isSupabaseConfigured && ctx.db) {
+    const { data, error } = await ctx.db
+      .from("work_projects")
+      .select("id, client_id, name, description, status, methodology, current_stage, work_scope, total_minutes_invested, created_at")
+      .eq("user_id", ctx.authenticatedUserId)
+      .is("deleted_at", null)
+      .neq("status", "completed")
+      .order("updated_at", { ascending: false })
+      .limit(25);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const synced: WorkProjectSummary[] = data.map((p) => ({
+        id: String(p.id),
+        name: String(p.name),
+        description: p.description ? String(p.description) : undefined,
+        status: String(p.status || "active"),
+        methodology: String(p.methodology || "kanban"),
+        currentStage: p.current_stage ? String(p.current_stage) : undefined,
+        workScope: p.work_scope === "personal" ? "personal" : "professional",
+        dataOrigin: "real_synced",
+        totalTasks: 0,
+        completedTasks: 0,
+        pendingTasks: 0,
+        totalMinutesInvested: Number(p.total_minutes_invested || 0),
+        createdAt: String(p.created_at),
+      }));
+      return {
+        source: "supabase",
+        projects: synced,
+        excludedDemoCount: 0,
+      };
+    }
+  }
+
   const rawProjects = (ctx.store.workProjects || []) as Array<
     WorkProject & { isDemo?: boolean; dataOrigin?: DataOriginTag }
   >;

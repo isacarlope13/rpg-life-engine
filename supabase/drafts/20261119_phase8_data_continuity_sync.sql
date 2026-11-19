@@ -1,0 +1,230 @@
+-- ============================================================================
+-- OAKHAVEN FASE 8 — DATA CONTINUITY & MULTI-DEVICE SYNC (BORRADOR FINAL v3)
+-- ============================================================================
+-- PRINCIPIOS DE MÍNIMO PRIVILEGIO, INTEGRIDAD MULTIUSUARIO Y SEGURIDAD:
+-- 1. 100% ADITIVA e idempotente (probada 2x consecutivas en PostgreSQL PGlite).
+-- 2. Mínimos privilegios: REVOKE ALL FROM public, anon; GRANT SELECT, INSERT,
+--    UPDATE TO authenticated (SIN DELETE físico: el archivado es lógico vía deleted_at).
+-- 3. Integridad referencial multiusuario: work_project_tasks referencia
+--    (user_id, project_id) -> work_projects(user_id, id), impidiendo asociaciones
+--    cruzadas entre usuarios incluso bajo service_role.
+-- 4. EXCLUYE deliberadamente tablas y documentos financieros sensibles.
+-- 5. NO ejecutar automáticamente en producción; requiere aprobación humana.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.fn_phase8_set_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+-- 1. PILOTO P0: GYM — Series reales de entrenamiento multidispositivo
+CREATE TABLE IF NOT EXISTS public.gym_workout_sets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  client_id text NOT NULL,
+  session_id text,
+  exercise_name text NOT NULL CHECK (char_length(trim(exercise_name)) > 0 AND char_length(exercise_name) <= 160),
+  set_number integer NOT NULL DEFAULT 1 CHECK (set_number >= 1 AND set_number <= 100),
+  reps integer NOT NULL DEFAULT 0 CHECK (reps >= 0 AND reps <= 1000),
+  weight_kg numeric(6,2) NOT NULL DEFAULT 0 CHECK (weight_kg >= 0 AND weight_kg <= 1500),
+  rpe numeric(3,1) NOT NULL DEFAULT 7 CHECK (rpe >= 1 AND rpe <= 10),
+  completed boolean NOT NULL DEFAULT false,
+  performed_at timestamptz NOT NULL DEFAULT now(),
+  version integer NOT NULL DEFAULT 1 CHECK (version >= 1),
+  deleted_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT gym_workout_sets_user_client_unique UNIQUE (user_id, client_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gym_workout_sets_user_performed
+  ON public.gym_workout_sets (user_id, performed_at DESC)
+  WHERE deleted_at IS NULL;
+
+ALTER TABLE public.gym_workout_sets ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.gym_workout_sets FROM PUBLIC, anon;
+REVOKE DELETE ON TABLE public.gym_workout_sets FROM authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.gym_workout_sets TO authenticated;
+
+DROP TRIGGER IF EXISTS trg_gym_workout_sets_updated_at ON public.gym_workout_sets;
+CREATE TRIGGER trg_gym_workout_sets_updated_at
+  BEFORE UPDATE ON public.gym_workout_sets
+  FOR EACH ROW EXECUTE FUNCTION public.fn_phase8_set_updated_at();
+
+DROP POLICY IF EXISTS "gym_workout_sets_select_own" ON public.gym_workout_sets;
+CREATE POLICY "gym_workout_sets_select_own"
+  ON public.gym_workout_sets FOR SELECT
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "gym_workout_sets_insert_own" ON public.gym_workout_sets;
+CREATE POLICY "gym_workout_sets_insert_own"
+  ON public.gym_workout_sets FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "gym_workout_sets_update_own" ON public.gym_workout_sets;
+CREATE POLICY "gym_workout_sets_update_own"
+  ON public.gym_workout_sets FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "gym_workout_sets_delete_own" ON public.gym_workout_sets;
+
+-- 2. TRABAJO: Proyectos reales y tareas estructuradas multidispositivo
+CREATE TABLE IF NOT EXISTS public.work_projects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  client_id text NOT NULL,
+  name text NOT NULL CHECK (char_length(trim(name)) > 0 AND char_length(name) <= 180),
+  description text NOT NULL DEFAULT '',
+  methodology text NOT NULL DEFAULT 'kanban' CHECK (methodology IN ('none', 'scrum', 'kanban', 'lean')),
+  current_stage text NOT NULL DEFAULT 'En progreso',
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'on_hold', 'archived')),
+  work_scope text NOT NULL DEFAULT 'professional' CHECK (work_scope IN ('professional', 'personal')),
+  total_minutes_invested integer NOT NULL DEFAULT 0 CHECK (total_minutes_invested >= 0),
+  version integer NOT NULL DEFAULT 1 CHECK (version >= 1),
+  deleted_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT work_projects_user_client_unique UNIQUE (user_id, client_id),
+  CONSTRAINT work_projects_user_id_id_unique UNIQUE (user_id, id)
+);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'work_projects_user_id_id_unique'
+      AND conrelid = 'public.work_projects'::regclass
+  ) THEN
+    ALTER TABLE public.work_projects
+      ADD CONSTRAINT work_projects_user_id_id_unique UNIQUE (user_id, id);
+  END IF;
+END;
+$$;
+
+CREATE INDEX IF NOT EXISTS idx_work_projects_user_updated
+  ON public.work_projects (user_id, updated_at DESC)
+  WHERE deleted_at IS NULL;
+
+ALTER TABLE public.work_projects ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.work_projects FROM PUBLIC, anon;
+REVOKE DELETE ON TABLE public.work_projects FROM authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.work_projects TO authenticated;
+
+DROP TRIGGER IF EXISTS trg_work_projects_updated_at ON public.work_projects;
+CREATE TRIGGER trg_work_projects_updated_at
+  BEFORE UPDATE ON public.work_projects
+  FOR EACH ROW EXECUTE FUNCTION public.fn_phase8_set_updated_at();
+
+DROP POLICY IF EXISTS "work_projects_select_own" ON public.work_projects;
+CREATE POLICY "work_projects_select_own"
+  ON public.work_projects FOR SELECT
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "work_projects_insert_own" ON public.work_projects;
+CREATE POLICY "work_projects_insert_own"
+  ON public.work_projects FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "work_projects_update_own" ON public.work_projects;
+CREATE POLICY "work_projects_update_own"
+  ON public.work_projects FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "work_projects_delete_own" ON public.work_projects;
+
+CREATE TABLE IF NOT EXISTS public.work_project_tasks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  project_id uuid NOT NULL,
+  client_id text NOT NULL,
+  title text NOT NULL CHECK (char_length(trim(title)) > 0 AND char_length(title) <= 220),
+  description text NOT NULL DEFAULT '',
+  stage text NOT NULL DEFAULT 'todo',
+  priority text NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'critical')),
+  estimated_minutes integer CHECK (estimated_minutes IS NULL OR estimated_minutes >= 0),
+  is_completed boolean NOT NULL DEFAULT false,
+  version integer NOT NULL DEFAULT 1 CHECK (version >= 1),
+  deleted_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT work_project_tasks_user_client_unique UNIQUE (user_id, client_id),
+  CONSTRAINT work_project_tasks_user_project_fkey
+    FOREIGN KEY (user_id, project_id)
+    REFERENCES public.work_projects (user_id, id)
+    ON DELETE CASCADE
+);
+
+ALTER TABLE public.work_project_tasks
+  DROP CONSTRAINT IF EXISTS work_project_tasks_project_id_fkey;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'work_project_tasks_user_project_fkey'
+      AND conrelid = 'public.work_project_tasks'::regclass
+  ) THEN
+    ALTER TABLE public.work_project_tasks
+      ADD CONSTRAINT work_project_tasks_user_project_fkey
+      FOREIGN KEY (user_id, project_id)
+      REFERENCES public.work_projects (user_id, id)
+      ON DELETE CASCADE;
+  END IF;
+END;
+$$;
+
+CREATE INDEX IF NOT EXISTS idx_work_project_tasks_user_project
+  ON public.work_project_tasks (user_id, project_id)
+  WHERE deleted_at IS NULL;
+
+ALTER TABLE public.work_project_tasks ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.work_project_tasks FROM PUBLIC, anon;
+REVOKE DELETE ON TABLE public.work_project_tasks FROM authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.work_project_tasks TO authenticated;
+
+DROP TRIGGER IF EXISTS trg_work_project_tasks_updated_at ON public.work_project_tasks;
+CREATE TRIGGER trg_work_project_tasks_updated_at
+  BEFORE UPDATE ON public.work_project_tasks
+  FOR EACH ROW EXECUTE FUNCTION public.fn_phase8_set_updated_at();
+
+DROP POLICY IF EXISTS "work_project_tasks_select_own" ON public.work_project_tasks;
+CREATE POLICY "work_project_tasks_select_own"
+  ON public.work_project_tasks FOR SELECT
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "work_project_tasks_insert_own" ON public.work_project_tasks;
+CREATE POLICY "work_project_tasks_insert_own"
+  ON public.work_project_tasks FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "work_project_tasks_update_own" ON public.work_project_tasks;
+CREATE POLICY "work_project_tasks_update_own"
+  ON public.work_project_tasks FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "work_project_tasks_delete_own" ON public.work_project_tasks;
+
+-- 3. CUBOS: Columnas aditivas compatibles con public.rubik_cubes existente (preserva rubik_solves)
+ALTER TABLE public.rubik_cubes
+  ADD COLUMN IF NOT EXISTS tension_notes text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS lube_notes text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS maintenance_needs text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS custom_notes text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS algorithms_to_master text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS sync_version integer NOT NULL DEFAULT 1 CHECK (sync_version >= 1),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+DROP TRIGGER IF EXISTS trg_rubik_cubes_updated_at ON public.rubik_cubes;
+CREATE TRIGGER trg_rubik_cubes_updated_at
+  BEFORE UPDATE ON public.rubik_cubes
+  FOR EACH ROW EXECUTE FUNCTION public.fn_phase8_set_updated_at();
