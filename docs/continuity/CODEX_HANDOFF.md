@@ -1,12 +1,12 @@
-# CODEX HANDOFF — OAKHAVEN RELEASE 3.1 (INTEGRIDAD MULTIUSUARIO VERIFICADA) (2026-11-19)
+# CODEX HANDOFF — OAKHAVEN FASE 9: PUEBLO VIVO 5.0 (LISTO PARA REVISIÓN) (2026-11-19)
 
-- **Estado**: **`RELEASE 3.1 — INTEGRIDAD MULTIUSUARIO VERIFICADA. LISTO PARA APROBACIÓN FINAL`** en rama `feat/oakhaven-phase8-data-continuity` (base `main` @ `8220155`, Release 3.0). Sin SQL ejecutado en producción, sin `push`, sin `merge`, sin despliegue.
-- **Documento GO/NO-GO y Checklist completo**: `docs/data/RELEASE_3_1_MIGRATION_AUDIT.md`.
-- **Archivo SQL final**: `supabase/drafts/20261119_phase8_data_continuity_sync.sql`.
-- **Riesgos cerrados en este paquete GO/NO-GO**:
-  1. **Integridad referencial multiusuario (FK compuesta):** `public.work_projects` añade `UNIQUE (user_id, id)` y `public.work_project_tasks` usa `FOREIGN KEY (user_id, project_id) REFERENCES public.work_projects (user_id, id) ON DELETE CASCADE` (idempotente), bloqueando asociaciones cruzadas entre usuarios tanto bajo `authenticated` como bajo `service_role`.
-  2. **Concurrencia optimista atómica (CAS):** `POST /api/sync` (`src/app/api/sync/route.ts`) y `src/lib/sync/local-sync-memory.ts` ejecutan `UPDATE ... WHERE user_id = ? AND client_id = ? AND version = expectedVersion` con incremento atómico `version + 1` y manejo de colisión `23505` en inserciones.
-  3. **Mínimos privilegios SQL:** `REVOKE ALL FROM PUBLIC, anon`, `REVOKE DELETE FROM authenticated`, `GRANT SELECT, INSERT, UPDATE TO authenticated`, archivado lógico vía `deleted_at` (sin políticas `FOR DELETE`).
-  4. **Kill-switch de sincronización:** `OAKHAVEN_SYNC_ENABLED=false` pausa `GET/POST /api/sync` devolviendo `PENDIENTE_DE_SINCRONIZAR` sin pérdida de datos locales.
-- **Resultados QA**: `npx tsc --noEmit` (0 errores), `npm test` (**329/329 aprobadas**, incluye pruebas PGlite de FK compuesta en `authenticated` y `service_role`), `npm run build` (exit code 0).
-- **Bloqueadores residuales**: ejecución manual del SQL en Supabase con aprobación humana + E2E real en 2 navegadores tras aplicar SQL.
+- **Estado**: **`PUEBLO VIVO 5.0 — EXPERIENCIA INTERACTIVA IMPLEMENTADA Y LISTA PARA REVISIÓN`** en rama aislada `feat/oakhaven-phase9-living-village-5` (base `main` @ `5813eea`, Release 3.1). Sin `push`, sin `merge`, sin despliegue.
+- **Sistemas protegidos (intactos)**: finanzas COP, motor GP/XP, sesiones atómicas, RLS, `/api/sync` (CAS + kill-switch), cola offline, aprobaciones Nivel 2/3, privacidad de Silas y Rowan, y los 9 personajes.
+- **Cambios principales**:
+  1. `src/lib/sanctuary/living-village-engine.ts`: motor puro de avatar explorador, señales visuales confirmadas, estado ambiental determinista de habitantes (0 Gemini) y planos temáticos de los 8 interiores.
+  2. `src/components/sanctuary/interactive-village-scene.tsx` + `src/lib/sanctuary/use-village-camera.ts` + `src/app/globals.css`: pinch-to-zoom táctil, iluminación y partículas climáticas GPU, pausa off-screen (`IntersectionObserver`), Presidente Rowan en Plaza Central y avatar explorador opcional con D-pad táctil.
+  3. `src/components/sanctuary/cozy-village-map.tsx`: barra de acceso directo `"Ir directo:"` (1 toque en móvil/teclado), toggle persistente de movimiento reducido y enlace a Rowan.
+  4. `src/components/sanctuary/living-interior-room.tsx` + `src/components/cozy/village-pixel-building.tsx` + `src/components/cozy/companions-modal.tsx`: habitaciones temáticas con mobiliario interactivo para los 8 edificios, pestañas móviles (`min-h-[44px]`), idle animation + badge `🔇` de IA silenciada y filtros completos de Compañeros.
+- **Resultados QA**: `npx tsc --noEmit` (0 errores), `npm test` (**335/335 aprobadas**), `npm run build` (exit code 0).
+- **Documentación**: `docs/world/PHASE_9_LIVING_VILLAGE_ARCHITECTURE.md`, `PHASE_9_UX_AUDIT.md`, `PHASE_9_PERFORMANCE_REPORT.md`, `PHASE_9_TEST_REPORT.md`.
+- **Pendiente**: prueba visual autenticada en navegador real (desktop y móvil) + autorización humana antes de merge/push/despliegue.
