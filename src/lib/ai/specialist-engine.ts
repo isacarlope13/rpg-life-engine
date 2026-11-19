@@ -355,6 +355,8 @@ export async function askBuildingSpecialist(params: {
   disabledSkillIds?: string[];
   selectedResourceId?: string;
   memoryResources?: PrivateBuildingResource[];
+  /** Gancho opcional de instrumentación para pruebas de aislamiento de Gemini */
+  onGeminiAttemptForTests?: () => void;
 }): Promise<SpecialistAnswerResponse> {
   const skill = getSpecialistSkillForBuilding(params.buildingId);
   if (!skill) {
@@ -1106,6 +1108,7 @@ export async function askBuildingSpecialist(params: {
     params.allowGemini !== false && skill.buildingId !== "banco_oakhaven";
 
   if (canUseGeminiForBuilding) {
+    params.onGeminiAttemptForTests?.();
     const polished = await trySpecialistGeminiPolish(
       skill,
       cleanQuestion,

@@ -1,13 +1,11 @@
-# CODEX HANDOFF — OAKHAVEN AI FASE 6 (NORA & SILAS) COMPLETADA (2026-11-19)
+# CODEX HANDOFF — OAKHAVEN AI RELEASE 2.6 (NORA & SILAS) VALIDADO (2026-11-19)
 
-- **Estado**: **FASE 6 COMPLETADA EN RAMA AISLADA** `feat/oakhaven-ai-phase6-nora-silas` (creada desde `main` @ `5334800`, con Release 2.5 ya publicado). Sin `push`, sin `merge`, sin despliegue, sin SQL en producción, sin iniciar Fase 7.
-- **Hito alcanzado**: **Los 8 especialistas definitivos de OakHaven están activos** (Clara, Lyra, Aura, Eldrin, Bruno, Milo, Nora y Silas) + Presidente Rowan sobre un único motor multi-herramienta.
-- **Implementado en Fase 6**:
-  - `src/lib/ai/nora-silas-tools.ts`: Herramientas de **Nora (Cine)** y **Silas (Guardián Financiero Privado de solo lectura)** con exclusión de `INITIAL_FINANCIAL_MOVEMENTS`/`CASE_STUDY_ACCOUNTS`, enteros COP, separación de monedas, enmascaramiento de números de cuenta y simulaciones puras sin escritura.
-  - `src/lib/ai/specialist-engine.ts`, `src/lib/ai/mayor-readonly-tools.ts` y `src/components/sanctuary/building-specialist-panel.tsx`: Integración de Nora y Silas, exclusión por defecto de Gemini para `banco_oakhaven` (privacidad financiera estricta), bloqueo de mutaciones financieras y exclusión de semillas demo en Rowan.
-  - `tests/oakhaven-ai-phase6-nora-silas.test.ts` + 5 documentos pedagógicos en `docs/ai/`.
-- **Verificación**:
+- **Estado**: **`LISTO PARA REVISIÓN MANUAL`** en rama `feat/oakhaven-ai-phase6-nora-silas` (base `main` @ `5334800` con Release 2.5 publicado). Sin `push`, sin `merge`, sin despliegue automático, sin iniciar Fase 7.
+- **Informe principal**: `docs/ai/OAKHAVEN_AI_RELEASE_2_6.md`.
+- **Resultados QA verificados**:
   - `npx tsc --noEmit`: **0 errores**.
-  - `npm test`: **319 / 319 pruebas aprobadas** (`13` suites).
-- **Siguiente paso (esperando autorización del usuario)**:
-  - Validación E2E / revisión manual de Release 2.6 (Nora y Silas), aprobación de merge/push a `main`, y posteriormente Fase 7 (orquestación avanzada / observabilidad / QA integral de los 8 edificios).
+  - `npm test`: **319 / 319 pruebas aprobadas** (`13` suites, incluyendo prueba instrumentada `geminiAttemptsForSilas === 0`).
+  - `npm run build`: **APROBADO (exit code `0`)** (`33/33` páginas + `.next/standalone`).
+  - **E2E HTTP autenticado local (`local_engine`):** **5/5 bloques aprobados** (Nora con `409` anti-duplicado, Silas 100% determinista sin Gemini, desactivación individual, Rowan + regresión de los otros 6 especialistas, GP/XP/COP intactos).
+  - **E2E navegador en Supabase producción:** Pendiente manual del usuario.
+- **Siguiente paso**: Esperando autorización explícita del usuario para hacer `merge --no-ff` a `main` y `git push origin main`, y posteriormente iniciar Fase 7.

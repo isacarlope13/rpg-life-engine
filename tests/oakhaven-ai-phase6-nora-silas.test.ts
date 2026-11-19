@@ -208,13 +208,18 @@ describe("OAKHAVEN AI FASE 6 — Nora (Cine) y Silas (Guardián Financiero Priva
     const ob = await getRecordedObligations(ctx);
     assert.ok(ob.totalMonthlyObligationsCop >= 0);
 
-    // Silas responde siempre en modo determinista (nunca envía datos financieros a Gemini por defecto)
+    // Silas responde siempre en modo determinista (prueba instrumentada: 0 llamadas a Gemini incluso con allowGemini: true)
+    let geminiAttemptsForSilas = 0;
     const silasRes = await askBuildingSpecialist({
       buildingId: "banco_oakhaven",
       question: "¿Cuánto gasté esta quincena, simula ahorrar 100000 COP y explica la diferencia entre GP y COP?",
       ctx,
       allowGemini: true, // Incluso con allowGemini: true, Silas fuerza modo determinista privado
+      onGeminiAttemptForTests: () => {
+        geminiAttemptsForSilas += 1;
+      },
     });
+    assert.equal(geminiAttemptsForSilas, 0, "Silas NUNCA debe invocar Gemini por defecto");
     assert.equal(silasRes.specialist.name, "Silas");
     assert.equal(silasRes.mode, "deterministic_grounded");
     assert.ok(silasRes.answer.includes("ESCENARIO HIPOTÉTICO"));
