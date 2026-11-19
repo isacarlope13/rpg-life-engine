@@ -297,7 +297,7 @@ export function buildDeterministicGroundedAnswer(
         }
         if (lastSet) {
           lines.push(
-            `- **Última serie real registrada:** ${lastSet.exerciseName} — ${lastSet.weightKg} kg x ${lastSet.reps} reps (volumen total: ${Number(d.totalVolumeKg || 0)} kg).`
+            `- **Última serie en navegador local (local_snapshot):** ${lastSet.exerciseName} — ${lastSet.weightKg} kg x ${lastSet.reps} reps (volumen local: ${Number(d.totalVolumeKg || 0)} kg; pendiente de sincronización en servidor).`
           );
         }
         sections.push(lines.join("\n"));

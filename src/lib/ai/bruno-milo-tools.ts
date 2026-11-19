@@ -282,9 +282,9 @@ export interface WcaAverageResult {
 }
 
 /**
- * Cálculo oficial WCA (Artículo 9f):
- * - Ao5: últimos 5 solves del MISMO tipo de cubo. Elimina 1 mejor y 1 peor. >=2 DNF => DNF.
- * - Ao12: últimos 12 solves del MISMO tipo de cubo. Elimina 1 mejor y 1 peor. >=2 DNF => DNF.
+ * Cálculo de promedios recortados de speedcubing:
+ * - Ao5 (formato oficial WCA, Art. 9f): últimos 5 solves del MISMO tipo de cubo. Elimina 1 mejor y 1 peor. >=2 DNF => DNF.
+ * - Ao12 (estadística de entrenamiento, NO formato oficial de competencia WCA): últimos 12 solves del MISMO tipo de cubo. Elimina 1 mejor y 1 peor. >=2 DNF => DNF.
  */
 export function calculateWcaAverage(
   solvesSameCubeDesc: Array<{ time_seconds: number; penalty?: RubikPenalty | string | null }>,

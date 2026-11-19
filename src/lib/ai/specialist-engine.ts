@@ -732,7 +732,7 @@ export async function askBuildingSpecialist(params: {
       const prs = getGymPersonalRecords(params.ctx.localSnapshot?.gymSets || []);
       const topEx = prs[0];
       extraLines.push(
-        `🏋️ **[Tus series reales registradas]** ${vol.completedSetsCount} series completadas • Volumen total: **${vol.totalVolumeKg} kg**` +
+        `🏋️ **[Series registradas en tu navegador local (local_snapshot — no verificadas aún en servidor)]** ${vol.completedSetsCount} series completadas • Volumen total: **${vol.totalVolumeKg} kg**` +
           (vol.averageRpe !== null ? ` • RPE medio: **${vol.averageRpe}/10**` : "") +
           (topEx ? ` • Último peso en ${topEx.exerciseName}: **${topEx.lastWeightKg} kg x ${topEx.lastReps} reps** (máx. ${topEx.maxWeightKg} kg).` : ".")
       );
@@ -821,9 +821,9 @@ export async function askBuildingSpecialist(params: {
           ? "DNF"
           : `pendiente (${st.ao12.haveSolves}/12 solves)`;
       extraLines.push(
-        `🧩 **[Estadísticas WCA reales — ${st.cubeType} (${historyRes.source})]** ` +
+        `🧩 **[Estadísticas reales — ${st.cubeType} (${historyRes.source})]** ` +
           `Solves: **${st.totalSolves}** (DNFs: ${st.dnfCount}) • PB: **${st.pbSeconds !== null ? `${st.pbSeconds}s` : "sin tiempo válido"}** • ` +
-          `Ao5: **${ao5Label}** • Ao12: **${ao12Label}**` +
+          `Ao5 (WCA): **${ao5Label}** • Ao12 (entrenamiento): **${ao12Label}**` +
           (st.stdDevSeconds !== null ? ` • Consistencia (σ): **±${st.stdDevSeconds}s**` : "") +
           (st.lastPracticedAlgorithm ? ` • Último algoritmo practicado: **${st.lastPracticedAlgorithm}**.` : ".")
       );

@@ -9,7 +9,7 @@
   - `penalty === "DNF"` → inválido (`null` / infinito).
   - `penalty === "+2"` → `time_seconds + 2.00`.
   - `penalty === "NONE"` → `time_seconds`.
-- **Ao5 y Ao12 (`calculateWcaAverage`):**
+- **Ao5 (formato oficial WCA, Art. 9f) y Ao12 (estadística de entrenamiento, NO formato oficial de competencia WCA) (`calculateWcaAverage`):**
   - Exigen exactamente 5 o 12 solves del **mismo `cube_type`** (nunca mezcla `2x2` con `3x3`, `4x4`, `Pyraminx` o `Megaminx`).
   - Eliminan exactamente 1 mejor y 1 peor tiempo (un único `DNF` cuenta como el peor y se descarta).
   - Si existen **2 o más `DNF`** dentro de la ventana → el promedio oficial es **`DNF`**.
