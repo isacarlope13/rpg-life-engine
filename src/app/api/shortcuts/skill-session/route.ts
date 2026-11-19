@@ -20,6 +20,8 @@ import {
 import { isSupabaseConfigured, resolvePlayerTreasury } from "@/lib/supabase";
 import { requireShortcutUser, scopeIdempotencyKey } from "@/lib/request-auth";
 import { persistUserCollectionsState } from "@/lib/persistence-sync";
+import { isPositiveSessionDuration } from "@/lib/skill-session-validation";
+import { recoverSkillSessionStateFromProfile } from "@/lib/skill-session-recovery";
 
 export interface SkillSessionEndpointRequest {
   idempotency_key?: string;
@@ -37,6 +39,7 @@ export interface SkillSessionEndpointRequest {
     | "update_book_gallery"
     | "add_book_quote"
     | "add_knitting_project"
+    | "update_knitting_project_status"
     | "add_work_project"
     | "generate_ai_project"
     | "add_work_project_task"
@@ -119,8 +122,11 @@ export interface SkillSessionEndpointRequest {
   project_id?: string;
   rows_completed?: number;
   stitches_notes?: string;
+  knitting_name?: string;
   knitting_technique?: "Crochet" | "Dos Agujas" | "Amigurumi" | "Telar";
   knitting_total_rows?: number;
+  knitting_yarn_details?: string;
+  knitting_status?: "in_progress" | "paused" | "completed" | "archived";
   yarn_details?: string;
   // Study
   subject?: string;
@@ -516,23 +522,31 @@ export async function POST(req: Request) {
 
     if (body.action === "add_knitting_project") {
       const project = store.addKnittingProject({
-        name: body.title || "",
+        name: body.title || body.knitting_name || "",
         technique: body.knitting_technique || "Crochet",
         total_rows_target: body.knitting_total_rows || 50,
-        yarn_details: body.yarn_details,
+        yarn_details: body.yarn_details || body.knitting_yarn_details,
       });
 
       if (isSupabaseConfigured && db) {
-        await db.from("knitting_projects").insert({
-          user_id: userId,
-          name: project.name,
-          technique: project.technique,
-          total_rows_target: project.total_rows_target,
-          completed_rows: 0,
-          yarn_details: project.yarn_details,
-          status: "in_progress",
-        });
+        const { data: inserted } = await db
+          .from("knitting_projects")
+          .insert({
+            user_id: userId,
+            name: project.name,
+            technique: project.technique,
+            total_rows_target: project.total_rows_target,
+            completed_rows: 0,
+            yarn_details: project.yarn_details,
+            status: "in_progress",
+          })
+          .select("id")
+          .maybeSingle();
+        if (inserted?.id) {
+          project.id = String(inserted.id);
+        }
       }
+      await persistUserCollectionsState({ userId, store, db });
 
       return NextResponse.json(
         {
@@ -544,6 +558,37 @@ export async function POST(req: Request) {
         },
         { status: 201 }
       );
+    }
+
+    if (body.action === "update_knitting_project_status") {
+      const targetId = (body.project_id || "").trim();
+      const nextStatus = body.knitting_status;
+      if (!targetId || !nextStatus) {
+        return NextResponse.json(
+          { error: "project_id y knitting_status son obligatorios." },
+          { status: 400 }
+        );
+      }
+
+      const updated = store.updateKnittingProjectStatus(targetId, nextStatus);
+      if (isSupabaseConfigured && db && !targetId.startsWith("knit-")) {
+        await db
+          .from("knitting_projects")
+          .update({
+            status: nextStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", targetId)
+          .eq("user_id", userId);
+      }
+      await persistUserCollectionsState({ userId, store, db });
+
+      return NextResponse.json({
+        success: true,
+        action: "update_knitting_project_status",
+        project: updated,
+        knitting_projects: store.knittingProjects,
+      });
     }
 
     if (body.action === "generate_ai_project") {
@@ -997,6 +1042,16 @@ export async function POST(req: Request) {
     }
 
     const domain = body.domain || "study";
+    if (body.duration_minutes !== undefined && !isPositiveSessionDuration(body.duration_minutes)) {
+      return NextResponse.json({ success: false, error: "La duración registrada debe ser un número positivo" }, { status: 400 });
+    }
+    if (isSupabaseConfigured && db) {
+      try {
+        await recoverSkillSessionStateFromProfile(db, userId, store);
+      } catch {
+        return NextResponse.json({ success: false, code: "SESSION_RECOVERY_PENDING", error: "No se pudo verificar el historial anterior. Conserva el pendiente y reintenta." }, { status: 503 });
+      }
+    }
     const result = store.logSkillSession({
       domain,
       duration_minutes: body.duration_minutes || 25,
@@ -1028,7 +1083,7 @@ export async function POST(req: Request) {
       agile_stage: body.agile_stage,
     });
 
-    if (isSupabaseConfigured && db) {
+    if (isSupabaseConfigured && db && !result.reward_impact.idempotent_replay) {
       const treasury = await resolvePlayerTreasury(userId, db);
 
       if (treasury) {
@@ -1148,7 +1203,10 @@ export async function POST(req: Request) {
       }
     }
 
-    await persistUserCollectionsState({ userId, store, db });
+    const persisted = await persistUserCollectionsState({ userId, store, db });
+    if (!persisted.success || (isSupabaseConfigured && !persisted.dbSaved)) {
+      return NextResponse.json({ success: false, code: "SESSION_PERSISTENCE_PENDING", error: "No se pudo confirmar el guardado; conserva la misma operación y reintenta" }, { status: 503 });
+    }
 
     return NextResponse.json(
       {

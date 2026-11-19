@@ -1,3 +1,4 @@
+import { isOfflineOwner } from "../offline-owner.ts";
 /**
  * =====================================================================
  * SKILL RESOURCE HUB & SMART CAPTURE ENGINE — RPG LIFE-ENGINE 3.5.0
@@ -375,8 +376,9 @@ function getLocalStorageSafely(): Storage | null {
  */
 export function getStoredSkillResources(
   domain: SkillDomain,
-  userId: string = "usr_cozy_hero"
+  userId?: string
 ): SkillResource[] {
+  if (!isOfflineOwner(userId)) return [];
   const storage = getLocalStorageSafely();
   if (!storage) return [];
 
@@ -396,8 +398,11 @@ export function getStoredSkillResources(
  */
 export function saveSkillResource(
   resource: Omit<SkillResource, "id" | "createdAt" | "updatedAt"> & { id?: string },
-  userId: string = "usr_cozy_hero"
+  userId?: string
 ): SkillResource {
+  if (!isOfflineOwner(userId) || resource.userId !== userId) throw new Error("Se requiere el propietario del recurso");
+  const storage = getLocalStorageSafely();
+  if (!storage) throw new Error("Almacenamiento no disponible; el recurso no se guardó");
   const now = new Date().toISOString();
   const id = resource.id || `res_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -410,12 +415,12 @@ export function saveSkillResource(
     tags: resource.tags || [],
   };
 
-  const storage = getLocalStorageSafely();
   if (storage) {
     try {
       const raw = storage.getItem(`${RESOURCES_KEY_PREFIX}${userId}`);
       const list: SkillResource[] = raw ? JSON.parse(raw) : [];
-      const index = list.findIndex((r) => r.id === id);
+      if (!Array.isArray(list)) throw new Error("Recursos locales no válidos");
+      const index = list.findIndex((r) => r && r.id === id && r.userId === userId);
       if (index >= 0) {
         list[index] = finalResource;
       } else {
@@ -423,7 +428,7 @@ export function saveSkillResource(
       }
       storage.setItem(`${RESOURCES_KEY_PREFIX}${userId}`, JSON.stringify(list));
     } catch (err) {
-      console.error("[SkillResourcesHub] Error al guardar recurso:", err);
+      throw new Error("No se pudo guardar el recurso; conserva los datos y reintenta");
     }
   }
 
@@ -435,8 +440,9 @@ export function saveSkillResource(
  */
 export function deleteSkillResource(
   resourceId: string,
-  userId: string = "usr_cozy_hero"
+  userId?: string
 ): boolean {
+  if (!isOfflineOwner(userId)) return false;
   const storage = getLocalStorageSafely();
   if (!storage) return false;
 
@@ -444,7 +450,8 @@ export function deleteSkillResource(
     const raw = storage.getItem(`${RESOURCES_KEY_PREFIX}${userId}`);
     if (!raw) return false;
     const list: SkillResource[] = JSON.parse(raw);
-    const filtered = list.filter((r) => !(r.id === resourceId && r.userId === userId));
+    if (!Array.isArray(list) || !list.some(r => r && r.id === resourceId && r.userId === userId)) return false;
+    const filtered = list.filter((r) => !(r && r.id === resourceId && r.userId === userId));
     storage.setItem(`${RESOURCES_KEY_PREFIX}${userId}`, JSON.stringify(filtered));
     return true;
   } catch {

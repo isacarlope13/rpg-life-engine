@@ -1,5 +1,7 @@
 "use client";
 
+import { useSessionIdentity } from "@/lib/sanctuary/session-identity";
+import { isOfflineOwner } from "@/lib/offline-owner";
 import React, { useState, useEffect, useId } from "react";
 import {
   FileText,
@@ -26,7 +28,8 @@ import {
   deleteSkillResource,
   validateSkillResourceAttachment,
 } from "@/lib/sanctuary/skill-resources-hub";
-import { CozyButton, CozyNotification } from "@/components/cozy/ui";
+import { CozyButton } from "@/components/cozy/ui/cozy-button";
+import { CozyNotification } from "@/components/cozy/ui/cozy-notification";
 import { triggerHaptic } from "@/lib/offline-sync";
 
 interface SkillResourceHubPanelProps {
@@ -36,12 +39,21 @@ interface SkillResourceHubPanelProps {
   onSelectResource?: (resource: SkillResource) => void;
 }
 
-export function SkillResourceHubPanel({
+export function SkillResourceHubPanel(props: SkillResourceHubPanelProps) {
+  const contextOwner = useSessionIdentity();
+  const candidate = props.userId ?? contextOwner;
+  if (!isOfflineOwner(candidate) || (contextOwner && candidate !== contextOwner)) {
+    return <p role="status">Inicia sesión para consultar tus recursos.</p>;
+  }
+  return <OwnedSkillResourceHubPanel key={candidate + ":" + props.domain} {...props} userId={candidate} />;
+}
+
+function OwnedSkillResourceHubPanel({
   domain,
-  userId = "usr_cozy_hero",
+  userId,
   className = "",
   onSelectResource,
-}: SkillResourceHubPanelProps) {
+}: SkillResourceHubPanelProps & { userId: string }) {
   const [resources, setResources] = useState<SkillResource[]>([]);
   const [activeFilter, setActiveFilter] = useState<"all" | SkillResourceType>("all");
   const [isAdding, setIsAdding] = useState(false);
@@ -157,7 +169,10 @@ export function SkillResourceHubPanel({
 
   const handleDelete = (id: string, title: string) => {
     if (confirm(`¿Deseas desenlazar el recurso "${title}"?`)) {
-      deleteSkillResource(id, userId);
+      if (!deleteSkillResource(id, userId)) {
+        setNotification({ type: "error", message: "No se pudo desenlazar el recurso. Se conserva sin cambios." });
+        return;
+      }
       setResources((prev) => prev.filter((r) => r.id !== id));
       triggerHaptic("light");
       setNotification({

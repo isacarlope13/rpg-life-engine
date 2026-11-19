@@ -55,6 +55,7 @@ export interface BuildingInteriorShellProps {
   tabs: BuildingInteriorTab[];
   onTabChange: (tabId: string) => void;
   onClose?: () => void;
+  submissionError?: string | null;
   children: React.ReactNode;
 }
 
@@ -79,10 +80,12 @@ export function BuildingInteriorShell({
   tabs,
   onTabChange,
   onClose,
+  submissionError,
   children,
 }: BuildingInteriorShellProps) {
   return (
     <div className="space-y-6 text-[#3A2E2B] font-sans antialiased">
+      {submissionError && <p role="alert" className="rounded-xl border border-amber-700 bg-amber-50 p-3 text-sm text-amber-950">{submissionError} Tu sesión se conserva; puedes reintentar.</p>}
       {/* =========================================================================
           1. HEADER UNIFICADO DEL EDIFICIO: TÍTULO, MÉTRICAS & REGRESO AL PUEBLO
          ========================================================================= */}

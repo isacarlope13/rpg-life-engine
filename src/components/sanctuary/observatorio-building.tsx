@@ -72,6 +72,7 @@ export function ObservatorioBuilding({
     resumeSession,
     resetSession,
     finishSession,
+    submissionError,
   } = useUniversalSession("general", "observatorio");
 
   const focusPresets = [
@@ -106,7 +107,7 @@ export function ObservatorioBuilding({
     setIsSubmitting(true);
     triggerHaptic("medium");
     try {
-      await finishSession({
+      const confirmed = await finishSession({
         domain: "general",
         action_type: "deep_work_focus",
         details: `Enfoque en Observatorio: ${targetGoal}${
@@ -116,6 +117,7 @@ export function ObservatorioBuilding({
         target_goal: targetGoal,
         distractions_logged: distractions,
       });
+    if (!confirmed) return;
 
       setNotification({
         type: "success",
@@ -144,6 +146,7 @@ export function ObservatorioBuilding({
 
   return (
     <BuildingInteriorShell
+      submissionError={submissionError}
       buildingId="observatorio"
       buildingName="El Observatorio Cósmico"
       domain="general"

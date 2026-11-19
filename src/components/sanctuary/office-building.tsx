@@ -96,7 +96,7 @@ export function OfficeBuilding({
   onSubmitDirectSkillSession,
   onClose,
 }: OfficeBuildingProps) {
-  const { session, isRunning, isPaused, isActive, formattedTime, startSession, pauseSession, resumeSession, resetSession } =
+  const { session, isRunning, isPaused, isActive, formattedTime, startSession, pauseSession, resumeSession, resetSession, submissionError } =
     useUniversalSession("work", "oficina");
 
   const [activeTab, setActiveTab] = useState<"timer" | "projects" | "deliverables" | "metrics" | "aura" | "meetings" | "evolucion">("timer");
@@ -272,6 +272,7 @@ export function OfficeBuilding({
 
   return (
     <LivingInteriorRoom
+      submissionError={submissionError}
       buildingId="oficina"
       buildingName="Torre de Gestión & Oficina"
       domain="work"

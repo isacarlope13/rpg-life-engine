@@ -94,6 +94,7 @@ export function BibliotecaBuilding({
     resetSession,
     finishSession,
     submitting,
+    submissionError,
   } = useUniversalSession("study", "biblioteca");
 
   const studySessions = sessions.filter((s) => s.domain === "study");
@@ -177,6 +178,7 @@ export function BibliotecaBuilding({
 
   return (
     <BuildingInteriorShell
+      submissionError={submissionError}
       buildingId="biblioteca"
       buildingName="La Gran Biblioteca del Erudito"
       domain="study"

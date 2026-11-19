@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserStore, resolveShortcutRequestUser } from "./auth.ts";
 import type { RPGEngineMemoryStore } from "./demo-store.ts";
+import { offlineOwnerMatches } from "./offline-owner.ts";
 
 export type ShortcutUserContext =
   | {
@@ -33,6 +34,16 @@ export async function requireShortcutUser(
       response: NextResponse.json(
         { success: false, error: auth.error },
         { status: auth.status }
+      ),
+    };
+  }
+
+  if (!offlineOwnerMatches(req.headers, auth.userId)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { success: false, error: "El pendiente pertenece a otra cuenta", code: "OFFLINE_OWNER_MISMATCH" },
+        { status: 409 }
       ),
     };
   }

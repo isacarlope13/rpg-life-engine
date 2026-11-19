@@ -118,6 +118,7 @@ export function ClubPuzzlesBuilding({
     resetSession: resetStudySession,
     finishSession: finishStudySession,
     updateNotes: updateStudyNotes,
+    submissionError,
   } = useUniversalSession("rubik", "club_puzzles");
 
   const [studyFocus, setStudyFocus] = useState("F2L & Lookahead Fluido");
@@ -378,6 +379,7 @@ export function ClubPuzzlesBuilding({
 
   return (
     <BuildingInteriorShell
+      submissionError={submissionError}
       buildingId="club_puzzles"
       buildingName="Club de Puzzles & Speedcubing WCA"
       domain="rubik"

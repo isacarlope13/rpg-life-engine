@@ -1,3 +1,5 @@
+import { persistProfileCollections } from "./profile-collections-persistence.ts";
+import { applySkillSessionState, serializeSkillSessionState, type PersistedSkillSessionState } from "./skill-session-state.ts";
 import fs from "node:fs";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -7,6 +9,7 @@ import { isSupabaseConfigured, supabaseAdmin } from "./supabase.ts";
 const DATA_DIR = path.join(process.cwd(), ".data", "user-stores");
 
 export interface PersistedCollectionsPayload {
+  skillSessionState?: PersistedSkillSessionState;
   updated_at: string;
   billing_period: string;
   monthly_income_cop: number;
@@ -35,15 +38,17 @@ export interface PersistedCollectionsPayload {
   wishlist?: RPGEngineMemoryStore["wishlist"];
 }
 
-function safeFilePath(userId: string): string {
+function safeFilePath(userId: string, directory = DATA_DIR): string {
   const cleanId = (userId || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
-  return path.join(DATA_DIR, `${cleanId}.json`);
+  return path.join(directory, `${cleanId}.json`);
 }
 
 export function serializeStoreCollections(
-  store: RPGEngineMemoryStore
+  store: RPGEngineMemoryStore,
+  ownerId?: string
 ): PersistedCollectionsPayload {
   return {
+    skillSessionState: serializeSkillSessionState(store, ownerId),
     updated_at: new Date().toISOString(),
     billing_period: store.billing_period,
     monthly_income_cop: store.monthly_income_cop,
@@ -75,9 +80,11 @@ export function serializeStoreCollections(
 
 export function applyPersistedCollectionsToStore(
   store: RPGEngineMemoryStore,
-  payload: Partial<PersistedCollectionsPayload> | null | undefined
+  payload: Partial<PersistedCollectionsPayload> | null | undefined,
+  expectedOwnerId?: string
 ): void {
   if (!payload || typeof payload !== "object") return;
+  applySkillSessionState(store, payload.skillSessionState, expectedOwnerId);
 
   // 1. Restauración fiel de colecciones (incluso si están vacías [])
   if (Array.isArray(payload.readingBooks)) {
@@ -161,14 +168,15 @@ export function applyPersistedCollectionsToStore(
 
 export function hydrateStoreFromLocalDisk(
   userId: string,
-  store: RPGEngineMemoryStore
+  store: RPGEngineMemoryStore,
+  storageDirectory?: string
 ): boolean {
   try {
-    const file = safeFilePath(userId);
+    const file = safeFilePath(userId, storageDirectory);
     if (!fs.existsSync(file)) return false;
     const raw = fs.readFileSync(file, "utf-8");
     const parsed = JSON.parse(raw) as Partial<PersistedCollectionsPayload>;
-    applyPersistedCollectionsToStore(store, parsed);
+    applyPersistedCollectionsToStore(store, parsed, userId);
     return true;
   } catch {
     return false;
@@ -179,17 +187,21 @@ export async function persistUserCollectionsState(params: {
   userId: string;
   store: RPGEngineMemoryStore;
   db?: SupabaseClient | null;
+  /** Internal test/backup isolation only; never accept these fields from an HTTP body. */
+  storageDirectory?: string;
+  localOnly?: boolean;
 }): Promise<{ success: boolean; diskSaved: boolean; dbSaved: boolean; error?: string }> {
   const { userId, store, db } = params;
-  const payload = serializeStoreCollections(store);
+  const directory = params.storageDirectory ?? DATA_DIR;
+  const payload = serializeStoreCollections(store, userId);
   let diskSaved = false;
   let dbSaved = false;
   let lastError: string | undefined;
 
   // 1. Persistencia atómica en disco local (.data/user-stores/{userId}.json)
   try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    const targetFile = safeFilePath(userId);
+    fs.mkdirSync(directory, { recursive: true });
+    const targetFile = safeFilePath(userId, directory);
     const tmpFile = `${targetFile}.${Date.now()}.${Math.random().toString(36).slice(2, 7)}.tmp`;
     fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), "utf-8");
     fs.renameSync(tmpFile, targetFile);
@@ -201,24 +213,10 @@ export async function persistUserCollectionsState(params: {
 
   // 2. Persistencia en Supabase (profiles.collections_state JSONB)
   const client = supabaseAdmin || db;
-  if (isSupabaseConfigured && client) {
-    try {
-      const { error: updateError } = await client
-        .from("profiles")
-        .update({
-          collections_state: payload,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", userId);
-
-      if (updateError) {
-        lastError = updateError.message;
-      } else {
-        dbSaved = true;
-      }
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-    }
+  if (!params.localOnly && isSupabaseConfigured && client) {
+    const result = await persistProfileCollections(client, userId, payload);
+    dbSaved = result.saved;
+    if (!result.saved) lastError = result.error;
   }
 
   const overallSuccess = diskSaved || dbSaved;

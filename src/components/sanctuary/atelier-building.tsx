@@ -1,28 +1,34 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Scissors,
-  Clock,
   Play,
   Pause,
-  Square,
-  RotateCcw,
   Plus,
-  Sparkles,
-  ArrowLeft,
   CheckCircle2,
   BookOpen,
-  Award,
-  Layers,
-  History,
+  Undo2,
+  Upload,
+  Trash2,
+  ExternalLink,
   Image as ImageIcon,
+  Lock,
+  Sparkles,
+  X,
 } from "lucide-react";
-import type { KnittingProject, SkillSessionRecord } from "@/types/rpg";
+import type { KnittingProject, KnittingProjectStatus, SkillSessionRecord } from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
+import { useSessionIdentity } from "@/lib/sanctuary/session-identity";
+import {
+  readAtelierPatternsSafe,
+  saveAtelierPatternSafe,
+  getDefaultAtelierPattern,
+  type AtelierProjectPattern,
+  type AtelierPatternImage,
+} from "@/lib/sanctuary/atelier-patterns-store";
 import { CozyButton, CozyProgress, CozyNotification } from "@/components/cozy/ui";
 import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
-import { BuildingInteriorShell } from "@/components/sanctuary/building-interior-shell";
 import { triggerHaptic } from "@/lib/offline-sync";
 import { SmartCaptureWidget } from "@/components/sanctuary/smart-capture-widget";
 import { SkillResourceHubPanel } from "@/components/sanctuary/skill-resource-hub-panel";
@@ -43,30 +49,95 @@ interface AtelierBuildingProps {
   onClose?: () => void;
 }
 
+const STATUS_META: Record<
+  KnittingProjectStatus,
+  { label: string; badgeClass: string; icon: string }
+> = {
+  in_progress: {
+    label: "En curso",
+    badgeClass: "bg-[#314C3C]/15 border-[#314C3C] text-[#314C3C]",
+    icon: "🧶",
+  },
+  paused: {
+    label: "Pausado sin culpa",
+    badgeClass: "bg-[#E7D69C]/40 border-[#8C6239] text-[#5C381E]",
+    icon: "☕",
+  },
+  completed: {
+    label: "Terminado",
+    badgeClass: "bg-[#C88973]/20 border-[#C88973] text-[#8A3722]",
+    icon: "✨",
+  },
+  archived: {
+    label: "Archivado",
+    badgeClass: "bg-[#3A2E2B]/10 border-[#3A2E2B]/40 text-[#795548]",
+    icon: "📦",
+  },
+};
+
+async function compressImageFileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
+    reader.onload = () => {
+      const rawUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!rawUrl.startsWith("data:image/")) {
+        reject(new Error("El archivo debe ser una imagen válida."));
+        return;
+      }
+      const img = new window.Image();
+      img.onerror = () => resolve(rawUrl);
+      img.onload = () => {
+        const maxSide = 1200;
+        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+        const width = Math.max(1, Math.round((img.width || 1) * scale));
+        const height = Math.max(1, Math.round((img.height || 1) * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(rawUrl);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.78);
+        resolve(compressed.length < rawUrl.length ? compressed : rawUrl);
+      };
+      img.src = rawUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export function AtelierBuilding({
   projects = [],
   sessions = [],
-  playerLevel,
   skillLevel = 1,
-  totalGpEarned = 0,
-  isCozyActive = true,
   onRefreshState,
   onSubmitDirectSkillSession,
   onClose,
 }: AtelierBuildingProps) {
-  const [activeTab, setActiveTab] = useState<"taller" | "patrones" | "materiales" | "proyectos" | "clara" | "evolucion" | "galeria">("taller");
+  const sessionOwner = useSessionIdentity();
+  const [activeTab, setActiveTab] = useState<
+    "taller" | "proyectos" | "patrones" | "galeria" | "clara"
+  >("taller");
 
-  // Proyecto seleccionado
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
-    return projects[0]?.id || "";
+    const firstActive = projects.find((p) => p.status === "in_progress") || projects[0];
+    return firstActive?.id || "";
   });
 
-  // Contador de vueltas de la sesión actual
+  // Contador de vueltas (requiere cronómetro activo por decisión del usuario)
   const [sessionRows, setSessionRows] = useState<number>(0);
+  const [rowUndoStack, setRowUndoStack] = useState<number[]>([]);
   const [stitchesNotes, setStitchesNotes] = useState<string>("");
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
-  const [showPatternViewer, setShowPatternViewer] = useState(false);
-  const [activePatternName, setActivePatternName] = useState<string>("Patrón Gráfico V-Stitch");
+  const [showPatternViewer, setShowPatternViewer] = useState<boolean>(true);
+  const [lightboxImage, setLightboxImage] = useState<AtelierPatternImage | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | KnittingProjectStatus>("all");
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+
   const [notification, setNotification] = useState<{
     type: "success" | "error" | "warning";
     message: string;
@@ -75,9 +146,22 @@ export function AtelierBuilding({
   // Formulario de nuevo proyecto
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectTech, setNewProjectTech] = useState<"Crochet" | "Dos Agujas" | "Amigurumi" | "Telar">("Crochet");
+  const [newProjectTech, setNewProjectTech] = useState<
+    "Crochet" | "Dos Agujas" | "Amigurumi" | "Telar"
+  >("Crochet");
   const [newProjectTargetRows, setNewProjectTargetRows] = useState(60);
   const [newProjectYarn, setNewProjectYarn] = useState("");
+
+  // Patrones persistidos por usuario y proyecto
+  const [patternsByProject, setPatternsByProject] = useState<Record<string, AtelierProjectPattern>>(
+    {}
+  );
+  const [patternTitleDraft, setPatternTitleDraft] = useState("");
+  const [patternStepsDraft, setPatternStepsDraft] = useState("");
+  const [patternNotesDraft, setPatternNotesDraft] = useState("");
+  const [patternUrlDraft, setPatternUrlDraft] = useState("");
+  const [patternImagesDraft, setPatternImagesDraft] = useState<AtelierPatternImage[]>([]);
+  const [uploadingPatternImg, setUploadingPatternImg] = useState(false);
 
   // Motor Universal de Sesiones
   const {
@@ -86,7 +170,6 @@ export function AtelierBuilding({
     isPaused,
     isActive,
     formattedTime,
-    elapsedMinutes,
     startSession,
     pauseSession,
     resumeSession,
@@ -94,21 +177,62 @@ export function AtelierBuilding({
     updateSpecializedData,
     finishSession,
     submitting,
+    submissionError,
   } = useUniversalSession("knitting", "atelier");
+
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === selectedProjectId) || projects[0],
+    [projects, selectedProjectId]
+  );
+
+  // Mantener selección válida si cambia la lista de proyectos
+  useEffect(() => {
+    if (!selectedProjectId && projects[0]?.id) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, selectedProjectId]);
+
+  // Cargar patrones del propietario actual
+  useEffect(() => {
+    setPatternsByProject(readAtelierPatternsSafe(sessionOwner));
+  }, [sessionOwner]);
+
+  // Sincronizar editor de patrón al cambiar de proyecto activo
+  const activePattern = useMemo<AtelierProjectPattern>(() => {
+    if (!activeProject) return getDefaultAtelierPattern("default", "Proyecto");
+    return (
+      patternsByProject[activeProject.id] ||
+      getDefaultAtelierPattern(activeProject.id, activeProject.name)
+    );
+  }, [activeProject, patternsByProject]);
+
+  useEffect(() => {
+    setPatternTitleDraft(activePattern.title);
+    setPatternStepsDraft(activePattern.steps.join("\n"));
+    setPatternNotesDraft(activePattern.notes);
+    setPatternUrlDraft(activePattern.externalUrl || "");
+    setPatternImagesDraft(activePattern.images);
+  }, [activePattern]);
 
   // Sincronizar vueltas registradas al reingresar si la sesión sigue activa en segundo plano
   useEffect(() => {
-    const persistedRows = (session?.specializedData as Record<string, unknown>)?.knitting as { rows_completed?: number } | undefined;
+    const persistedRows = (session?.specializedData as Record<string, unknown>)?.knitting as
+      | { rows_completed?: number }
+      | undefined;
     if (typeof persistedRows?.rows_completed === "number" && persistedRows.rows_completed > 0) {
       setSessionRows(persistedRows.rows_completed);
     }
   }, [session?.sessionId]);
 
-  const activeProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
   const totalCompletedRows = projects.reduce((acc, p) => acc + (p.completed_rows || 0), 0);
   const knittingSessions = sessions.filter((s) => s.domain === "knitting");
+  const currentWorkingRow = (activeProject?.completed_rows || 0) + sessionRows + 1;
 
-  // Proyección Visual Determinista del Atelier (Fase 9)
+  const filteredProjects = useMemo(() => {
+    if (statusFilter === "all") return projects;
+    return projects.filter((p) => p.status === statusFilter);
+  }, [projects, statusFilter]);
+
   const progression = projectAtelierProgression({
     level: skillLevel,
     sessionsCount: knittingSessions.length,
@@ -122,22 +246,26 @@ export function AtelierBuilding({
       buildingId: "atelier",
       resourceId: activeProject?.id,
       resourceTitle: activeProject?.name || "Sesión de Tejido",
-      objective: `Avanzar ${sessionRows > 0 ? sessionRows : 5} vueltas en ${activeProject?.name || "proyecto"}`,
+      objective: `Avanzar vueltas en ${activeProject?.name || "proyecto"}`,
       initialNotes: stitchesNotes,
     });
     setNotification({
       type: "success",
-      message: "🧶 ¡Sesión de tejido iniciada en el telar del Atelier!",
+      message: "🧶 Cronómetro iniciado. ¡Ya puedes registrar tus vueltas!",
     });
   };
 
-  const handleIncrementRows = (delta: number) => {
-    triggerHaptic("light");
+  const applyRowChange = (nextRows: number, pushUndo = true) => {
     setSessionRows((prev) => {
-      const nextRows = Math.max(0, prev + delta);
+      if (pushUndo && prev !== nextRows) {
+        setRowUndoStack((stack) => [...stack.slice(-9), prev]);
+      }
       updateSpecializedData({
         knitting: {
-          ...((session?.specializedData as Record<string, unknown>)?.knitting as Record<string, unknown> || {}),
+          ...(((session?.specializedData as Record<string, unknown>)?.knitting as Record<
+            string,
+            unknown
+          >) || {}),
           rows_completed: nextRows,
         },
       });
@@ -145,12 +273,34 @@ export function AtelierBuilding({
     });
   };
 
+  const handleIncrementRows = (delta: number) => {
+    if (!isActive) {
+      triggerHaptic("warning");
+      setNotification({
+        type: "warning",
+        message: "⏱️ Inicia primero el cronómetro del bastidor para ingresar tus vueltas.",
+      });
+      return;
+    }
+    triggerHaptic("light");
+    const nextRows = Math.max(0, sessionRows + delta);
+    applyRowChange(nextRows, true);
+  };
+
+  const handleUndoRow = () => {
+    if (!isActive || rowUndoStack.length === 0) return;
+    triggerHaptic("light");
+    const previous = rowUndoStack[rowUndoStack.length - 1];
+    setRowUndoStack((stack) => stack.slice(0, -1));
+    applyRowChange(previous, false);
+  };
+
   const handleFinishAndSave = async () => {
     triggerHaptic("medium");
     try {
       const result = await finishSession({
         project_id: activeProject?.id,
-        rows_completed: sessionRows > 0 ? sessionRows : 1,
+        rows_completed: sessionRows,
         stitches_notes: stitchesNotes,
         photo_evidence_url: uploadedPhotoUrl || undefined,
       });
@@ -158,9 +308,12 @@ export function AtelierBuilding({
       if (result) {
         setNotification({
           type: "success",
-          message: `✨ ¡Sesión completada con éxito! Has registrado ${sessionRows > 0 ? sessionRows : 1} vueltas en "${activeProject?.name}".`,
+          message: `✨ ¡Sesión guardada! Registraste ${sessionRows} vuelta${
+            sessionRows === 1 ? "" : "s"
+          } en "${activeProject?.name || "tu proyecto"}".`,
         });
         setSessionRows(0);
+        setRowUndoStack([]);
         setStitchesNotes("");
         setUploadedPhotoUrl(null);
         await onRefreshState();
@@ -181,15 +334,17 @@ export function AtelierBuilding({
     try {
       await onSubmitDirectSkillSession({
         action: "add_knitting_project",
+        title: newProjectName.trim(),
         knitting_name: newProjectName.trim(),
         knitting_technique: newProjectTech,
         knitting_total_rows: Number(newProjectTargetRows) || 50,
+        yarn_details: newProjectYarn.trim() || "Lana / Hilado estándar",
         knitting_yarn_details: newProjectYarn.trim() || "Lana / Hilado estándar",
       });
 
       setNotification({
         type: "success",
-        message: `🧵 ¡Proyecto "${newProjectName}" forjado con éxito!`,
+        message: `🧵 ¡Proyecto "${newProjectName.trim()}" montado en tu Atelier!`,
       });
       setIsCreatingProject(false);
       setNewProjectName("");
@@ -203,60 +358,224 @@ export function AtelierBuilding({
     }
   };
 
+  const handleChangeProjectStatus = async (
+    project: KnittingProject,
+    nextStatus: KnittingProjectStatus
+  ) => {
+    if (project.status === nextStatus) return;
+    setUpdatingStatusId(project.id);
+    try {
+      await onSubmitDirectSkillSession({
+        action: "update_knitting_project_status",
+        project_id: project.id,
+        knitting_status: nextStatus,
+      });
+      setNotification({
+        type: "success",
+        message: `${STATUS_META[nextStatus].icon} "${project.name}" pasó a estado: ${STATUS_META[nextStatus].label}.`,
+      });
+      await onRefreshState();
+    } catch {
+      setNotification({
+        type: "error",
+        message: "No se pudo actualizar el estado del proyecto.",
+      });
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
+
+  const handlePatternImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploadingPatternImg(true);
+    try {
+      const nextImages: AtelierPatternImage[] = [...patternImagesDraft];
+      for (const file of files) {
+        if (nextImages.length >= 6) break;
+        const dataUrl = await compressImageFileToDataUrl(file);
+        nextImages.push({
+          id: `pat-img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name: file.name,
+          dataUrl,
+          addedAt: new Date().toISOString(),
+        });
+      }
+      setPatternImagesDraft(nextImages);
+      if (activeProject) {
+        const res = saveAtelierPatternSafe(sessionOwner, {
+          projectId: activeProject.id,
+          title: patternTitleDraft,
+          steps: patternStepsDraft.split("\n"),
+          notes: patternNotesDraft,
+          externalUrl: patternUrlDraft,
+          images: nextImages,
+          updatedAt: new Date().toISOString(),
+        });
+        if (res.ok) {
+          setPatternsByProject(res.patterns);
+          setNotification({
+            type: "success",
+            message: "🖼️ Imagen de patrón guardada en tu Atelier.",
+          });
+        } else {
+          setNotification({ type: "error", message: res.error || "No se pudo guardar la imagen." });
+        }
+      }
+    } catch (err) {
+      setNotification({
+        type: "error",
+        message: err instanceof Error ? err.message : "Error al cargar la imagen.",
+      });
+    } finally {
+      setUploadingPatternImg(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleSavePattern = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!activeProject) return;
+    const res = saveAtelierPatternSafe(sessionOwner, {
+      projectId: activeProject.id,
+      title: patternTitleDraft,
+      steps: patternStepsDraft.split("\n"),
+      notes: patternNotesDraft,
+      externalUrl: patternUrlDraft,
+      images: patternImagesDraft,
+      updatedAt: new Date().toISOString(),
+    });
+    if (res.ok) {
+      setPatternsByProject(res.patterns);
+      setNotification({
+        type: "success",
+        message: `📜 Patrón guardado para "${activeProject.name}".`,
+      });
+    } else {
+      setNotification({
+        type: "error",
+        message: res.error || "No se pudo guardar el patrón.",
+      });
+    }
+  };
+
+  const handleRemovePatternImage = (imageId: string) => {
+    const remaining = patternImagesDraft.filter((img) => img.id !== imageId);
+    setPatternImagesDraft(remaining);
+    if (activeProject) {
+      const res = saveAtelierPatternSafe(sessionOwner, {
+        projectId: activeProject.id,
+        title: patternTitleDraft,
+        steps: patternStepsDraft.split("\n"),
+        notes: patternNotesDraft,
+        externalUrl: patternUrlDraft,
+        images: remaining,
+        updatedAt: new Date().toISOString(),
+      });
+      if (res.ok) setPatternsByProject(res.patterns);
+    }
+  };
+
   const stations: InteriorStationDefinition[] = [
     {
       id: "taller",
-      name: "Mesa de Tejido & Telar",
-      shortName: "Telar Activo",
+      name: "Mesa de Tejido",
+      shortName: "Mesa Activa",
       icon: "🧶",
       badge: isActive ? (isPaused ? "⏸️" : "⏱️") : undefined,
       badgeVariant: isRunning ? "success" : "info",
       hotkey: "1",
-      description: "Mesa de trabajo: cronómetro de bastidor, contador táctil gigante de vueltas y notas.",
-    },
-    {
-      id: "patrones",
-      name: "Atril de Patrones & Guías",
-      shortName: "Patrones",
-      icon: "📜",
-      hotkey: "2",
-      description: "Diagramas gráficos de puntadas, instrucciones de lazada y paso a paso vuelta a vuelta.",
-    },
-    {
-      id: "materiales",
-      name: "Cofre de Madejas & Fibras",
-      shortName: "Lanas & Insumos",
-      icon: "🗄️",
-      hotkey: "3",
-      description: "Inventario de lanas nobles, calibres (DK, Fingering, Aran), composición y stock.",
+      description: "Cronómetro de sesión, contador táctil grande de vueltas y visor de patrón acoplado.",
     },
     {
       id: "proyectos",
-      name: "Muro de Proyectos & Obras",
+      name: "Estantería de Proyectos",
       shortName: "Proyectos",
       icon: "🧵",
       badge: projects.length,
+      hotkey: "2",
+      description: "Proyectos en curso, pausados sin culpa, terminados y archivados.",
+    },
+    {
+      id: "patrones",
+      name: "Carpeta de Patrones",
+      shortName: "Patrones",
+      icon: "📜",
+      badge: activePattern.images.length > 0 ? activePattern.images.length : undefined,
+      hotkey: "3",
+      description: "Instrucciones vuelta a vuelta, notas personales y subida directa de imágenes.",
+    },
+    {
+      id: "galeria",
+      name: "Vitrina & Historial",
+      shortName: "Vitrina",
+      icon: "🏆",
+      badge: knittingSessions.length > 0 ? knittingSessions.length : undefined,
       hotkey: "4",
-      description: "Catálogo de proyectos activos, montaje de nuevos puntos e historial de piezas terminadas.",
+      description: "Piezas terminadas, evolución del Atelier e historial real de sesiones.",
     },
     {
       id: "clara",
       name: "Rincón de Clara",
-      shortName: "Consejo Artesanal",
-      icon: "🐰",
+      shortName: "Clara",
+      icon: "🐇",
       hotkey: "5",
-      description: "Sabiduría artesanal de Clara la Liebre, calibración de tensión y misiones vecinales.",
+      description: "Consejos serenos de Clara la Liebre y propuestas opcionales bajo tu aprobación.",
+    },
+  ];
+
+  const sceneHotspots: Array<{
+    id: typeof activeTab;
+    icon: string;
+    label: string;
+    hint: string;
+  }> = [
+    {
+      id: "taller",
+      icon: "🧶",
+      label: "Mesa Principal",
+      hint: isActive ? `En curso (${formattedTime})` : activeProject?.name || "Listo para tejer",
+    },
+    {
+      id: "proyectos",
+      icon: "🧵",
+      label: "Estantería",
+      hint: `${projects.length} proyecto${projects.length === 1 ? "" : "s"}`,
+    },
+    {
+      id: "patrones",
+      icon: "📜",
+      label: "Carpeta Patrones",
+      hint:
+        activePattern.images.length > 0
+          ? `${activePattern.images.length} img • ${activePattern.steps.length} pasos`
+          : activePattern.steps.length > 0
+          ? `${activePattern.steps.length} pasos`
+          : "Añadir guía o fotos",
+    },
+    {
+      id: "galeria",
+      icon: "🏆",
+      label: "Vitrina",
+      hint: `${knittingSessions.length} sesiones`,
+    },
+    {
+      id: "clara",
+      icon: "🐇",
+      label: "Rincón de Clara",
+      hint: "Compañera del Atelier",
     },
   ];
 
   return (
     <LivingInteriorRoom
+      submissionError={submissionError}
       buildingId="atelier"
-      buildingName="El Atelier de Hilados & Textil"
+      buildingName="El Atelier de Crochet & Tejido"
       domain="knitting"
       districtName="Artes & Oficios"
       icon="🧶"
-      tagline="Cestas de lana noble, telares ritmados y paciencia que forja prendas únicas punto a punto."
+      tagline="Madera cálida, ovillos ordenados y ritmo tranquilo punto a punto."
       resident={COZY_VILLAGE_RESIDENTS.find((r) => r.id === "clara")}
       stations={stations}
       activeStationId={activeTab}
@@ -268,14 +587,14 @@ export function AtelierBuilding({
         formattedTime,
         label: activeProject
           ? `Tejiendo "${activeProject.name}" (+${sessionRows} vueltas)`
-          : "Sesión de telar activa",
+          : "Sesión de crochet activa",
         onViewSession: () => setActiveTab("taller"),
       }}
       metrics={[
-        { label: "Nivel de Edificio", value: progression.tierName },
-        { label: "Proyectos en Curso", value: projects.length },
-        { label: "Vueltas Tejidas", value: totalCompletedRows.toLocaleString("es-CO") },
-        { label: "Creaciones Listas", value: progression.creationsExhibition.length },
+        { label: "Nivel Atelier", value: progression.tierName },
+        { label: "Proyectos", value: projects.length },
+        { label: "Vueltas Totales", value: totalCompletedRows.toLocaleString("es-CO") },
+        { label: "Sesiones", value: knittingSessions.length },
       ]}
       roomTheme={{
         wallColor: "#5C381E",
@@ -283,11 +602,64 @@ export function AtelierBuilding({
         ambientWarmth: "fireplace",
       }}
     >
+      {/* ESCENA HÍBRIDA ILUSTRADA DEL ATELIER (ALTERNATIVA B) */}
+      <div className="rounded-3xl border-3 border-[#3A2E2B] bg-gradient-to-br from-[#F4EEDC] via-[#EFE5CE] to-[#E7D69C]/45 p-4 shadow-[0_4px_0_#3A2E2B] space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🏡</span>
+            <div>
+              <p className="text-xs font-black text-[#3A2E2B]">
+                Habitación del Atelier — Toca un objeto para interactuar
+              </p>
+              <p className="text-[11px] text-[#795548] font-medium">
+                {progression.facadeDescription}
+              </p>
+            </div>
+          </div>
+          {activeProject && (
+            <span className="rounded-full border border-[#3A2E2B]/30 bg-[#FFFDF8] px-3 py-1 text-[11px] font-bold text-[#3A2E2B]">
+              En bastidor: {activeProject.name}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {sceneHotspots.map((spot) => {
+            const selected = activeTab === spot.id;
+            return (
+              <button
+                key={spot.id}
+                type="button"
+                onClick={() => {
+                  triggerHaptic("light");
+                  setActiveTab(spot.id);
+                }}
+                className={`rounded-2xl border-2 p-2.5 text-left transition-colors cursor-pointer ${
+                  selected
+                    ? "border-[#3A2E2B] bg-[#314C3C] text-[#FFFDF8] shadow-[0_3px_0_#1A2B20]"
+                    : "border-[#3A2E2B]/40 bg-[#FFFDF8]/90 text-[#3A2E2B] hover:bg-[#FFFDF8]"
+                }`}
+              >
+                <span className="text-xl block leading-none mb-1">{spot.icon}</span>
+                <span className="text-xs font-black block leading-tight">{spot.label}</span>
+                <span
+                  className={`text-[10px] font-medium block truncate mt-0.5 ${
+                    selected ? "text-[#E7D69C]" : "text-[#795548]"
+                  }`}
+                >
+                  {spot.hint}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {notification && (
-        <div className="mb-4">
+        <div className="my-2">
           <CozyNotification
             variant={notification.type}
-            title={notification.type === "success" ? "¡Éxito!" : "Aviso"}
+            title={notification.type === "success" ? "¡Listo!" : "Aviso"}
             message={notification.message}
             onDismiss={() => setNotification(null)}
           />
@@ -295,148 +667,82 @@ export function AtelierBuilding({
       )}
 
       {/* =======================================================================
-          TAB 1: TELAR & TEJIDO ACTIVO
+          ESTACIÓN 1: MESA PRINCIPAL DE TEJIDO (CRONÓMETRO + CONTADOR + PATRÓN)
          ======================================================================= */}
       {activeTab === "taller" && (
-        <div className="space-y-4">
-          {/* BANNER DE PROGRESIÓN VISUAL DEL ATELIER */}
-          <div className="rounded-2xl border-2 border-[#3A2E2B]/20 bg-[#F4EEDC] p-3 flex flex-wrap items-center justify-between gap-2 shadow-[0_2px_0_#3A2E2B]">
-            <div className="flex items-center gap-2.5">
-              <span className="text-xl">{progression.tier === 3 ? "⭐" : progression.tier === 2 ? "🌿" : "🪵"}</span>
-              <div>
-                <span className="text-xs font-black text-[#3A2E2B] block">
-                  {progression.tierName} ({progression.tierBadge})
-                </span>
-                <span className="text-[11px] text-[#795548] font-medium">
-                  {progression.facadeDescription}
-                </span>
-              </div>
-            </div>
-            <CozyButton
-              variant="wood"
-              size="sm"
-              onClick={() => setActiveTab("evolucion")}
-            >
-              Ver Fachada & Trofeos ➜
-            </CozyButton>
-          </div>
-
-          {/* ASISTENTE CONTEXTUAL: CLARA LA LIEBRE ARTESANA (FASE 10) */}
-          <ResidentAssistantWidget
-            context={{
-              residentId: "clara",
-              buildingId: "atelier",
-              domain: "knitting",
-              knittingProjects: projects,
-              recentSessions: knittingSessions,
-            }}
-            onPrepareSession={(prepared) => {
-              if (prepared.resourceId) {
-                setSelectedProjectId(prepared.resourceId);
-              }
-              if (prepared.metadata?.targetRows) {
-                setSessionRows(Number(prepared.metadata.targetRows));
-              }
-              if (prepared.initialNotes) {
-                setStitchesNotes((prev) => (prev ? `${prev} • ${prepared.initialNotes}` : prepared.initialNotes || ""));
-              }
-            }}
-            onApplyProposal={(prop) => {
-              if (prop.suggestedPayload?.suggestedRows) {
-                setSessionRows(Number(prop.suggestedPayload.suggestedRows));
-              }
-            }}
-          />
-
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          <div className="md:col-span-7 space-y-4">
-            <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 shadow-[0_6px_0_#3A2E2B] space-y-4">
-              <div className="flex items-start justify-between gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Columna Principal: Proyecto, Cronómetro y Contador Táctil */}
+          <div className="lg:col-span-7 space-y-4">
+            <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-4">
+              {/* Proyecto Activo */}
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <span className="text-[10px] font-black uppercase text-[#795548] tracking-wider block">
-                    Proyecto Activo en Bastidor
+                    Proyecto Activo en Mesa
                   </span>
                   <h3 className="text-base sm:text-lg font-black text-[#3A2E2B]">
-                    {activeProject?.name || "Sin proyecto seleccionado"}
+                    {activeProject?.name || "Crea tu primer proyecto en la Estantería"}
                   </h3>
-                  <span className="text-xs text-[#795548] font-bold">
-                    Técnica: {activeProject?.technique || "Crochet"} • {activeProject?.yarn_details || "Lana merino"}
-                  </span>
+                  {activeProject && (
+                    <span className="text-xs text-[#795548] font-bold">
+                      {activeProject.technique} • {activeProject.yarn_details || "Hilado libre"} •{" "}
+                      {STATUS_META[activeProject.status]?.label || "En curso"}
+                    </span>
+                  )}
                 </div>
 
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  className="rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-1.5 text-xs font-bold text-[#3A2E2B] outline-none"
-                >
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                {projects.length > 0 && (
+                  <select
+                    aria-label="Seleccionar proyecto activo"
+                    value={selectedProjectId}
+                    onChange={(e) => setSelectedProjectId(e.target.value)}
+                    className="rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-2 text-xs font-bold text-[#3A2E2B] outline-none"
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {STATUS_META[p.status]?.icon || "🧶"} {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {activeProject && (
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs font-bold text-[#795548]">
                     <span>
-                      Vuelta {activeProject.completed_rows || 0} de {activeProject.total_rows_target || 60}
+                      Vuelta {activeProject.completed_rows || 0} de{" "}
+                      {activeProject.total_rows_target || 60}
+                      {sessionRows > 0 ? ` (+${sessionRows} en sesión)` : ""}
                     </span>
                     <span>
-                      {Math.round(((activeProject.completed_rows || 0) / (activeProject.total_rows_target || 60)) * 100)}%
+                      {Math.min(
+                        100,
+                        Math.round(
+                          (((activeProject.completed_rows || 0) + sessionRows) /
+                            (activeProject.total_rows_target || 60)) *
+                            100
+                        )
+                      )}
+                      %
                     </span>
                   </div>
                   <CozyProgress
-                    value={activeProject.completed_rows || 0}
+                    value={(activeProject.completed_rows || 0) + sessionRows}
                     max={activeProject.total_rows_target || 60}
                     variant="clay"
                   />
                 </div>
               )}
 
-              {/* Visor de Patrón Activo */}
-              <div className="rounded-2xl border-2 border-[#D8B48A] bg-[#FFFBF2] p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <BookOpen className="h-4 w-4 text-[#C88973]" />
-                    <span className="text-xs font-bold text-[#3A2E2B]">Patrón Activo:</span>
-                    <span className="text-xs font-bold text-[#77936A]">
-                      {activePatternName}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowPatternViewer(!showPatternViewer)}
-                    className="text-[11px] font-bold text-[#77936A] hover:underline cursor-pointer"
-                  >
-                    {showPatternViewer ? "Ocultar Guía ▲" : "Ver Guía de Puntos ▼"}
-                  </button>
-                </div>
-
-                {showPatternViewer && (
-                  <div className="pt-2 border-t border-[#D8B48A]/40 text-xs text-[#3A2E2B] space-y-2 bg-[#FFFDF8] rounded-xl p-3">
-                    <p className="font-bold text-[#795548] text-[11px]">
-                      Diagrama de Lazada y Repetición:
-                    </p>
-                    <div className="font-mono bg-[#F4EEDC] p-2.5 rounded-lg border border-[#D8B48A] text-[11px] text-[#3A2E2B] overflow-x-auto">
-                      {"[Fila Base]: 1 cad, saltar 2 pts, (1 pb, 3 cad, 1 pb) en el sig pt."}
-                      <br />
-                      {"[Fila 2]: 3 cad, girar, 3 pa en cada arco de cadeneta hasta el final."}
-                      <br />
-                      {"[Repetición]: Alternar vueltas 1 y 2 hasta alcanzar la longitud deseada."}
-                    </div>
-                    <p className="text-[10px] text-[#795548]">
-                      💡 Puedes subir el PDF o imagen de tu patrón en la pestaña <strong>Proyectos & Patrones</strong>.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Cronómetro Universal */}
+              {/* Cronómetro Universal (Requisito para ingresar vueltas) */}
               <div className="rounded-2xl border-3 border-[#3A2E2B] bg-[#F4EEDC] p-4 text-center space-y-3">
                 <span className="text-[10px] font-black uppercase tracking-wider text-[#795548] block">
-                  {isRunning ? "⏱️ Sesión de Tejido en Curso" : isPaused ? "⏸️ Pausado" : "🧶 Bastidor Preparado"}
+                  {isRunning
+                    ? "⏱️ Sesión de Tejido en Curso"
+                    : isPaused
+                    ? "⏸️ Sesión Pausada"
+                    : "🧶 Bastidor Preparado"}
                 </span>
 
                 <div className="font-mono text-4xl sm:text-5xl font-black text-[#3A2E2B] tracking-tight">
@@ -449,10 +755,10 @@ export function AtelierBuilding({
                       variant="forest"
                       size="md"
                       onClick={handleStartSession}
-                      className="flex items-center gap-2"
+                      className="flex items-center gap-2 min-h-[48px] px-5"
                     >
                       <Play className="h-4 w-4" />
-                      Iniciar Sesión de Tejido
+                      Iniciar Cronómetro de Tejido
                     </CozyButton>
                   ) : (
                     <>
@@ -464,7 +770,7 @@ export function AtelierBuilding({
                             triggerHaptic("light");
                             pauseSession();
                           }}
-                          className="flex items-center gap-1.5"
+                          className="flex items-center gap-1.5 min-h-[44px]"
                         >
                           <Pause className="h-4 w-4" />
                           Pausar
@@ -477,7 +783,7 @@ export function AtelierBuilding({
                             triggerHaptic("light");
                             resumeSession();
                           }}
-                          className="flex items-center gap-1.5"
+                          className="flex items-center gap-1.5 min-h-[44px]"
                         >
                           <Play className="h-4 w-4" />
                           Reanudar
@@ -489,7 +795,7 @@ export function AtelierBuilding({
                         size="md"
                         disabled={submitting}
                         onClick={handleFinishAndSave}
-                        className="flex items-center gap-1.5"
+                        className="flex items-center gap-1.5 min-h-[44px]"
                       >
                         <CheckCircle2 className="h-4 w-4" />
                         {submitting ? "Guardando..." : "Finalizar & Guardar"}
@@ -500,6 +806,8 @@ export function AtelierBuilding({
                         onClick={() => {
                           triggerHaptic("warning");
                           resetSession();
+                          setSessionRows(0);
+                          setRowUndoStack([]);
                         }}
                         className="text-xs font-bold text-red-700 underline hover:text-red-900 cursor-pointer ml-2"
                       >
@@ -510,65 +818,204 @@ export function AtelierBuilding({
                 </div>
               </div>
 
-              {/* Contador de Rondas Táctil */}
-              <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] p-4 text-center space-y-3">
-                <span className="text-xs font-bold text-[#795548] block">
-                  Vueltas avanzadas en esta sesión:
-                </span>
-                <div className="font-mono text-3xl font-black text-[#3A2E2B]">
-                  +{sessionRows}
+              {/* Contador Táctil Grande de Vueltas (Bloqueado hasta iniciar cronómetro) */}
+              <div
+                className={`rounded-2xl border-2 p-4 text-center space-y-3 ${
+                  isActive
+                    ? "border-[#3A2E2B] bg-[#FFFDF8]"
+                    : "border-[#3A2E2B]/35 bg-[#F4EEDC]/60"
+                }`}
+              >
+                <div className="flex items-center justify-between text-xs font-bold text-[#795548]">
+                  <span>Vueltas en esta sesión</span>
+                  {rowUndoStack.length > 0 && isActive && (
+                    <button
+                      type="button"
+                      onClick={handleUndoRow}
+                      className="inline-flex items-center gap-1 text-[11px] font-black text-[#3A2E2B] hover:underline cursor-pointer"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" />
+                      Deshacer
+                    </button>
+                  )}
                 </div>
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleIncrementRows(-1)}
-                    className="h-10 w-12 rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-sm font-black text-[#3A2E2B] hover:bg-[#E7D69C] cursor-pointer"
-                  >
-                    -1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleIncrementRows(1)}
-                    className="h-10 w-16 rounded-xl border-2 border-[#3A2E2B] bg-[#314C3C] text-sm font-black text-[#FFFDF8] hover:bg-[#3E5F4C] shadow-[0_2px_0_#1A2B20] cursor-pointer"
-                  >
-                    +1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleIncrementRows(5)}
-                    className="h-10 w-16 rounded-xl border-2 border-[#3A2E2B] bg-[#E7D69C] text-sm font-black text-[#3A2E2B] hover:bg-[#F2E3B3] shadow-[0_2px_0_#3A2E2B] cursor-pointer"
-                  >
-                    +5
-                  </button>
-                </div>
+
+                <div className="font-mono text-4xl font-black text-[#3A2E2B]">+{sessionRows}</div>
+
+                {!isActive ? (
+                  <div className="rounded-xl border border-[#8C6239]/40 bg-[#FFFDF8] p-3 text-xs text-[#5C381E] flex flex-col sm:flex-row items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 font-bold">
+                      <Lock className="h-4 w-4 text-[#C88973]" />
+                      Inicia el cronómetro para habilitar el contador de vueltas.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleStartSession}
+                      className="rounded-lg bg-[#314C3C] px-3 py-1.5 text-[11px] font-black text-[#FFFDF8] hover:bg-[#3E5F4C] cursor-pointer"
+                    >
+                      ▶ Iniciar ahora
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleIncrementRows(-1)}
+                      aria-label="Restar 1 vuelta"
+                      className="min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] text-base font-black text-[#3A2E2B] hover:bg-[#E7D69C] active:translate-y-0.5 cursor-pointer"
+                    >
+                      -1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleIncrementRows(1)}
+                      aria-label="Sumar 1 vuelta"
+                      className="col-span-2 min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#314C3C] text-lg font-black text-[#FFFDF8] hover:bg-[#3E5F4C] shadow-[0_3px_0_#1A2B20] active:translate-y-0.5 cursor-pointer"
+                    >
+                      +1 Vuelta
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleIncrementRows(5)}
+                      aria-label="Sumar 5 vueltas"
+                      className="min-h-[56px] rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C] text-base font-black text-[#3A2E2B] hover:bg-[#F2E3B3] shadow-[0_3px_0_#3A2E2B] active:translate-y-0.5 cursor-pointer"
+                    >
+                      +5
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          <div className="md:col-span-5 space-y-4">
+          {/* Columna Lateral: Visor de Patrón Acoplado + Notas + Captura */}
+          <div className="lg:col-span-5 space-y-4">
+            {/* Visor de Patrón Acoplado junto al Contador */}
+            <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <BookOpen className="h-4 w-4 text-[#C88973]" />
+                  <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+                    Patrón Acoplado
+                  </h4>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("patrones")}
+                    className="text-[11px] font-bold text-[#314C3C] hover:underline cursor-pointer"
+                  >
+                    Editar / Subir fotos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPatternViewer(!showPatternViewer)}
+                    className="text-[11px] font-bold text-[#795548] hover:underline cursor-pointer"
+                  >
+                    {showPatternViewer ? "Ocultar ▲" : "Mostrar ▼"}
+                  </button>
+                </div>
+              </div>
+
+              {showPatternViewer && (
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-black text-[#3A2E2B]">{activePattern.title}</span>
+                    {activePattern.externalUrl && (
+                      <a
+                        href={activePattern.externalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#314C3C] hover:underline"
+                      >
+                        Abrir enlace <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+
+                  {/* Imágenes del patrón subidas */}
+                  {activePattern.images.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {activePattern.images.map((img) => (
+                        <button
+                          key={img.id}
+                          type="button"
+                          onClick={() => setLightboxImage(img)}
+                          className="group relative overflow-hidden rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] aspect-square cursor-pointer"
+                          title={`Ampliar ${img.name}`}
+                        >
+                          <img
+                            src={img.dataUrl}
+                            alt={img.name}
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Pasos vuelta a vuelta */}
+                  {activePattern.steps.length > 0 ? (
+                    <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                      {activePattern.steps.map((step, idx) => {
+                        const rowNum = idx + 1;
+                        const isCurrent = rowNum === currentWorkingRow;
+                        return (
+                          <div
+                            key={idx}
+                            className={`rounded-xl border px-3 py-2 text-xs ${
+                              isCurrent
+                                ? "border-[#314C3C] bg-[#314C3C]/10 font-bold text-[#3A2E2B]"
+                                : "border-[#D8B48A]/60 bg-[#F4EEDC]/60 text-[#5C381E]"
+                            }`}
+                          >
+                            <span className="font-black mr-1.5">
+                              {isCurrent ? "▶ " : ""}V{rowNum}:
+                            </span>
+                            {step}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-[#8C6239]/50 bg-[#F4EEDC]/50 p-3 text-xs text-[#795548] space-y-2">
+                      <p>
+                        Aún no has cargado instrucciones ni fotos de patrón para este proyecto.
+                      </p>
+                      <CozyButton
+                        variant="wood"
+                        size="sm"
+                        onClick={() => setActiveTab("patrones")}
+                      >
+                        📜 Agregar Patrón o Subir Imágenes
+                      </CozyButton>
+                    </div>
+                  )}
+
+                  {activePattern.notes && (
+                    <p className="rounded-xl bg-[#FFFBF2] border border-[#D8B48A] p-2.5 text-[11px] text-[#5C381E]">
+                      <strong>Nota del patrón:</strong> {activePattern.notes}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Notas de la sesión */}
             <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
               <h4 className="text-xs font-black uppercase text-[#3A2E2B] flex items-center gap-1.5">
                 <Scissors className="h-4 w-4 text-[#C88973]" />
-                Notas de Puntos & Disminuciones
+                Notas de Puntos & Recordatorios
               </h4>
-
               <textarea
                 value={stitchesNotes}
                 onChange={(e) => setStitchesNotes(e.target.value)}
-                placeholder="Anota el punto actual, número de disminuciones o recordatorio para la próxima vuelta..."
-                rows={5}
+                placeholder="Ej. Quedé en el aumento 4 de la manga, aguja 4mm..."
+                rows={3}
                 className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-3 text-xs font-medium text-[#3A2E2B] placeholder:text-[#795548]/60 outline-none"
               />
-
-              <div className="rounded-xl border border-[#3A2E2B]/20 bg-[#F4EEDC] p-3 text-xs text-[#795548] space-y-1">
-                <span className="font-bold text-[#3A2E2B] block">💡 Consejo de Clara:</span>
-                <p>
-                  "Mantén la tensión pareja respirando con cada lazada. Un punto a la vez forja una trama resistente y cálida."
-                </p>
-              </div>
             </div>
 
-            {/* Smart Capture & Asistente Contextual */}
             <SmartCaptureWidget
               domain="knitting"
               context={{
@@ -586,9 +1033,13 @@ export function AtelierBuilding({
               notes={stitchesNotes}
               onNotesChange={setStitchesNotes}
               onApplySuggestedValues={(vals) => {
-                setSessionRows(vals.quantity);
+                if (isActive) {
+                  applyRowChange(Math.max(0, vals.quantity), true);
+                }
                 if (vals.notes) {
-                  setStitchesNotes((prev) => (prev ? `${prev} • ${vals.notes}` : vals.notes || ""));
+                  setStitchesNotes((prev) =>
+                    prev ? `${prev} • ${vals.notes}` : vals.notes || ""
+                  );
                 }
               }}
               onPhotoUploaded={(dataUrl) => {
@@ -597,18 +1048,22 @@ export function AtelierBuilding({
             />
           </div>
         </div>
-        </div>
       )}
 
       {/* =======================================================================
-          TAB 2: PROYECTOS & PATRONES
+          ESTACIÓN 2: ESTANTERÍA DE PROYECTOS (4 ESTADOS SIN CULPA)
          ======================================================================= */}
       {activeTab === "proyectos" && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
-              Catálogo de Proyectos Textiles
-            </h4>
+          <div className="flex flex-wrap justify-between items-center gap-3">
+            <div>
+              <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
+                Estantería de Proyectos Textiles
+              </h4>
+              <p className="text-[11px] text-[#795548]">
+                Pausa o retoma cualquier prenda a tu ritmo, sin penalizaciones.
+              </p>
+            </div>
             <CozyButton
               variant="forest"
               size="sm"
@@ -620,8 +1075,37 @@ export function AtelierBuilding({
             </CozyButton>
           </div>
 
+          {/* Filtro por los 4 estados */}
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { id: "all", label: `Todos (${projects.length})` },
+                { id: "in_progress", label: "🧶 En curso" },
+                { id: "paused", label: "☕ Pausados" },
+                { id: "completed", label: "✨ Terminados" },
+                { id: "archived", label: "📦 Archivados" },
+              ] as const
+            ).map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setStatusFilter(f.id)}
+                className={`rounded-full border-2 px-3 py-1 text-[11px] font-bold cursor-pointer ${
+                  statusFilter === f.id
+                    ? "border-[#3A2E2B] bg-[#314C3C] text-[#FFFDF8]"
+                    : "border-[#3A2E2B]/30 bg-[#FFFDF8] text-[#3A2E2B] hover:bg-[#F4EEDC]"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
           {isCreatingProject && (
-            <form onSubmit={handleCreateNewProject} className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_4px_0_#3A2E2B] space-y-3">
+            <form
+              onSubmit={handleCreateNewProject}
+              className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_4px_0_#3A2E2B] space-y-3"
+            >
               <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
                 Montar Nuevo Proyecto en el Atelier
               </h4>
@@ -640,12 +1124,13 @@ export function AtelierBuilding({
                   className="rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-2 text-xs font-bold text-[#3A2E2B] outline-none"
                 >
                   <option value="Crochet">Crochet / Ganchillo</option>
-                  <option value="Dos Agujas">Dos Agujas / Tricot</option>
                   <option value="Amigurumi">Amigurumi</option>
+                  <option value="Dos Agujas">Dos Agujas / Tricot</option>
                   <option value="Telar">Telar de Bastidor</option>
                 </select>
                 <input
                   type="number"
+                  min={5}
                   placeholder="Meta de vueltas / filas *"
                   value={newProjectTargetRows}
                   onChange={(e) => setNewProjectTargetRows(Number(e.target.value))}
@@ -653,7 +1138,7 @@ export function AtelierBuilding({
                 />
                 <input
                   type="text"
-                  placeholder="Hilado (ej. Lana Merino 100g, 4mm)"
+                  placeholder="Hilado y aguja (ej. Algodón 4mm)"
                   value={newProjectYarn}
                   onChange={(e) => setNewProjectYarn(e.target.value)}
                   className="rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-2 text-xs font-bold text-[#3A2E2B] outline-none"
@@ -661,7 +1146,12 @@ export function AtelierBuilding({
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <CozyButton variant="wood" size="sm" type="button" onClick={() => setIsCreatingProject(false)}>
+                <CozyButton
+                  variant="wood"
+                  size="sm"
+                  type="button"
+                  onClick={() => setIsCreatingProject(false)}
+                >
                   Cancelar
                 </CozyButton>
                 <CozyButton variant="forest" size="sm" type="submit">
@@ -671,52 +1161,100 @@ export function AtelierBuilding({
             </form>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((proj) => {
-              const isSelected = proj.id === selectedProjectId;
-              const percent = Math.round(((proj.completed_rows || 0) / (proj.total_rows_target || 60)) * 100);
+          {filteredProjects.length === 0 ? (
+            <div className="rounded-3xl border-2 border-dashed border-[#3A2E2B]/30 bg-[#FFFDF8] p-8 text-center text-xs text-[#795548]">
+              No hay proyectos en este estado todavía.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredProjects.map((proj) => {
+                const isSelected = proj.id === activeProject?.id;
+                const percent = Math.min(
+                  100,
+                  Math.round(((proj.completed_rows || 0) / (proj.total_rows_target || 60)) * 100)
+                );
+                const statusInfo = STATUS_META[proj.status] || STATUS_META.in_progress;
 
-              return (
-                <div
-                  key={proj.id}
-                  onClick={() => setSelectedProjectId(proj.id)}
-                  className={`rounded-3xl border-3 p-4 shadow-[0_4px_0_#3A2E2B] transition-all cursor-pointer space-y-3 ${
-                    isSelected
-                      ? "border-[#3A2E2B] bg-[#F4EEDC] ring-2 ring-[#C88973]"
-                      : "border-[#3A2E2B] bg-[#FFFDF8] hover:bg-[#F4EEDC]"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#3A2E2B] bg-[#E7D69C] text-lg shadow-[0_2px_0_#3A2E2B]">
-                      🧶
-                    </span>
-                    <span className="rounded-full bg-[#C88973]/20 border border-[#C88973] px-2 py-0.5 text-[9px] font-black text-[#8A3722] uppercase">
-                      {proj.technique || "Crochet"}
-                    </span>
-                  </div>
+                return (
+                  <div
+                    key={proj.id}
+                    className={`rounded-3xl border-3 p-4 shadow-[0_4px_0_#3A2E2B] space-y-3 ${
+                      isSelected
+                        ? "border-[#3A2E2B] bg-[#F4EEDC] ring-2 ring-[#C88973]"
+                        : "border-[#3A2E2B] bg-[#FFFDF8]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProjectId(proj.id);
+                          setActiveTab("taller");
+                        }}
+                        className="text-left cursor-pointer"
+                      >
+                        <h4 className="text-xs font-black text-[#3A2E2B] hover:underline">
+                          {statusInfo.icon} {proj.name}
+                        </h4>
+                        <span className="text-[10px] text-[#795548] font-bold block">
+                          {proj.technique} • {proj.yarn_details || "Hilado libre"}
+                        </span>
+                      </button>
 
-                  <div>
-                    <h4 className="text-xs font-black text-[#3A2E2B] line-clamp-1">
-                      {proj.name}
-                    </h4>
-                    <span className="text-[10px] text-[#795548] font-bold">
-                      {proj.yarn_details || "Lana estándar"}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] font-bold text-[#795548]">
-                      <span>{proj.completed_rows || 0} / {proj.total_rows_target || 60} vueltas</span>
-                      <span>{percent}%</span>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase whitespace-nowrap ${statusInfo.badgeClass}`}
+                      >
+                        {statusInfo.label}
+                      </span>
                     </div>
-                    <CozyProgress value={proj.completed_rows || 0} max={proj.total_rows_target || 60} variant="clay" />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
 
-          {/* BÓVEDA DE RECURSOS & PATRONES ADJUNTOS */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-bold text-[#795548]">
+                        <span>
+                          {proj.completed_rows || 0} / {proj.total_rows_target || 60} vueltas
+                        </span>
+                        <span>{percent}%</span>
+                      </div>
+                      <CozyProgress
+                        value={proj.completed_rows || 0}
+                        max={proj.total_rows_target || 60}
+                        variant="clay"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#3A2E2B]/15">
+                      <select
+                        aria-label={`Estado de ${proj.name}`}
+                        disabled={updatingStatusId === proj.id}
+                        value={proj.status}
+                        onChange={(e) =>
+                          handleChangeProjectStatus(proj, e.target.value as KnittingProjectStatus)
+                        }
+                        className="rounded-lg border border-[#3A2E2B]/40 bg-[#FFFDF8] px-2 py-1 text-[10px] font-bold text-[#3A2E2B] outline-none"
+                      >
+                        <option value="in_progress">🧶 En curso</option>
+                        <option value="paused">☕ Pausado sin culpa</option>
+                        <option value="completed">✨ Terminado</option>
+                        <option value="archived">📦 Archivado</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProjectId(proj.id);
+                          setActiveTab("taller");
+                        }}
+                        className="text-[11px] font-black text-[#314C3C] hover:underline cursor-pointer"
+                      >
+                        Tejer ➜
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <div className="pt-4 border-t-2 border-[#D8B48A]/40">
             <SkillResourceHubPanel domain="knitting" />
           </div>
@@ -724,171 +1262,221 @@ export function AtelierBuilding({
       )}
 
       {/* =======================================================================
-          TAB 3: LANAS & MATERIALES
-         ======================================================================= */}
-      {activeTab === "materiales" && (
-        <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
-          <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
-            Inventario de Fibras & Herramientas del Atelier
-          </h4>
-          <p className="text-xs text-[#795548]">
-            Lanas orgánicas, agujas de bambú y madejas guardadas con esmero en cestas de mimbre.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            {[
-              { name: "Lana Merino Nórdica", fiber: "100% Merino", weight: "DK 100g", icon: "🐑" },
-              { name: "Alpaca Suave Andina", fiber: "Alpaca & Seda", weight: "Fingering 50g", icon: "🦙" },
-              { name: "Algodón Rústico Botánico", fiber: "Algodón Reciclado", weight: "Aran 100g", icon: "🌱" },
-            ].map((mat, i) => (
-              <div key={i} className="rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-4 space-y-1 text-center">
-                <span className="text-3xl block">{mat.icon}</span>
-                <span className="text-xs font-black text-[#3A2E2B] block">{mat.name}</span>
-                <span className="text-[10px] text-[#795548] block">{mat.fiber} • {mat.weight}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* =======================================================================
-          TAB 4: GALERÍA & HISTORIAL
-         ======================================================================= */}
-      {activeTab === "galeria" && (
-        <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
-          <h4 className="text-xs font-black uppercase text-[#3A2E2B]">
-            Historial de Sesiones en el Atelier
-          </h4>
-
-          {knittingSessions.length === 0 ? (
-            <div className="text-center py-8 text-xs text-[#795548]">
-              Aún no has registrado sesiones de tejido. ¡Inicia un bloque en el telar!
-            </div>
-          ) : (
-            <div className="divide-y divide-[#3A2E2B]/15">
-              {knittingSessions.map((ses) => (
-                <div key={ses.id} className="py-2.5 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-black text-[#3A2E2B] block">
-                      {ses.title}
-                    </span>
-                    <span className="text-[10px] text-[#795548]">
-                      {ses.details} • {new Date(ses.timestamp).toLocaleDateString("es-CO")}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-bold text-[#314C3C]">
-                      +{ses.gp_earned} GP
-                    </span>
-                    <span className="text-[10px] text-[#795548] block">
-                      {ses.duration_minutes} min
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* =======================================================================
-          ESTACIÓN 2: ATRIL DE PATRONES & GUÍAS DE PUNTADAS
+          ESTACIÓN 3: CARPETA DE PATRONES (TEXTO + SUBIDA DIRECTA DE IMÁGENES)
          ======================================================================= */}
       {activeTab === "patrones" && (
-        <div className="space-y-4">
-          <div className="rounded-3xl border-3 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_4px_0_#3A2E2B] space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <span className="text-[10px] font-black uppercase text-[#795548]">
-                  Atril de Trabajo
-                </span>
-                <h4 className="text-sm font-black text-[#3A2E2B]">
-                  Guía Visual de Lazadas & Puntos
-                </h4>
-              </div>
+        <form
+          onSubmit={handleSavePattern}
+          className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span className="text-[10px] font-black uppercase text-[#795548] block">
+                Carpeta de Patrones del Proyecto
+              </span>
+              <h4 className="text-sm font-black text-[#3A2E2B]">
+                {activeProject ? activeProject.name : "Selecciona un proyecto primero"}
+              </h4>
+            </div>
 
-              {/* Selector de patrón interactivo */}
+            {projects.length > 0 && (
               <select
-                value={activePatternName}
-                onChange={(e) => setActivePatternName(e.target.value)}
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
                 className="rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-1.5 text-xs font-bold text-[#3A2E2B] outline-none"
               >
-                <option value="Patrón Gráfico V-Stitch">V-Stitch Textil (Calado)</option>
-                <option value="Granny Square Clásico">Granny Square de 4 Vueltas</option>
-                <option value="Punto Bobo / Santa Clara">Punto Bobo en Dos Agujas</option>
-                <option value="Espiral Amigurumi">Espiral Continua de Punto Bajo</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
               </select>
-            </div>
+            )}
+          </div>
 
-            {/* Diagrama Visual SVG de Puntadas */}
-            <div className="rounded-2xl border-2 border-[#D8B48A] bg-[#FFFBF2] p-4 text-center space-y-3">
-              <span className="text-[10px] font-black text-[#795548] uppercase block">
-                Diagrama de Repetición Gráfica (Patrón de Bastidor)
-              </span>
-
-              <div className="flex items-center justify-center p-3 bg-[#F4EEDC] rounded-xl border border-[#D8B48A]">
-                <svg width="280" height="90" viewBox="0 0 280 90" className="overflow-visible">
-                  {/* Fila 1: Puntos base */}
-                  <g stroke="#8C6239" strokeWidth="2" strokeLinecap="round">
-                    <line x1="20" y1="70" x2="260" y2="70" strokeDasharray="6,4" />
-                    {[30, 60, 90, 120, 150, 180, 210, 240].map((cx, i) => (
-                      <circle key={i} cx={cx} cy="70" r="3" fill="#D8B48A" />
-                    ))}
-                  </g>
-                  {/* Fila 2: Lazadas en V */}
-                  <g stroke="#314C3C" strokeWidth="2.5" strokeLinecap="round" fill="none">
-                    <path d="M 30 70 L 45 35 L 60 70" />
-                    <path d="M 90 70 L 105 35 L 120 70" />
-                    <path d="M 150 70 L 165 35 L 180 70" />
-                    <path d="M 210 70 L 225 35 L 240 70" />
-                  </g>
-                  {/* Fila 3: Cadenetas superiores */}
-                  <g stroke="#C88973" strokeWidth="2" fill="none">
-                    <path d="M 45 35 Q 75 20, 105 35" strokeDasharray="4,3" />
-                    <path d="M 105 35 Q 135 20, 165 35" strokeDasharray="4,3" />
-                    <path d="M 165 35 Q 195 20, 225 35" strokeDasharray="4,3" />
-                  </g>
-                  {/* Destacado de vuelta activa */}
-                  <text x="140" y="15" textAnchor="middle" fill="#314C3C" fontSize="10" fontWeight="900">
-                    ▲ Vuelta de Repetición Activa ▲
-                  </text>
-                </svg>
-              </div>
-
-              <div className="font-mono bg-[#FFFDF8] p-3 rounded-xl border border-[#D8B48A] text-left text-xs text-[#3A2E2B] space-y-1">
-                <p className="font-bold text-[#795548] text-[11px]">Instrucción vuelta a vuelta:</p>
-                <p>• <strong>Vuelta 1:</strong> Montar número par de cadenetas + 2 de subida.</p>
-                <p>• <strong>Vuelta 2 (V-Stitch):</strong> Saltar 1 pt, tejer (1 pa, 1 cad, 1 pa) en el mismo espacio.</p>
-                <p>• <strong>Vuelta 3+:</strong> Repetir el motivo dentro de cada arco de cadeneta de la vuelta previa.</p>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#D8B48A]/40">
-                <span className="text-xs font-bold text-[#795548]">
-                  ¿Completaste una vuelta de este patrón?
+          {/* Subida Directa de Imágenes de Patrón */}
+          <div className="rounded-2xl border-2 border-[#D8B48A] bg-[#FFFBF2] p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-[#C88973]" />
+                <span className="text-xs font-black text-[#3A2E2B]">
+                  Imágenes y Gráficos del Patrón ({patternImagesDraft.length}/6)
                 </span>
-                <CozyButton
-                  variant="forest"
-                  size="sm"
-                  onClick={() => {
-                    handleIncrementRows(1);
-                    setNotification({
-                      type: "success",
-                      message: `¡Vuelta registrada en el patrón "${activePatternName}"!`,
-                    });
-                  }}
-                  className="flex items-center gap-1.5"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Anotar +1 Vuelta al Proyecto Activo</span>
-                </CozyButton>
               </div>
+
+              <label className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#3A2E2B] bg-[#314C3C] px-3 py-1.5 text-xs font-black text-[#FFFDF8] hover:bg-[#3E5F4C] cursor-pointer">
+                <Upload className="h-3.5 w-3.5" />
+                <span>{uploadingPatternImg ? "Cargando..." : "Subir Imágenes"}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  disabled={uploadingPatternImg || patternImagesDraft.length >= 6}
+                  onChange={handlePatternImageUpload}
+                  className="hidden"
+                />
+              </label>
             </div>
+
+            {patternImagesDraft.length === 0 ? (
+              <p className="text-xs text-[#795548]">
+                Sube fotos de diagramas, gráficos de puntos o referencias visuales directamente desde tu celular o PC.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {patternImagesDraft.map((img) => (
+                  <div
+                    key={img.id}
+                    className="relative rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] overflow-hidden"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setLightboxImage(img)}
+                      className="block w-full aspect-[4/3] cursor-pointer"
+                    >
+                      <img
+                        src={img.dataUrl}
+                        alt={img.name}
+                        className="h-full w-full object-cover"
+                      />
+                    </button>
+                    <div className="flex items-center justify-between px-2 py-1.5 bg-[#F4EEDC] text-[10px]">
+                      <span className="font-bold text-[#3A2E2B] truncate pr-1">{img.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePatternImage(img.id)}
+                        aria-label={`Eliminar ${img.name}`}
+                        className="text-red-700 hover:text-red-900 cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-black text-[#3A2E2B] block">
+                Nombre del Patrón
+              </label>
+              <input
+                type="text"
+                value={patternTitleDraft}
+                onChange={(e) => setPatternTitleDraft(e.target.value)}
+                placeholder="Ej. Granny Square Primavera"
+                className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-2 text-xs font-bold text-[#3A2E2B] outline-none"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-black text-[#3A2E2B] block">
+                Enlace externo opcional (PDF / Web / Video)
+              </label>
+              <input
+                type="url"
+                value={patternUrlDraft}
+                onChange={(e) => setPatternUrlDraft(e.target.value)}
+                placeholder="https://..."
+                className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-2 text-xs font-bold text-[#3A2E2B] outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[11px] font-black text-[#3A2E2B] block">
+              Instrucciones vuelta a vuelta (una vuelta por línea)
+            </label>
+            <textarea
+              rows={5}
+              value={patternStepsDraft}
+              onChange={(e) => setPatternStepsDraft(e.target.value)}
+              placeholder={"Anillo mágico de 6 pb\n6 aumentos (12 pb)\n(1 pb, 1 aum) x6 (18 pb)"}
+              className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-3 font-mono text-xs text-[#3A2E2B] outline-none"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[11px] font-black text-[#3A2E2B] block">
+              Notas personales del patrón (ganchillo, tensión, abreviaturas)
+            </label>
+            <textarea
+              rows={2}
+              value={patternNotesDraft}
+              onChange={(e) => setPatternNotesDraft(e.target.value)}
+              placeholder="Ej. Usar ganchillo 3.5mm para que quede firme..."
+              className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] p-3 text-xs text-[#3A2E2B] outline-none"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            <CozyButton
+              type="button"
+              variant="wood"
+              size="sm"
+              onClick={() => {
+                handleSavePattern();
+                setShowPatternViewer(true);
+                setActiveTab("taller");
+              }}
+            >
+              Guardar y Fijar en Mesa ➜
+            </CozyButton>
+            <CozyButton type="submit" variant="forest" size="sm">
+              Guardar Patrón
+            </CozyButton>
+          </div>
+        </form>
+      )}
+
+      {/* =======================================================================
+          ESTACIÓN 4: VITRINA DE CREACIONES & HISTORIAL REAL
+         ======================================================================= */}
+      {activeTab === "galeria" && (
+        <div className="space-y-4">
+          <VillageProgressionPanel
+            progression={progression}
+            buildingName="El Atelier de Crochet & Tejido"
+          />
+
+          <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] space-y-3">
+            <h4 className="text-xs font-black uppercase text-[#3A2E2B] flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-[#C88973]" />
+              Historial de Sesiones en el Atelier
+            </h4>
+
+            {knittingSessions.length === 0 ? (
+              <div className="text-center py-6 text-xs text-[#795548]">
+                Aún no has registrado sesiones de tejido. ¡Inicia el cronómetro en la Mesa cuando quieras!
+              </div>
+            ) : (
+              <div className="divide-y divide-[#3A2E2B]/15">
+                {knittingSessions.map((ses) => (
+                  <div key={ses.id} className="py-2.5 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-black text-[#3A2E2B] block">{ses.title}</span>
+                      <span className="text-[10px] text-[#795548]">
+                        {ses.details} • {new Date(ses.timestamp).toLocaleDateString("es-CO")}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-[#314C3C]">+{ses.gp_earned} GP</span>
+                      <span className="text-[10px] text-[#795548] block">
+                        {ses.duration_minutes} min
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* =======================================================================
-          ESTACIÓN 5: RINCÓN DE CLARA LA ARTESANA
+          ESTACIÓN 5: RINCÓN DE CLARA (SIN DUPLICACIÓN EN LA MESA)
          ======================================================================= */}
       {activeTab === "clara" && (
         <div className="space-y-4">
@@ -904,17 +1492,16 @@ export function AtelierBuilding({
               if (prepared.resourceId) {
                 setSelectedProjectId(prepared.resourceId);
               }
-              if (prepared.metadata?.targetRows) {
-                setSessionRows(Number(prepared.metadata.targetRows));
-              }
               if (prepared.initialNotes) {
-                setStitchesNotes((prev) => (prev ? `${prev} • ${prepared.initialNotes}` : prepared.initialNotes || ""));
+                setStitchesNotes((prev) =>
+                  prev ? `${prev} • ${prepared.initialNotes}` : prepared.initialNotes || ""
+                );
               }
               setActiveTab("taller");
             }}
             onApplyProposal={(prop) => {
-              if (prop.suggestedPayload?.suggestedRows) {
-                setSessionRows(Number(prop.suggestedPayload.suggestedRows));
+              if (prop.suggestedPayload?.projectId) {
+                setSelectedProjectId(String(prop.suggestedPayload.projectId));
               }
               setActiveTab("taller");
             }}
@@ -922,14 +1509,38 @@ export function AtelierBuilding({
         </div>
       )}
 
-      {/* =======================================================================
-          TAB 5: EVOLUCIÓN VISUAL & EXPOSICIÓN DE CREACIONES (FASE 9)
-         ======================================================================= */}
-      {activeTab === "evolucion" && (
-        <VillageProgressionPanel
-          progression={progression}
-          buildingName="El Atelier de Hilados & Textil"
-        />
+      {/* Lightbox para ver imágenes de patrones ampliadas */}
+      {lightboxImage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightboxImage.name}
+          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-3xl w-full rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-3 space-y-2"
+          >
+            <div className="flex items-center justify-between px-2">
+              <span className="text-xs font-black text-[#3A2E2B] truncate">
+                {lightboxImage.name}
+              </span>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="rounded-lg border border-[#3A2E2B] bg-[#F4EEDC] p-1 text-[#3A2E2B] cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <img
+              src={lightboxImage.dataUrl}
+              alt={lightboxImage.name}
+              className="max-h-[75vh] w-full object-contain rounded-2xl bg-[#F4EEDC]"
+            />
+          </div>
+        </div>
       )}
     </LivingInteriorRoom>
   );

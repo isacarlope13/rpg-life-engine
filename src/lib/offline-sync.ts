@@ -1,6 +1,8 @@
 // Utilidad de sincronización offline, registro de Service Worker y respuesta háptica PWA
 
 import { safeLocalStorage } from "./storage-safe.ts";
+import { isOfflineOwner, OFFLINE_OWNER_HEADER } from "./offline-owner.ts";
+import { shortcutAcknowledgement } from "./shortcut-acknowledgement.ts";
 
 export type HapticType = "light" | "medium" | "heavy" | "success" | "warning" | "error";
 
@@ -62,143 +64,94 @@ export interface OfflineAction {
 
 const OFFLINE_QUEUE_KEY = "rpg_offline_queue_v1";
 
+
+/** Legacy data is retained, never adopted by the current login. */
 export function getOfflineQueueKey(userId?: string): string {
-  if (!userId || userId === "anonymous") return OFFLINE_QUEUE_KEY;
-  const cleanId = userId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `${OFFLINE_QUEUE_KEY}_${cleanId}`;
+  if (!isOfflineOwner(userId)) return OFFLINE_QUEUE_KEY;
+  return OFFLINE_QUEUE_KEY + "_" + encodeURIComponent(userId);
 }
 
-export function queueOfflineAction(
-  action: Omit<OfflineAction, "id" | "timestamp">,
-  userId?: string
-): void {
+function readQueue(userId: string): OfflineAction[] | null {
   try {
-    const ownerId = userId || (action as { userId?: string }).userId;
-    const key = getOfflineQueueKey(ownerId);
-    const raw = safeLocalStorage.getItem(key);
-    const queue: OfflineAction[] = raw ? JSON.parse(raw) : [];
+    const raw = safeLocalStorage.getItem(getOfflineQueueKey(userId));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as OfflineAction[] : null;
+  } catch { return null; }
+}
 
-    const actionId =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `offline-${Date.now()}`;
+function ownedAction(value: unknown, owner: string): value is OfflineAction {
+  if (!value || typeof value !== "object") return false;
+  const item = value as OfflineAction;
+  return item.userId === owner && typeof item.id === "string" &&
+    typeof item.url === "string" && typeof item.method === "string" &&
+    !!item.body && typeof item.body === "object" && !Array.isArray(item.body) &&
+    typeof item.idempotency_key === "string" && item.idempotency_key.length > 0 &&
+    item.body.idempotency_key === item.idempotency_key;
+}
 
-    // Garantizar que cada acción tenga una clave de idempotencia persistente durante reintentos
-    const bodyPayload = { ...(action.body || {}) };
-    const stableIdempotencyKey =
-      (bodyPayload.idempotency_key as string) ||
-      (action as { idempotency_key?: string }).idempotency_key ||
-      `offline-idem-${actionId}`;
-    bodyPayload.idempotency_key = stableIdempotencyKey;
-
-    const item: OfflineAction = {
-      ...action,
-      body: bodyPayload,
-      id: actionId,
-      userId: ownerId,
-      idempotency_key: stableIdempotencyKey,
-      timestamp: new Date().toISOString(),
-    };
-
-    queue.push(item);
-    safeLocalStorage.setItem(key, JSON.stringify(queue));
-
-    // Si se especificó ownerId, mantener sincronizado el índice global para retrocompatibilidad
-    if (ownerId) {
-      try {
-        const globalRaw = safeLocalStorage.getItem(OFFLINE_QUEUE_KEY);
-        const globalQueue: OfflineAction[] = globalRaw ? JSON.parse(globalRaw) : [];
-        globalQueue.push(item);
-        safeLocalStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(globalQueue));
-      } catch {}
-    }
-
+export function queueOfflineAction(action: Omit<OfflineAction, "id" | "timestamp">, userId?: string): boolean {
+  const owner = userId ?? action.userId;
+  if (!isOfflineOwner(owner) || (action.userId !== undefined && action.userId !== owner)) return false;
+  try {
+    const queue = readQueue(owner);
+    if (!queue) return false; // Preserve corrupt storage for recovery.
+    const id = crypto.randomUUID();
+    const idempotencyKey = action.body.idempotency_key || action.idempotency_key || "offline-idem-" + id;
+    if (typeof idempotencyKey !== "string") return false;
+    const item: OfflineAction = { ...action, id, userId: owner,
+      idempotency_key: idempotencyKey,
+      body: { ...action.body, idempotency_key: idempotencyKey }, timestamp: new Date().toISOString() };
+    safeLocalStorage.setItem(getOfflineQueueKey(owner), JSON.stringify([...queue, item]));
     triggerHaptic("warning");
-  } catch (e) {
-    console.error("Error guardando acción offline:", e);
-  }
+    return true; // May be volatile when native storage is unavailable (existing safe storage policy).
+  } catch { return false; }
 }
 
 export function getOfflineQueue(userId?: string): OfflineAction[] {
-  try {
-    const key = getOfflineQueueKey(userId);
-    const raw = safeLocalStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return isOfflineOwner(userId) ? (readQueue(userId) ?? []).filter(item => ownedAction(item, userId)) : [];
 }
 
-export async function processOfflineQueue(
+const syncing = new Map<string, Promise<number>>();
+export function processOfflineQueue(
   userIdOrOnSynced?: string | ((count: number) => void),
-  maybeOnSynced?: (count: number) => void
+  onSynced?: (count: number) => void,
 ): Promise<number> {
-  if (typeof window === "undefined" || !navigator.onLine) return 0;
+  if (!isOfflineOwner(userIdOrOnSynced) || typeof window === "undefined" || !navigator.onLine) return Promise.resolve(0);
+  const owner = userIdOrOnSynced;
+  const existing = syncing.get(owner);
+  if (existing) return existing;
+  const task = replay(owner, onSynced).finally(() => { syncing.delete(owner); });
+  syncing.set(owner, task);
+  return task;
+}
 
-  const userId = typeof userIdOrOnSynced === "string" ? userIdOrOnSynced : undefined;
-  const onSynced = typeof userIdOrOnSynced === "function" ? userIdOrOnSynced : maybeOnSynced;
-
-  const key = getOfflineQueueKey(userId);
-  const queue = getOfflineQueue(userId);
-  if (queue.length === 0) return 0;
-
-  let successful = 0;
-  const remaining: OfflineAction[] = [];
-
-  for (const act of queue) {
-    // Si la acción pertenecía a un usuario diferente, conservarla sin procesar bajo la sesión equivocada
-    if (userId && act.userId && act.userId !== userId) {
-      remaining.push(act);
-      continue;
-    }
-
+async function replay(owner: string, onSynced?: (count: number) => void): Promise<number> {
+  const acknowledged = new Set<string>();
+  for (const item of getOfflineQueue(owner)) {
+    // Restrict replay to same-origin endpoints that enforce the authenticated owner header.
+    if (!["/api/shortcuts/skill-session", "/api/shortcuts/habit-log", "/api/shortcuts/quick-expense"].includes(item.url) || item.method !== "POST") continue;
     try {
-      const res = await fetch(act.url, {
-        method: act.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(act.body),
+      const res = await fetch(item.url, {
+        method: item.method,
+        headers: { "Content-Type": "application/json", [OFFLINE_OWNER_HEADER]: owner },
+        body: JSON.stringify(item.body),
       });
-
-      // Si el Service Worker devuelve 503 o un falso 200 con { offline: true }, NO descartar la acción
-      if (res.ok && res.status !== 503) {
-        let isFakeOfflineResponse = false;
-        try {
-          const clone = res.clone();
-          const data = await clone.json().catch(() => null);
-          if (data && data.offline === true) {
-            isFakeOfflineResponse = true;
-          }
-        } catch {}
-
-        if (isFakeOfflineResponse) {
-          remaining.push(act);
-        } else {
-          successful++;
-        }
-      } else {
-        remaining.push(act);
-      }
-    } catch {
-      remaining.push(act);
-    }
+      if (res.status === 401 || res.status === 409) break;
+      if (!res.ok) continue;
+      const data = await res.clone().json().catch(() => null);
+      if (!shortcutAcknowledgement(item.url, data)) continue;
+      acknowledged.add(item.id);
+    } catch { /* Keep the exact action and idempotency key for retry. */ }
   }
-
-  try {
-    safeLocalStorage.setItem(key, JSON.stringify(remaining));
-    if (userId) {
-      // Sincronizar también la cola legacy global
-      const globalQueue = getOfflineQueue().filter(
-        (a) => a.userId !== userId || remaining.some((r) => r.id === a.id)
-      );
-      safeLocalStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(globalQueue));
-    }
-  } catch (e) {
-    console.warn("Error actualizando cola offline:", e);
-  }
-
-  if (successful > 0) {
+  if (acknowledged.size) {
+    // Read again: preserve commands appended while a request was in flight and unknown legacy rows.
+    const latest = readQueue(owner);
+    if (!latest) return 0;
+    safeLocalStorage.setItem(getOfflineQueueKey(owner), JSON.stringify(latest.filter(item =>
+      !ownedAction(item, owner) || !acknowledged.has(item.id))));
     triggerHaptic("success");
-    if (onSynced) onSynced(successful);
+    onSynced?.(acknowledged.size);
   }
-  return successful;
+  return acknowledged.size;
 }

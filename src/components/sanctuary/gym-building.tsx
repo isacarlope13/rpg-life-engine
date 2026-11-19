@@ -135,6 +135,7 @@ export function GymBuilding({
     cancelSession,
     finishSession,
     history,
+    submissionError,
   } = useUniversalSession({
     targetDomain: "sports",
     targetBuildingId: "gimnasio",
@@ -344,11 +345,12 @@ export function GymBuilding({
   };
 
   const handleFinishWorkout = async () => {
-    triggerHaptic("success");
     const activeRoutine = GYM_ROUTINES_CATALOG[selectedRoutineKey];
-    const durationMins = Math.max(1, Math.round(elapsedSeconds / 60));
 
-    await finishSession({
+    const detailsStr = `${activeRoutine.name}: ${workoutMetrics.completedCount} series completadas (${workoutMetrics.totalVolumeKg} kg volumen acumulado, RPE prom. ${workoutMetrics.avgRpe})`;
+
+    const confirmed = await finishSession({
+      notes: detailsStr,
       routine: selectedRoutineKey,
       routineName: activeRoutine.name,
       exercise: selectedExerciseName,
@@ -359,16 +361,8 @@ export function GymBuilding({
       waterGlasses,
       intensity: intensityRating,
     });
-
-    const detailsStr = `${activeRoutine.name}: ${workoutMetrics.completedCount} series completadas (${workoutMetrics.totalVolumeKg} kg volumen acumulado, RPE prom. ${workoutMetrics.avgRpe})`;
-
-    await onSubmitDirectSkillSession({
-      action: "log_skill_session",
-      domain: "sports",
-      duration_minutes: durationMins,
-      details: detailsStr,
-      intensity: intensityRating,
-    });
+    if (!confirmed) return;
+    triggerHaptic("success");
 
     await onRefreshState();
   };
@@ -423,6 +417,7 @@ export function GymBuilding({
 
   return (
     <LivingInteriorRoom
+      submissionError={submissionError}
       buildingId="gimnasio"
       buildingName="Gimnasio de Fuerza & Resistencia"
       domain="sports"

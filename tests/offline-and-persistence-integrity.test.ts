@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import {
   queueOfflineAction,
   getOfflineQueue,
@@ -23,7 +24,7 @@ test("Integridad P0.1: La sincronización offline conserva acciones si el servid
 
   queueOfflineAction(
     {
-      url: "https://mock.local/api/shortcuts/habit-log",
+      url: "/api/shortcuts/habit-log",
       method: "POST",
       body: { quest_code: "READING_15", requested_gp: 3000 },
       description: "Lectura offline simulada",
@@ -37,7 +38,13 @@ test("Integridad P0.1: La sincronización offline conserva acciones si el servid
 
   // Simular fetch global que devuelve 503 (como el Service Worker al fallar la red)
   const originalFetch = globalThis.fetch;
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { onLine: true } });
+  let requests = 0;
   globalThis.fetch = async () => {
+    requests++;
     return new Response(JSON.stringify({ offline: true, message: "Sin conexión" }), {
       status: 503,
       statusText: "Service Unavailable",
@@ -48,12 +55,19 @@ test("Integridad P0.1: La sincronización offline conserva acciones si el servid
   try {
     const synced = await processOfflineQueue(testUserId);
     assert.equal(synced, 0, "No debe registrar falsos éxitos cuando el servidor o SW retorna 503");
+    assert.equal(requests, 1, "La prueba debe ejecutar el reenvío real simulado");
+    globalThis.fetch = async () => Response.json({ success: true, offline: true, activity_log_id: "fixture-offline" });
+    assert.equal(await processOfflineQueue(testUserId), 0, "Un falso 200 offline no confirma la actividad");
 
     const remainingQueue = getOfflineQueue(testUserId);
     assert.equal(remainingQueue.length, 1, "La acción debe conservarse intacta en la cola");
     assert.equal(remainingQueue[0].description, "Lectura offline simulada");
   } finally {
     globalThis.fetch = originalFetch;
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+    if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator);
+    else Reflect.deleteProperty(globalThis, "navigator");
     safeLocalStorage.removeItem(queueKey);
   }
 });
@@ -67,7 +81,7 @@ test("Integridad P0.2: Aislamiento estricto multi-tenant de colas offline", asyn
 
   queueOfflineAction(
     {
-      url: "https://mock.local/api/shortcuts/habit-log",
+      url: "/api/shortcuts/habit-log",
       method: "POST",
       body: { quest_code: "HABIT_A" },
       description: "Acción de Alice",
@@ -130,17 +144,19 @@ test("Integridad P1.2: persistUserCollectionsState realiza escritura atómica y 
   const testUser = "usr_atomic_disk_test";
   const store = new RPGEngineMemoryStore();
   store.wallet_gp = 99999;
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "oakhaven-integrity-"));
 
   const result = await persistUserCollectionsState({
     userId: testUser,
     store,
     db: null,
+    storageDirectory: dataDir,
+    localOnly: true,
   });
 
   assert.equal(result.success, true, "La persistencia atómica debe ser exitosa");
   assert.equal(result.diskSaved, true, "Debe haber guardado en disco");
 
-  const dataDir = path.join(process.cwd(), ".data", "user-stores");
   const filePath = path.join(dataDir, `${testUser}.json`);
   assert.ok(fs.existsSync(filePath), "El archivo JSON final debe existir");
 
@@ -149,7 +165,10 @@ test("Integridad P1.2: persistUserCollectionsState realiza escritura atómica y 
   assert.equal(parsed.wallet_gp, 99999, "Los datos guardados atómicamente deben coincidir");
 
   // Limpiar archivo de prueba
+  assert.equal(path.dirname(path.resolve(filePath)), path.resolve(dataDir));
+  assert.equal(path.dirname(path.resolve(dataDir)), path.resolve(os.tmpdir()));
   try {
     fs.unlinkSync(filePath);
+    fs.rmdirSync(dataDir);
   } catch {}
 });

@@ -234,11 +234,13 @@ export async function buildSupabaseEngineState(params: {
         if (prof.collections_state && typeof prof.collections_state === "object") {
           applyPersistedCollectionsToStore(
             userStore,
-            prof.collections_state as Partial<PersistedCollectionsPayload>
+            prof.collections_state as Partial<PersistedCollectionsPayload>,
+            userId
           );
           applyPersistedCollectionsToStore(
             engineMirror,
-            prof.collections_state as Partial<PersistedCollectionsPayload>
+            prof.collections_state as Partial<PersistedCollectionsPayload>,
+            userId
           );
         }
       }

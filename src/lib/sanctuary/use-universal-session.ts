@@ -11,15 +11,16 @@ import {
   resumeUniversalSession,
   finishUniversalSession,
   cancelUniversalSession,
-  hydrateUniversalSession,
   calculateNetDurationSeconds,
   formatDuration,
   buildSkillSessionPayload,
 } from "./universal-session-engine";
 
-const STORAGE_KEY_V4 = "rpg_universal_session_v4";
-const STORAGE_KEY_V3_FALLBACK = "rpg_universal_session_v3";
-const HISTORY_STORAGE_KEY = "rpg_universal_sessions_history_v4";
+import { useSessionIdentity } from "./session-identity";
+import { isOfflineOwner } from "../offline-owner.ts";
+import { safeLocalStorage } from "../storage-safe.ts";
+import { captureSessionCommand, executeSessionCommand, hasCapturedSessionCommand } from "./session-command.ts";
+import { loadOwnedSession, saveOwnedSession, loadOwnedHistory, appendOwnedHistory } from "./session-storage.ts";
 
 export function formatStopwatchTime(totalSecs: number): string {
   return formatDuration(totalSecs);
@@ -42,120 +43,57 @@ export function useUniversalSession(
       : {
           targetDomain: targetDomainOrOptions,
           targetBuildingId: targetBuildingIdParam,
-          userId: "usr_cozy_hero",
         };
 
-  const activeUserId = options.userId || "usr_cozy_hero";
+  const contextUserId = useSessionIdentity();
+  // Explicit options support isolated hosts; they cannot override an authenticated provider.
+  const candidate = options.userId ?? contextUserId;
+  const activeUserId = isOfflineOwner(candidate) && (!contextUserId || contextUserId === candidate) ? candidate : undefined;
   const targetDomain = options.targetDomain;
   const targetBuildingId = options.targetBuildingId;
 
-  // Estado principal de sesión hidratada
-  const [session, setSession] = useState<UniversalSessionRecord | null>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        // Intentar leer v4
-        const storedV4 = localStorage.getItem(STORAGE_KEY_V4);
-        if (storedV4) {
-          const hydrated = hydrateUniversalSession(storedV4, activeUserId, Date.now());
-          if (hydrated && (!targetDomain || hydrated.domain === targetDomain)) {
-            return hydrated;
-          }
-        }
+  const lifetimeRef = useRef({ owner: activeUserId, mounted: true });
+  if (lifetimeRef.current.owner !== activeUserId) lifetimeRef.current = { owner: activeUserId, mounted: true };
+  const lifetime = lifetimeRef.current;
+  const isCurrent = useCallback(() => lifetimeRef.current === lifetime && lifetime.mounted, [lifetime]);
+  useEffect(() => {
+    lifetime.mounted = true;
+    return () => { lifetime.mounted = false; };
+  }, [lifetime]);
 
-        // Fallback a v3 para continuidad sin pérdida
-        const storedV3 = localStorage.getItem(STORAGE_KEY_V3_FALLBACK);
-        if (storedV3) {
-          const parsed = JSON.parse(storedV3);
-          if (parsed && parsed.status !== "idle" && parsed.status !== "completed") {
-            if (!targetDomain || parsed.domain === targetDomain) {
-              const adapted = hydrateUniversalSession(
-                {
-                  ...parsed,
-                  userId: activeUserId,
-                  idempotencyKey: `ses_univ_${activeUserId}_${parsed.sessionId}`,
-                  pauses: [],
-                  specializedData: {},
-                  historyLog: [],
-                },
-                activeUserId,
-                Date.now()
-              );
-              return adapted;
-            }
-          }
-        }
-      } catch {
-        // Ignorar errores de lectura
-      }
-    }
-    return null;
-  });
-
+  const [storedSession, setStoredSession] = useState<UniversalSessionRecord | null>(null);
+  const ownedSession = activeUserId && storedSession?.userId === activeUserId ? storedSession : null;
+  const session = ownedSession && (!targetDomain || ownedSession.domain === targetDomain) ? ownedSession : null;
+  const currentSession = useRef(session);
+  currentSession.current = session;
+  const setSession = useCallback((update: UniversalSessionRecord | null | ((previous: UniversalSessionRecord | null) => UniversalSessionRecord | null)) => {
+    if (!isCurrent()) return;
+    setStoredSession(previous => {
+      if (!isCurrent()) return previous;
+      const owned = previous && previous.userId === activeUserId && (!targetDomain || previous.domain === targetDomain) ? previous : null;
+      const next = typeof update === "function" ? update(owned) : update;
+      return next && next.userId !== activeUserId ? previous : next;
+    });
+  }, [activeUserId, targetDomain, isCurrent]);
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
-  const [history, setHistory] = useState<UniversalSessionRecord[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const storedHist = localStorage.getItem(HISTORY_STORAGE_KEY);
-        if (storedHist) {
-          const parsedList = JSON.parse(storedHist) as UniversalSessionRecord[];
-          if (Array.isArray(parsedList)) {
-            return targetDomain
-              ? parsedList.filter((s) => s.domain === targetDomain)
-              : parsedList;
-          }
-        }
-      } catch {
-        // Ignorar
-      }
-    }
-    return [];
-  });
-
+  const [storedHistory, setHistory] = useState<UniversalSessionRecord[]>([]);
+  const history = storedHistory.filter(item => activeUserId && item.userId === activeUserId && (!targetDomain || item.domain === targetDomain));
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const activeLockConflict = ownedSession && targetDomain && ownedSession.domain !== targetDomain
+    ? { domain: ownedSession.domain, buildingId: ownedSession.buildingId, sessionId: ownedSession.sessionId } : null;
 
-  // Advertencia de conflicto si hay otra sesión activa de otro dominio
-  const [activeLockConflict, setActiveLockConflict] = useState<{
-    domain: SkillDomain;
-    buildingId: string;
-    sessionId: string;
-  } | null>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY_V4);
-        if (stored) {
-          const hydrated = hydrateUniversalSession(stored, activeUserId, Date.now());
-          if (hydrated && targetDomain && hydrated.domain !== targetDomain) {
-            return {
-              domain: hydrated.domain,
-              buildingId: hydrated.buildingId,
-              sessionId: hydrated.sessionId,
-            };
-          }
-        }
-      } catch {
-        // Ignorar
-      }
-    }
-    return null;
-  });
+  useEffect(() => {
+    setStoredSession(loadOwnedSession(safeLocalStorage, activeUserId));
+    setHistory(loadOwnedHistory(safeLocalStorage, activeUserId));
+    setSubmitting(false);
+    setSubmissionError(null);
+  }, [activeUserId]);
 
-  // Persistencia auxiliar segura
-  const persistSession = useCallback((sess: UniversalSessionRecord | null) => {
-    if (typeof window === "undefined") return;
-    try {
-      if (sess && sess.status !== "completed" && sess.status !== "cancelled") {
-        localStorage.setItem(STORAGE_KEY_V4, JSON.stringify(sess));
-        // Mantener compatibilidad con componentes que leían v3
-        localStorage.setItem(STORAGE_KEY_V3_FALLBACK, JSON.stringify(sess));
-      } else {
-        localStorage.removeItem(STORAGE_KEY_V4);
-        localStorage.removeItem(STORAGE_KEY_V3_FALLBACK);
-      }
-    } catch {
-      // Ignorar errores de storage
-    }
-  }, []);
+  const persistSession = useCallback((value: UniversalSessionRecord | null) => {
+    if (!isCurrent()) return;
+    saveOwnedSession(safeLocalStorage, activeUserId, value);
+  }, [activeUserId, isCurrent]);
 
   // Actualización continua de duración neta (basada en marcas de tiempo exactas)
   useEffect(() => {
@@ -186,7 +124,7 @@ export function useUniversalSession(
         timerRef.current = null;
       }
     };
-  }, [session?.status, persistSession]);
+  }, [session?.status, persistSession, setSession]);
 
   // Fase 1: Preparar Sesión (sin arrancar el cronómetro todavía)
   const prepareSession = useCallback(
@@ -199,6 +137,8 @@ export function useUniversalSession(
       initialNotes?: string;
       specializedData?: SessionSpecializedMap;
     }) => {
+      if (!activeUserId || !isCurrent()) return null;
+      if (session && hasCapturedSessionCommand(safeLocalStorage, activeUserId, session.idempotencyKey)) { setSubmissionError("Termina o descarta el registro pendiente antes de iniciar otro."); return null; }
       const activeDomain = params?.domain || targetDomain || "general";
       const activeBuilding = params?.buildingId || targetBuildingId || `bld_${activeDomain}`;
 
@@ -216,10 +156,9 @@ export function useUniversalSession(
 
       setSession(newSession);
       persistSession(newSession);
-      setActiveLockConflict(null);
       return newSession;
     },
-    [activeUserId, targetDomain, targetBuildingId, persistSession]
+    [session, activeUserId, targetDomain, targetBuildingId, persistSession, isCurrent, setSession]
   );
 
   // Fase 2: Iniciar Sesión (arranca cronómetro)
@@ -234,34 +173,25 @@ export function useUniversalSession(
       notes?: string;
       specializedData?: SessionSpecializedMap;
     }) => {
-      setSession((prev) => {
-        if (prev && prev.status === "preparing") {
-          const started = startUniversalSession(prev, Date.now());
-          persistSession(started);
-          return started;
-        }
-
-        const activeDomain = params?.domain || targetDomain || "general";
-        const activeBuilding = params?.buildingId || targetBuildingId || `bld_${activeDomain}`;
-
-        const newSession = createUniversalSession({
-          userId: activeUserId,
-          domain: activeDomain,
-          buildingId: activeBuilding,
-          resourceId: params?.resourceId,
-          resourceTitle: params?.resourceTitle,
-          objective: params?.objective,
-          initialNotes: params?.notes || params?.initialNotes,
-          specializedData: params?.specializedData,
-          autoStart: true,
-        });
-
-        persistSession(newSession);
-        setActiveLockConflict(null);
-        return newSession;
-      });
+      if (!activeUserId || !isCurrent()) return;
+      if (session && hasCapturedSessionCommand(safeLocalStorage, activeUserId, session.idempotencyKey)) { setSubmissionError("Termina o descarta el registro pendiente antes de iniciar otro."); return; }
+      const next = session?.status === "preparing"
+        ? startUniversalSession(session, Date.now())
+        : createUniversalSession({
+            userId: activeUserId,
+            domain: params?.domain || targetDomain || "general",
+            buildingId: params?.buildingId || targetBuildingId || `bld_${params?.domain || targetDomain || "general"}`,
+            resourceId: params?.resourceId,
+            resourceTitle: params?.resourceTitle,
+            objective: params?.objective,
+            initialNotes: params?.notes || params?.initialNotes,
+            specializedData: params?.specializedData,
+            autoStart: true,
+          });
+      setSession(next);
+      persistSession(next);
     },
-    [activeUserId, targetDomain, targetBuildingId, persistSession]
+    [session, activeUserId, targetDomain, targetBuildingId, persistSession, isCurrent, setSession]
   );
 
   // Fase 3: Pausar Sesión
@@ -272,17 +202,18 @@ export function useUniversalSession(
       persistSession(paused);
       return paused;
     });
-  }, [persistSession]);
+  }, [persistSession, setSession]);
 
   // Fase 4: Reanudar Sesión
   const resumeSession = useCallback(() => {
+    if (session && hasCapturedSessionCommand(safeLocalStorage, activeUserId, session.idempotencyKey)) { setSubmissionError("La sesión espera confirmación; reintenta guardarla sin añadir tiempo."); return; }
     setSession((prev) => {
       if (!prev || prev.status !== "paused") return prev;
       const resumed = resumeUniversalSession(prev, Date.now());
       persistSession(resumed);
       return resumed;
     });
-  }, [persistSession]);
+  }, [session, activeUserId, persistSession, setSession]);
 
   // Fase 5: Cancelar o Reiniciar Sesión
   const resetSession = useCallback(() => {
@@ -292,18 +223,15 @@ export function useUniversalSession(
     }
     setSession(null);
     persistSession(null);
-  }, [persistSession]);
+  }, [persistSession, setSession]);
 
   const cancelSession = useCallback(
     (reason: string = "Usuario descartó la sesión") => {
-      setSession((prev) => {
-        if (!prev) return null;
-        cancelUniversalSession(prev, reason, Date.now());
-        resetSession();
-        return null;
-      });
+      if (!session || !isCurrent()) return;
+      cancelUniversalSession(session, reason, Date.now());
+      resetSession();
     },
-    [resetSession]
+    [session, isCurrent, resetSession]
   );
 
   // Actualizar notas
@@ -316,7 +244,7 @@ export function useUniversalSession(
         return updated;
       });
     },
-    [persistSession]
+    [persistSession, setSession]
   );
 
   // Actualizar datos especializados por habilidad
@@ -335,7 +263,7 @@ export function useUniversalSession(
         return updated;
       });
     },
-    [persistSession]
+    [persistSession, setSession]
   );
 
   // Añadir URL o evidencia fotográfica
@@ -351,53 +279,50 @@ export function useUniversalSession(
         return updated;
       });
     },
-    [persistSession]
+    [persistSession, setSession]
   );
 
   // Fase 6: Finalizar y Guardar con Idempotencia
   const finishSession = useCallback(
     async (specializedPayload: Record<string, unknown> = {}) => {
-      if (!session) return null;
+      if (!session || !activeUserId || session.userId !== activeUserId || !isCurrent()) return null;
       setSubmitting(true);
       setSubmissionError(null);
 
-      const completed = finishUniversalSession(session, undefined, Date.now());
-      const payload = buildSkillSessionPayload(completed, specializedPayload);
-
       try {
-        const res = await fetch("/api/shortcuts/skill-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+        const now = Date.now();
+        const completed = finishUniversalSession(session, undefined, now);
+        const command = captureSessionCommand(safeLocalStorage, {
+          ownerId: activeUserId, operationId: session.idempotencyKey,
+          payload: buildSkillSessionPayload(completed, specializedPayload), context: { completed },
         });
-
-        const data = await res.json();
-
-        // Guardar en búfer histórico local
-        try {
-          if (typeof window !== "undefined") {
-            const rawHist = localStorage.getItem(HISTORY_STORAGE_KEY);
-            const currentHist: UniversalSessionRecord[] = rawHist ? JSON.parse(rawHist) : [];
-            const nextHist = [completed, ...currentHist].slice(0, 50);
-            localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHist));
-            setHistory(targetDomain ? nextHist.filter((s) => s.domain === targetDomain) : nextHist);
-          }
-        } catch {
-          // Ignorar fallo de historial local
+        // Stop accumulating productive time once the user requests completion.
+        if (session.status === "running") {
+          const pending = pauseUniversalSession(session, now);
+          setSession(pending);
+          persistSession(pending);
         }
-
+        const result = await executeSessionCommand(safeLocalStorage, command);
+        if (!isCurrent() || currentSession.current?.sessionId !== session.sessionId) return null;
+        if (result.outcome !== "confirmed") throw new Error(result.message);
+        const captured = (command.context as { completed: UniversalSessionRecord }).completed;
+        if (!appendOwnedHistory(safeLocalStorage, activeUserId, captured)) {
+          throw new Error("Sesión confirmada; el historial local sigue pendiente. Reintenta sin registrar otra actividad.");
+        }
+        setHistory(loadOwnedHistory(safeLocalStorage, activeUserId));
         resetSession();
-        return data;
+        return result.data;
       } catch (err: unknown) {
+        if (!isCurrent()) return null;
         console.error("Error al finalizar sesión universal:", err);
         const errMsg = err instanceof Error ? err.message : "Error de red al guardar sesión";
         setSubmissionError(errMsg);
-        throw err;
+        return null;
       } finally {
-        setSubmitting(false);
+        if (isCurrent()) setSubmitting(false);
       }
     },
-    [session, targetDomain, resetSession]
+    [session, activeUserId, isCurrent, resetSession, setSession, persistSession]
   );
 
   const netSecs = session ? calculateNetDurationSeconds(session, Date.now()) : 0;

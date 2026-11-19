@@ -1,5 +1,8 @@
 "use client";
 
+import { useOwnedNotes } from "@/lib/sanctuary/use-owned-notes";
+import { SessionIdentityProvider } from "@/lib/sanctuary/session-identity";
+
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
@@ -116,6 +119,7 @@ interface EngineStateData {
   skill_summaries: SkillDomainSummary[];
   spaced_cards?: any[];
   user?: {
+    id?: string;
     username?: string;
     display_name?: string;
     shortcut_api_key?: string;
@@ -144,23 +148,19 @@ export function CozyRpgDashboard() {
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
 
   // Notas de bitácora
-  const [quickNote, setQuickNote] = useState("");
   const [isScrapbookOpen, setIsScrapbookOpen] = useState(false);
   const [isSoundscapeOpen, setIsSoundscapeOpen] = useState(false);
   const [isVillageQuestsOpen, setIsVillageQuestsOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [isCompanionsOpen, setIsCompanionsOpen] = useState(false);
-  const [notesList, setNotesList] = useState<string[]>([
-    "Recoger lana de alpaca para la bufanda nórdica.",
-    "Completar 20 páginas del libro de arquitectura.",
-    "Repasar casos de OLL 2-Look en el Club de Puzzles.",
-  ]);
+  const { notesList, quickNote, setQuickNote, addNote, removeNote, notesError } = useOwnedNotes(state?.user?.id);
 
   // Carga de estado desde /api/state
   const fetchState = useCallback(async () => {
     try {
       const res = await fetch("/api/state", { cache: "no-store" });
       if (res.status === 401) {
+        setState(null);
         window.location.href = "/login";
         return;
       }
@@ -189,18 +189,8 @@ export function CozyRpgDashboard() {
     registerServiceWorker();
     if (typeof window !== "undefined") {
       setIsOffline(!navigator.onLine);
-      setOfflineQueueCount(getOfflineQueue().length);
-      try {
-        const savedNotes = localStorage.getItem("cozy_oakhaven_notes_v1");
-        if (savedNotes) {
-          const parsed = JSON.parse(savedNotes);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setNotesList(parsed);
-          }
-        }
-      } catch (e) {
-        console.warn("Error cargando notas de Oakhaven:", e);
-      }
+      setOfflineQueueCount(getOfflineQueue(state?.user?.id).length);
+
     }
   }, []);
 
@@ -210,10 +200,10 @@ export function CozyRpgDashboard() {
 
     const handleOnline = async () => {
       setIsOffline(false);
-      const synced = await processOfflineQueue(async () => {
+      const synced = await processOfflineQueue(state?.user?.id, async () => {
         await fetchState();
       });
-      setOfflineQueueCount(getOfflineQueue().length);
+      setOfflineQueueCount(getOfflineQueue(state?.user?.id).length);
       if (synced > 0) {
         triggerHaptic("success");
       }
@@ -221,7 +211,7 @@ export function CozyRpgDashboard() {
 
     const handleOffline = () => {
       setIsOffline(true);
-      setOfflineQueueCount(getOfflineQueue().length);
+      setOfflineQueueCount(getOfflineQueue(state?.user?.id).length);
       triggerHaptic("warning");
     };
 
@@ -231,15 +221,19 @@ export function CozyRpgDashboard() {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [fetchState]);
+  }, [fetchState, state?.user?.id]);
+
+  useEffect(() => {
+    setOfflineQueueCount(getOfflineQueue(state?.user?.id).length);
+  }, [state?.user?.id]);
 
   // Sincronización manual bajo demanda
   const handleManualSync = async () => {
     if (typeof window === "undefined" || !navigator.onLine) return;
-    const synced = await processOfflineQueue(async () => {
+    const synced = await processOfflineQueue(state?.user?.id, async () => {
       await fetchState();
     });
-    setOfflineQueueCount(getOfflineQueue().length);
+    setOfflineQueueCount(getOfflineQueue(state?.user?.id).length);
     if (synced > 0) {
       triggerHaptic("success");
     }
@@ -247,14 +241,16 @@ export function CozyRpgDashboard() {
 
   // Manejo de envío directo de sesión con resiliencia offline PWA
   const handleSubmitSkillSession = async (payload: Record<string, unknown>) => {
+    if (!state?.user?.id) return false;
     if (typeof window !== "undefined" && !navigator.onLine) {
-      queueOfflineAction({
+      const queued = queueOfflineAction({
         url: "/api/shortcuts/skill-session",
         method: "POST",
         body: payload,
         description: `Sesión offline: ${String(payload.domain || "actividad")} (${payload.duration_minutes || 15} min)`,
-      });
-      setOfflineQueueCount(getOfflineQueue().length);
+      }, state?.user?.id);
+      if (!queued) return false;
+      setOfflineQueueCount(getOfflineQueue(state?.user?.id).length);
       triggerHaptic("warning");
       return true;
     }
@@ -272,13 +268,14 @@ export function CozyRpgDashboard() {
       }
     } catch (err) {
       console.warn("Fallo de red, guardando en cola offline:", err);
-      queueOfflineAction({
+      const queued = queueOfflineAction({
         url: "/api/shortcuts/skill-session",
         method: "POST",
         body: payload,
         description: `Sesión offline por reintento: ${String(payload.domain || "actividad")}`,
-      });
-      setOfflineQueueCount(getOfflineQueue().length);
+      }, state?.user?.id);
+      if (!queued) return false;
+      setOfflineQueueCount(getOfflineQueue(state?.user?.id).length);
       triggerHaptic("warning");
       return true;
     }
@@ -360,29 +357,15 @@ export function CozyRpgDashboard() {
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickNote.trim()) return;
-    const updated = [quickNote.trim(), ...notesList];
-    setNotesList(updated);
+    if (!addNote(quickNote)) return;
     setQuickNote("");
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("cozy_oakhaven_notes_v1", JSON.stringify(updated));
-      } catch (err) {
-        console.warn("Error guardando notas de Oakhaven:", err);
-      }
-    }
+    triggerHaptic("light");
   };
 
   // Eliminar nota con persistencia
   const handleDeleteNote = (idx: number) => {
-    const updated = notesList.filter((_, i) => i !== idx);
-    setNotesList(updated);
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("cozy_oakhaven_notes_v1", JSON.stringify(updated));
-      } catch (err) {
-        console.warn("Error guardando notas de Oakhaven:", err);
-      }
-    }
+    if (!removeNote(idx)) return;
+    triggerHaptic("light");
   };
 
   const handleCopyCode = () => {
@@ -412,7 +395,9 @@ export function CozyRpgDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F4EB] text-[#3A2E2B] font-sans antialiased selection:bg-[#E9C46A]/40 pb-16">
+    <SessionIdentityProvider userId={state?.user?.id}>
+      {notesError && <p role="alert" className="bg-amber-50 p-3 text-amber-950">{notesError}</p>}
+<div className="min-h-screen bg-[#F7F4EB] text-[#3A2E2B] font-sans antialiased selection:bg-[#E9C46A]/40 pb-16">
       <div className="mx-auto max-w-[1550px] p-4 sm:p-6 lg:p-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
           
@@ -1012,5 +997,6 @@ export function CozyRpgDashboard() {
         onSuccess={fetchState}
       />
     </div>
+    </SessionIdentityProvider>
   );
 }

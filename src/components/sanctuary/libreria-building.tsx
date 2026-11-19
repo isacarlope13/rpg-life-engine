@@ -103,6 +103,7 @@ export function LibreriaBuilding({
     updateSpecializedData,
     finishSession,
     submitting,
+    submissionError,
   } = useUniversalSession("reading", "libreria");
 
   // Sincronizar páginas registradas al reingresar si la sesión sigue activa en segundo plano
@@ -356,6 +357,7 @@ export function LibreriaBuilding({
 
   return (
     <LivingInteriorRoom
+      submissionError={submissionError}
       buildingId="libreria"
       buildingName="La Librería & Archivo Antiguo"
       domain="reading"

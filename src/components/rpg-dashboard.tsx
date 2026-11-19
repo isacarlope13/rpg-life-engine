@@ -1,5 +1,8 @@
 "use client";
 
+import { useOwnedLiveTimer } from "@/lib/sanctuary/use-owned-live-timer";
+import { SessionIdentityProvider } from "@/lib/sanctuary/session-identity";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -1195,10 +1198,9 @@ export function RPGLifeEngineDashboard({
   const [cubeNotesSuccessMsg, setCubeNotesSuccessMsg] = useState<string | null>(null);
 
   // Cronómetro Universal en Vivo para Sesiones (Lectura, Tejido, Estudio, Trabajo, Gaming, Deportes, Rubik)
-  const [liveTimerDomain, setLiveTimerDomain] = useState<SkillDomain | null>(null);
-  const [liveTimerSeconds, setLiveTimerSeconds] = useState<number>(0);
-  const [liveTimerPaused, setLiveTimerPaused] = useState<boolean>(false);
-  const liveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { liveTimerDomain, liveTimerSeconds, liveTimerPaused,
+    startLiveTimer, pauseLiveTimer, resumeLiveTimer, resetLiveTimer, finishLiveTimer, liveTimerSubmitting, liveTimerError,
+  } = useOwnedLiveTimer(state?.user?.id);
 
   // Estados de Sesiones de Lectura + Extractor de Ficha Técnica + Galería de Libros
   const [selectedBookId, setSelectedBookId] = useState("book-1");
@@ -1345,6 +1347,7 @@ export function RPGLifeEngineDashboard({
 
     // Sin sesión: el backend responde 401 con { error }. Nunca usar eso como estado.
     if (res.status === 401) {
+      setState(null);
       window.location.href = "/login";
       return;
     }
@@ -1411,88 +1414,26 @@ export function RPGLifeEngineDashboard({
 
   useEffect(() => {
     registerServiceWorker();
+    fetchState();
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const owner = state?.user?.id;
+    if (!owner) return;
     const handleOnline = () => {
-      processOfflineQueue((synced) => {
-        setOfflineSyncMsg(`🔄 ${synced} acción(es) offline sincronizada(s) con éxito.`);
+      void processOfflineQueue(owner, (synced) => {
+        setOfflineSyncMsg(`${synced} acción(es) offline sincronizada(s).`);
         setTimeout(() => setOfflineSyncMsg(null), 4000);
-        fetchState();
+        void fetchState();
       });
     };
     window.addEventListener("online", handleOnline);
-    processOfflineQueue();
-    fetchState();
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
-    };
-  }, []);
-
-  // Recuperar Cronómetro Universal de localStorage al iniciar (PWA offline / reload)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const savedTimerStr = localStorage.getItem("rpg_live_timer_state");
-      if (savedTimerStr) {
-        const saved = JSON.parse(savedTimerStr);
-        if (saved && saved.domain) {
-          setLiveTimerDomain(saved.domain);
-          if (saved.paused) {
-            setLiveTimerPaused(true);
-            setLiveTimerSeconds(saved.seconds || 0);
-          } else {
-            const elapsedSinceStart = Math.floor(
-              (Date.now() - (saved.lastTimestamp || Date.now())) / 1000
-            );
-            setLiveTimerSeconds((saved.seconds || 0) + Math.max(0, elapsedSinceStart));
-            setLiveTimerPaused(false);
-          }
-        }
-      }
-    } catch {
-      // Ignorar error de parsing en localStorage
-    }
-  }, []);
-
-  // Intervalo del Cronómetro Universal en Vivo
-  useEffect(() => {
-    if (liveTimerDomain && !liveTimerPaused) {
-      liveTimerRef.current = setInterval(() => {
-        setLiveTimerSeconds((s) => s + 1);
-      }, 1000);
-    } else {
-      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
-    }
-    return () => {
-      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
-    };
-  }, [liveTimerDomain, liveTimerPaused]);
-
-  // Sincronizar Cronómetro Universal con localStorage para tolerancia a fallos PWA
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (liveTimerDomain) {
-      try {
-        localStorage.setItem(
-          "rpg_live_timer_state",
-          JSON.stringify({
-            domain: liveTimerDomain,
-            seconds: liveTimerSeconds,
-            paused: liveTimerPaused,
-            lastTimestamp: Date.now(),
-          })
-        );
-      } catch {
-        // Ignorar storage full
-      }
-    } else {
-      try {
-        localStorage.removeItem("rpg_live_timer_state");
-      } catch {
-        // Ignorar
-      }
-    }
-  }, [liveTimerDomain, liveTimerSeconds, liveTimerPaused]);
+    handleOnline();
+    return () => window.removeEventListener("online", handleOnline);
+  }, [state?.user?.id]);
 
   // Cargar notas del cubo seleccionado al cambiar de cubo o cargar estado
   useEffect(() => {
@@ -1536,38 +1477,6 @@ export function RPGLifeEngineDashboard({
     return `${mins.toString().padStart(2, "0")}:${secs
       .toString()
       .padStart(2, "0")}`;
-  };
-
-  const startLiveTimer = (domain: SkillDomain) => {
-    if (liveTimerDomain === domain && liveTimerPaused) {
-      setLiveTimerPaused(false);
-      return;
-    }
-    setLiveTimerDomain(domain);
-    setLiveTimerSeconds(0);
-    setLiveTimerPaused(false);
-  };
-
-  const pauseLiveTimer = () => {
-    setLiveTimerPaused(true);
-  };
-
-  const resumeLiveTimer = () => {
-    setLiveTimerPaused(false);
-  };
-
-  const resetLiveTimer = () => {
-    if (liveTimerRef.current) clearInterval(liveTimerRef.current);
-    setLiveTimerDomain(null);
-    setLiveTimerSeconds(0);
-    setLiveTimerPaused(false);
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.removeItem("rpg_live_timer_state");
-      } catch {
-        // Ignorar
-      }
-    }
   };
 
   const handleSaveCubeNotebook = async () => {
@@ -1617,90 +1526,101 @@ export function RPGLifeEngineDashboard({
   };
 
   const stopAndLogLiveTimer = async (domain: SkillDomain) => {
+    if (!state?.user?.id || liveTimerDomain !== domain) return;
     const elapsedMinutes = Math.max(1, Math.round(liveTimerSeconds / 60));
-    resetLiveTimer();
+    const submitCapturedTimer = async (payload: Record<string, unknown>) => {
+      const result = await finishLiveTimer(payload);
+      if (result.outcome !== "confirmed") throw new Error(result.message);
+      setLastShortcutResponse(JSON.stringify(result.data, null, 2));
+      await fetchState();
+      return result.data;
+    };
+    try {
 
-    if (domain === "reading") {
-      setReadingMinutesInput(elapsedMinutes);
-      const parsedSinglePage = quotePageInput ? Number(quotePageInput) : undefined;
-      await submitSkillSession({
-        domain: "reading",
-        book_id: selectedBookId,
-        pages_read: pagesReadInput,
-        duration_minutes: elapsedMinutes,
-        quote_text: quoteTextInput.trim() || undefined,
-        quote_page:
-          parsedSinglePage && parsedSinglePage > 0 ? parsedSinglePage : undefined,
-        quotes_list: sessionQuotes.length > 0 ? sessionQuotes : undefined,
-      });
-      setQuoteTextInput("");
-      setQuotePageInput("");
-      setSessionQuotes([]);
-    } else if (domain === "knitting") {
-      setKnittingMinutesInput(elapsedMinutes);
-      await submitSkillSession({
-        domain: "knitting",
-        project_id: selectedKnitId,
-        rows_completed: rowsCompletedInput,
-        duration_minutes: elapsedMinutes,
-        stitches_notes: stitchesNotesInput,
-      });
-    } else if (domain === "study") {
-      setStudyMinutes(elapsedMinutes);
-      await submitSkillSession({
-        domain: "study",
-        subject: studySubject,
-        study_method: studyMethod,
-        duration_minutes: elapsedMinutes,
-      });
-    } else if (domain === "work") {
-      setWorkMinutes(elapsedMinutes);
-      const isProject = workViewMode === "projects";
-      const matchedProj = state?.work_projects?.find(
-        (p) => p.id === selectedProjectId
-      );
-      await submitSkillSession({
-        domain: "work",
-        work_mode: workViewMode,
-        project_id: isProject && selectedProjectId ? selectedProjectId : undefined,
-        deliverable: isProject
-          ? matchedProj?.name || workDeliverable
-          : operationalTaskTitle || workDeliverable,
-        agile_stage: isProject
-          ? selectedAgileStage || matchedProj?.current_stage
-          : undefined,
-        impact_level: isProject ? "high_impact" : workImpact,
-        duration_minutes: elapsedMinutes,
-      });
-    } else if (domain === "gaming") {
-      setGamingAntiTiltMinutes(elapsedMinutes);
-      await submitSkillSession({
-        domain: "gaming",
-        deliverable: customSessionTitle || gamingGameName,
-        impact_level: "standard",
-        duration_minutes: elapsedMinutes,
-      });
-    } else if (domain === "sports") {
-      setCustomSessionMinutes(elapsedMinutes);
-      await submitSkillSession({
-        domain: "sports",
-        deliverable: customSessionTitle || sportsMetricNote,
-        impact_level: "high_impact",
-        duration_minutes: elapsedMinutes,
-      });
-    } else if (domain === "rubik") {
-      const activeCube =
-        state?.rubik_cubes?.find((c) => c.id === selectedCubeId) ||
-        state?.rubik_cubes?.[0];
-      await submitSkillSession({
-        domain: "rubik",
-        cube_type: cubeType,
-        cube_id: activeCube?.id,
-        cube_model: activeCube?.model_name,
-        algorithm_learned: `${rubikStudyFocus}: ${rubikStudyNotes || "Estudio de nuevo cubo y algoritmos"}`,
-        duration_minutes: elapsedMinutes,
-        title: `Estudio de Cubo (${cubeType}) — ${rubikStudyFocus}`,
-      });
+      if (domain === "reading") {
+        setReadingMinutesInput(elapsedMinutes);
+        const parsedSinglePage = quotePageInput ? Number(quotePageInput) : undefined;
+        await submitCapturedTimer({
+          domain: "reading",
+          book_id: selectedBookId,
+          pages_read: pagesReadInput,
+          duration_minutes: elapsedMinutes,
+          quote_text: quoteTextInput.trim() || undefined,
+          quote_page:
+            parsedSinglePage && parsedSinglePage > 0 ? parsedSinglePage : undefined,
+          quotes_list: sessionQuotes.length > 0 ? sessionQuotes : undefined,
+        });
+        setQuoteTextInput("");
+        setQuotePageInput("");
+        setSessionQuotes([]);
+      } else if (domain === "knitting") {
+        setKnittingMinutesInput(elapsedMinutes);
+        await submitCapturedTimer({
+          domain: "knitting",
+          project_id: selectedKnitId,
+          rows_completed: rowsCompletedInput,
+          duration_minutes: elapsedMinutes,
+          stitches_notes: stitchesNotesInput,
+        });
+      } else if (domain === "study") {
+        setStudyMinutes(elapsedMinutes);
+        await submitCapturedTimer({
+          domain: "study",
+          subject: studySubject,
+          study_method: studyMethod,
+          duration_minutes: elapsedMinutes,
+        });
+      } else if (domain === "work") {
+        setWorkMinutes(elapsedMinutes);
+        const isProject = workViewMode === "projects";
+        const matchedProj = state?.work_projects?.find(
+          (p) => p.id === selectedProjectId
+        );
+        await submitCapturedTimer({
+          domain: "work",
+          work_mode: workViewMode,
+          project_id: isProject && selectedProjectId ? selectedProjectId : undefined,
+          deliverable: isProject
+            ? matchedProj?.name || workDeliverable
+            : operationalTaskTitle || workDeliverable,
+          agile_stage: isProject
+            ? selectedAgileStage || matchedProj?.current_stage
+            : undefined,
+          impact_level: isProject ? "high_impact" : workImpact,
+          duration_minutes: elapsedMinutes,
+        });
+      } else if (domain === "gaming") {
+        setGamingAntiTiltMinutes(elapsedMinutes);
+        await submitCapturedTimer({
+          domain: "gaming",
+          deliverable: customSessionTitle || gamingGameName,
+          impact_level: "standard",
+          duration_minutes: elapsedMinutes,
+        });
+      } else if (domain === "sports") {
+        setCustomSessionMinutes(elapsedMinutes);
+        await submitCapturedTimer({
+          domain: "sports",
+          deliverable: customSessionTitle || sportsMetricNote,
+          impact_level: "high_impact",
+          duration_minutes: elapsedMinutes,
+        });
+      } else if (domain === "rubik") {
+        const activeCube =
+          state?.rubik_cubes?.find((c) => c.id === selectedCubeId) ||
+          state?.rubik_cubes?.[0];
+        await submitCapturedTimer({
+          domain: "rubik",
+          cube_type: cubeType,
+          cube_id: activeCube?.id,
+          cube_model: activeCube?.model_name,
+          algorithm_learned: `${rubikStudyFocus}: ${rubikStudyNotes || "Estudio de nuevo cubo y algoritmos"}`,
+          duration_minutes: elapsedMinutes,
+          title: `Estudio de Cubo (${cubeType}) — ${rubikStudyFocus}`,
+        });
+      }
+    } catch {
+      // The timer hook keeps the same pending operation and presents its error.
     }
   };
 
@@ -1730,6 +1650,7 @@ export function RPGLifeEngineDashboard({
 
   // Registrar Sesión o Acción en el Santuario de Habilidades (Rubik, Lectura, Tejido, Estudio, Trabajo)
   const submitSkillSession = async (payload: Record<string, unknown>) => {
+    if (!state?.user?.id) return { success: false, error: "Identidad no disponible" };
     setSubmitting(true);
     const bodyPayload = {
       idempotency_key: `skill-${Date.now()}-${Math.random()
@@ -1740,12 +1661,17 @@ export function RPGLifeEngineDashboard({
     };
 
     if (typeof window !== "undefined" && !navigator.onLine) {
-      queueOfflineAction({
+      const queued = queueOfflineAction({
         url: "/api/shortcuts/skill-session",
         method: "POST",
         body: bodyPayload,
         description: `Sesión de ${String(payload.domain || "habilidad")}`,
-      });
+      }, state?.user?.id);
+      if (!queued) {
+        setSubmitting(false);
+        alert("No se pudo guardar el pendiente. Conserva los datos y vuelve a intentarlo.");
+        return;
+      }
       triggerHaptic("warning");
       alert(
         "📱 Modo Offline Activado: Estás sin conexión a internet. Tu sesión fue almacenada en cola local y se sincronizará automáticamente cuando vuelva internet."
@@ -1757,7 +1683,7 @@ export function RPGLifeEngineDashboard({
     try {
       const res = await fetch("/api/shortcuts/skill-session", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-RPG-Offline-Owner": state.user.id },
         body: JSON.stringify(bodyPayload),
       });
       const json = await res.json();
@@ -1781,12 +1707,17 @@ export function RPGLifeEngineDashboard({
       return json;
     } catch {
       if (typeof window !== "undefined") {
-        queueOfflineAction({
+        const queued = queueOfflineAction({
           url: "/api/shortcuts/skill-session",
           method: "POST",
           body: bodyPayload,
           description: `Sesión de ${String(payload.domain || "habilidad")}`,
-        });
+        }, state?.user?.id);
+        if (!queued) {
+          setSubmitting(false);
+          alert("No se pudo guardar el pendiente. Conserva los datos y vuelve a intentarlo.");
+          return;
+        }
         triggerHaptic("warning");
         alert(
           "📱 Conexión interrumpida: Tu sesión fue asegurada en el almacenamiento local PWA para sincronización automática."
@@ -2359,6 +2290,7 @@ export function RPGLifeEngineDashboard({
   }, [commandBarSearch]);
 
   const handleLogout = async () => {
+    setState(null);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch (e) {
@@ -2666,6 +2598,7 @@ export function RPGLifeEngineDashboard({
   };
 
   const triggerHabitShortcut = async (questCode: string) => {
+    if (!state?.user?.id) return;
     setSubmitting(true);
     const bodyPayload = {
       idempotency_key: `ios-hab-${Date.now()}`,
@@ -2674,12 +2607,17 @@ export function RPGLifeEngineDashboard({
     };
 
     if (typeof window !== "undefined" && !navigator.onLine) {
-      queueOfflineAction({
+      const queued = queueOfflineAction({
         url: "/api/shortcuts/habit-log",
         method: "POST",
         body: bodyPayload,
         description: `Misión de hábito (${questCode})`,
-      });
+      }, state?.user?.id);
+      if (!queued) {
+        setSubmitting(false);
+        alert("No se pudo guardar el pendiente. Conserva los datos y vuelve a intentarlo.");
+        return;
+      }
       triggerHaptic("success");
       alert(
         "📱 Misión Guardada Offline: No hay conexión ahora mismo, pero tu hábito fue registrado localmente y se enviará tan pronto vuelvas a tener red."
@@ -2699,12 +2637,17 @@ export function RPGLifeEngineDashboard({
       await fetchState();
     } catch {
       if (typeof window !== "undefined") {
-        queueOfflineAction({
+        const queued = queueOfflineAction({
           url: "/api/shortcuts/habit-log",
           method: "POST",
           body: bodyPayload,
           description: `Misión de hábito (${questCode})`,
-        });
+        }, state?.user?.id);
+        if (!queued) {
+          setSubmitting(false);
+          alert("No se pudo guardar el pendiente. Conserva los datos y vuelve a intentarlo.");
+          return;
+        }
         triggerHaptic("warning");
         alert(
           "📱 Misión guardada en cola local: La conexión falló pero tu progreso de racha quedó seguro en tu dispositivo."
@@ -2938,7 +2881,8 @@ export function RPGLifeEngineDashboard({
   );
 
   return (
-    <div
+    <SessionIdentityProvider userId={state?.user?.id}>
+<div
       className={`min-h-screen transition-colors duration-300 ease-in-out ${
         isCozyActive
           ? "bg-[#181614] text-[#EAE4D9]"
@@ -5132,6 +5076,7 @@ export function RPGLifeEngineDashboard({
         </div>
 
         {/* BANNER FLOTANTE DE SESIÓN EN VIVO ACTIVA (SI CORRE EN SEGUNDO PLANO O EN OTRA PESTAÑA) */}
+        {liveTimerError && <p role="alert" className="mb-3 text-sm text-amber-300">{liveTimerError}</p>}
         {liveTimerDomain && (
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/50 bg-gradient-to-r from-amber-950/80 via-slate-900/90 to-amber-950/80 p-4 shadow-lg shadow-amber-950/30">
             <div className="flex items-center gap-3">
@@ -5193,7 +5138,7 @@ export function RPGLifeEngineDashboard({
 
               <button
                 type="button"
-                disabled={submitting}
+                disabled={(submitting) || liveTimerSubmitting}
                 onClick={() => stopAndLogLiveTimer(liveTimerDomain)}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
               >
@@ -5406,7 +5351,7 @@ export function RPGLifeEngineDashboard({
                       )}
                       <button
                         type="button"
-                        disabled={submitting}
+                        disabled={(submitting) || liveTimerSubmitting}
                         onClick={() => stopAndLogLiveTimer("work")}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-teal-500 px-4 py-2 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
                       >
@@ -6284,7 +6229,7 @@ export function RPGLifeEngineDashboard({
                       )}
                       <button
                         type="button"
-                        disabled={submitting}
+                        disabled={(submitting) || liveTimerSubmitting}
                         onClick={() => stopAndLogLiveTimer(activeSkillTab)}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-3.5 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-110 disabled:opacity-50 cursor-pointer"
                       >
@@ -8567,6 +8512,7 @@ export function RPGLifeEngineDashboard({
       )}
     </div>
   </div>
+    </SessionIdentityProvider>
   );
 }
 

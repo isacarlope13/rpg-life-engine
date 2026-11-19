@@ -201,6 +201,8 @@ export interface ReadingBook {
   quotes?: BookQuoteEntry[];
 }
 
+export type KnittingProjectStatus = "in_progress" | "paused" | "completed" | "archived";
+
 export interface KnittingProject {
   id: string;
   name: string;
@@ -208,7 +210,7 @@ export interface KnittingProject {
   total_rows_target: number;
   completed_rows: number;
   yarn_details: string;
-  status: "in_progress" | "completed";
+  status: KnittingProjectStatus;
 }
 
 export type AgileMethodology = "none" | "scrum" | "kanban" | "lean";

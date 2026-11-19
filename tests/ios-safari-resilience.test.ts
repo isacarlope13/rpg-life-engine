@@ -92,9 +92,9 @@ test("Safari iOS 5: queueOfflineAction y getOfflineQueue operan resilientemente"
     method: "POST",
     body: { action: "quick_test" },
     description: "Prueba resiliente Safari iOS",
-  });
+  }, "fixture-safari-owner");
 
-  const queue = getOfflineQueue();
+  const queue = getOfflineQueue("fixture-safari-owner");
   assert.equal(Array.isArray(queue), true, "getOfflineQueue debe retornar un array");
   assert.ok(queue.length >= 1, "Debe contener al menos una acción");
   assert.equal(queue[queue.length - 1].description, "Prueba resiliente Safari iOS");

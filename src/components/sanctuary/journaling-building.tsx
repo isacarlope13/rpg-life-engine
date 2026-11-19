@@ -87,6 +87,7 @@ export function JournalingBuilding({
     cancelSession,
     finishSession,
     history,
+    submissionError,
   } = useUniversalSession({
     targetDomain: "journaling",
     targetBuildingId: "cabana_diario",
@@ -124,25 +125,20 @@ export function JournalingBuilding({
   };
 
   const handleFinishWriting = async () => {
-    triggerHaptic("success");
     const gratitudes = [gratitude1, gratitude2, gratitude3].filter(Boolean);
     const tagsString = selectedTags.join(" ");
     const fullNotes = `Estado: ${mood.toUpperCase()} • ${tagsString}\nGratitud:\n${gratitudes.map((g) => `• ${g}`).join("\n")}\n\nReflexión:\n${journalText}`;
 
-    await finishSession({
+    const confirmed = await finishSession({
       mood,
       tags: selectedTags,
       gratitudes,
       wordCount: journalText.trim().split(/\s+/).filter(Boolean).length,
       notes: fullNotes,
     });
+    if (!confirmed) return;
+    triggerHaptic("success");
 
-    await onSubmitDirectSkillSession({
-      action: "log_skill_session",
-      domain: "journaling",
-      duration_minutes: Math.max(1, Math.round(elapsedSeconds / 60)),
-      details: `Reflexión en Cabaña del Diario • Estado: ${mood} • ${tagsString}`,
-    });
     await onRefreshState();
 
     setJournalText("");
@@ -164,6 +160,7 @@ export function JournalingBuilding({
 
   return (
     <BuildingInteriorShell
+      submissionError={submissionError}
       buildingId="cabana_diario"
       buildingName="Cabaña del Diario & Reflexión"
       domain="journaling"

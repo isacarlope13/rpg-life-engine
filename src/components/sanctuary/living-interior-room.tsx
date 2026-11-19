@@ -44,6 +44,7 @@ export interface LivingInteriorRoomProps {
   activeStationId: string;
   onSelectStation: (stationId: string) => void;
   onClose?: () => void;
+  submissionError?: string | null;
   activeSessionBanner?: {
     isActive: boolean;
     isPaused: boolean;
@@ -76,6 +77,7 @@ export function LivingInteriorRoom({
   activeStationId,
   onSelectStation,
   onClose,
+  submissionError,
   activeSessionBanner,
   metrics = [],
   roomTheme = {
@@ -124,6 +126,7 @@ export function LivingInteriorRoom({
 
   return (
     <div className="space-y-5 text-[#3A2E2B] font-sans antialiased">
+      {submissionError && <p role="alert" className="rounded-xl border border-amber-700 bg-amber-50 p-3 text-sm text-amber-950">{submissionError} Tu sesión se conserva; puedes reintentar.</p>}
       {/* =========================================================================
           1. CABECERA CONTEXTUAL DEL EDIFICIO VIVO & REGRESO AL PUEBLO
          ========================================================================= */}

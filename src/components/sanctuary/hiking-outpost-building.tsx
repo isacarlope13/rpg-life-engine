@@ -147,13 +147,14 @@ export function HikingOutpostBuilding({
   const handleFinishHikingSession = async () => {
     if (!session) return;
     try {
-      await finishSession({
+      const confirmed = await finishSession({
         notes: sessionNotes || "Caminata de conexión con la naturaleza por los senderos de Oakhaven.",
         customPayload: {
           building: "pabellon_hiking",
           gearCheckedCount: gearList.filter((g) => g.checked).length,
         },
       });
+    if (!confirmed) return;
       await onRefreshState();
       setSessionNotes("");
       setFeedbackMsg("¡Paseo de senderismo completado y registrado con éxito!");

@@ -158,6 +158,7 @@ export function BotanicalGardenBuilding({
     resumeSession,
     resetSession,
     finishSession,
+    submissionError,
   } = useUniversalSession("gardening", "pabellon_gardening");
 
   const [sessionNotes, setSessionNotes] = useState("");
@@ -229,13 +230,14 @@ export function BotanicalGardenBuilding({
   const handleFinishGardeningSession = async () => {
     if (!session) return;
     try {
-      await finishSession({
+      const confirmed = await finishSession({
         notes: sessionNotes || "Cuidado de canteros y observación en el invernadero botánico.",
         customPayload: {
           building: "pabellon_gardening",
           plantsCared: plants.filter((p) => p.wateredToday).length,
         },
       });
+    if (!confirmed) return;
       await onRefreshState();
       setSessionNotes("");
       setFeedbackMsg("¡Sesión en el Invernadero Botánico completada exitosamente!");
@@ -252,6 +254,7 @@ export function BotanicalGardenBuilding({
 
   return (
     <BuildingInteriorShell
+      submissionError={submissionError}
       buildingId="invernadero"
       buildingName="Invernadero & Jardín Botánico"
       domain="gardening"

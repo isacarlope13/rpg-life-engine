@@ -166,13 +166,14 @@ export function KitchenBuilding({
   const handleFinishCookingSession = async () => {
     if (!session) return;
     try {
-      await finishSession({
+      const confirmed = await finishSession({
         notes: sessionNotes || "Sesión de cocina consciente y nutrición a fuego lento.",
         customPayload: {
           building: "cocina",
           recipesCatalogCount: recipes.length,
         },
       });
+    if (!confirmed) return;
       await onRefreshState();
       setSessionNotes("");
       setFeedbackMsg("¡Sesión culinaria completada y registrada exitosamente!");

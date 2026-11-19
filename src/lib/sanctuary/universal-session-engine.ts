@@ -144,7 +144,7 @@ export interface UniversalSessionRecord {
 }
 
 export interface CreateSessionParams {
-  userId?: string;
+  userId: string;
   domain: SkillDomain;
   buildingId?: string;
   projectId?: string;
@@ -242,7 +242,10 @@ export function formatDuration(totalSeconds: number): string {
  */
 export function createUniversalSession(params: CreateSessionParams): UniversalSessionRecord {
   const now = new Date().toISOString();
-  const userId = params.userId || "usr_cozy_hero";
+  const userId = params.userId;
+  if (typeof userId !== "string" || !userId || userId.trim() !== userId || userId === "anonymous") {
+    throw new Error("Se requiere una identidad explícita para crear una sesión");
+  }
   const uniqueId = `ses_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const idempotencyKey = `ses_univ_${userId}_${uniqueId}`;
 
@@ -488,7 +491,13 @@ export function hydrateUniversalSession(
     }
 
     // Aislamiento multi-usuario estricto
-    if (expectedUserId && parsed.userId && parsed.userId !== expectedUserId) {
+    if (
+      typeof expectedUserId !== "string" ||
+      !expectedUserId ||
+      expectedUserId.trim() !== expectedUserId ||
+      expectedUserId === "anonymous" ||
+      parsed.userId !== expectedUserId
+    ) {
       return null;
     }
 
@@ -522,7 +531,8 @@ export function buildSkillSessionPayload(
   session: UniversalSessionRecord,
   customOverrides?: Record<string, unknown>
 ): Record<string, unknown> {
-  const durationMinutes = Math.max(1, Math.round((session.elapsedSeconds || 0) / 60));
+  const seconds = session.elapsedSeconds || 0;
+  const durationMinutes = seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
   const domain = session.domain;
   const spec = session.specializedData || {};
 
@@ -635,5 +645,10 @@ export function buildSkillSessionPayload(
   return {
     ...basePayload,
     ...(customOverrides || {}),
+    // Specialized forms cannot change identity. Explicit self-reported duration remains supported.
+    action: basePayload.action,
+    domain: basePayload.domain,
+    idempotency_key: basePayload.idempotency_key,
+    duration_minutes: customOverrides?.duration_minutes ?? durationMinutes,
   };
 }

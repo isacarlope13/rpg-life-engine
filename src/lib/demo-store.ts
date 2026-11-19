@@ -1780,6 +1780,20 @@ export class RPGEngineMemoryStore {
     return newProj;
   }
 
+  updateKnittingProjectStatus(
+    projectId: string,
+    status: KnittingProject["status"]
+  ): KnittingProject | undefined {
+    const allowed: KnittingProject["status"][] = ["in_progress", "paused", "completed", "archived"];
+    if (!allowed.includes(status)) {
+      throw new Error("Estado de proyecto de tejido inválido.");
+    }
+    const target = this.knittingProjects.find((p) => p.id === projectId);
+    if (!target) return undefined;
+    target.status = status;
+    return target;
+  }
+
   addWorkProject(params: {
     name: string;
     description?: string;
