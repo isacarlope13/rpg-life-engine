@@ -1,11 +1,10 @@
-# CODEX HANDOFF — OAKHAVEN RELEASE 3.3 (PRE-RELEASE SECURITY GATE) (2026-11-20)
+# CODEX HANDOFF — OAKHAVEN RELEASE 3.3 (PRIVATE SINGLE-USER MODE) (2026-11-20)
 
-- **Estado**: **`RELEASE 3.3 — BLOQUEADO POR CONFIGURACIÓN EXTERNA`** (pendiente verificar `Site URL`, `Redirect URLs` incluyendo `/login?mode=reset`, SMTP personalizado / rate limits en Supabase Dashboard y ejecutar E2E real con correo desechable antes de crear `isacarlope`).
-- **Rama**: `feat/oakhaven-secure-personal-onboarding` (base `main` @ `c083a57`, Release 3.2). Sin `push`, sin `merge`, sin despliegue, sin SQL en producción, sin cuenta personal creada.
-- **Informe GO/NO-GO**: `docs/security/RELEASE_3_3_SECURITY_GATE.md`.
-- **Hallazgos de código cerrados en este gate**:
-  1. Borradores aislados por `userId` (`GET /api/onboarding` devuelve `user_id`), rechazando claves compartidas (`"active"`/`"anon"`), finanzas restringidas a `sessionStorage` + `clearAllOnboardingDrafts()`.
-  2. RPC `fn_phase10_upsert_onboarding_treasury` endurecida con `ON CONFLICT DO UPDATE` (race-free) y probada en PostgreSQL real (`tests/phase10-onboarding-pglite.test.ts`).
-  3. Purgados datos personales históricos de `src/lib/initial-financial-movements.ts` y `src/lib/onboarding-ai.ts`.
-  4. Verificado en solo lectura en Supabase Auth: `mailer_autoconfirm: false` (Confirm email activado).
-- **QA**: `npx tsc --noEmit` (`0` errores), `npm test` (**341/341 aprobadas**), `npm run build` (`exit code 0`, `35/35` rutas). Pantalla de cambio efectivo de contraseña tras recuperación (`/login?mode=reset` + `action: "update_password"`) implementada y probada.
+- **Estado**: **`PRIVATE SINGLE-USER MODE — LISTO PARA REVISIÓN`** en rama `feat/oakhaven-secure-personal-onboarding` (base `main` @ `c083a57`, Release 3.2). Sin `push`, sin `merge`, sin despliegue, sin SQL en producción, sin cuenta `isacarlope` creada.
+- **Guía paso a paso y arquitectura**: `docs/security/RELEASE_3_3_PRIVATE_SINGLE_USER_GUIDE.md` y `docs/security/RELEASE_3_3_SECURITY_GATE.md`.
+- **Controles de Propietario Único implementados (defensa en profundidad)**:
+  1. `src/lib/single-user-guard.ts`: `OAKHAVEN_OWNER_USER_ID` (UUID de Supabase) y `OAKHAVEN_PUBLIC_SIGNUP_ENABLED=false`.
+  2. `src/lib/auth-login.ts` + `src/app/api/auth/login/route.ts` + `src/app/login/page.tsx`: bloquea `signup` con `403 PUBLIC_SIGNUP_DISABLED`, bloquea cualquier segundo UUID con `403 OWNER_ONLY_ACCESS` sin emitir cookies, oculta registro en UI (`GET /api/auth/login` sin exponer secretos) y mantiene `/login?mode=reset` + `action: "update_password"`.
+  3. `src/lib/auth.ts`: `resolveAuthenticatedUser` y `resolveShortcutRequestUser` aplican `isAuthorizedSupabaseUserId` en todas las APIs y tokens personales.
+  4. `supabase/drafts/20261120_phase10_single_user_rls_template.sql`: plantilla opcional de políticas RLS `AS RESTRICTIVE` por UUID (NO ejecutada).
+- **QA**: `npx tsc --noEmit` (`0` errores), `npm test` (**346/346 aprobadas**, incluye `tests/single-user-private-mode.test.ts`), `npm run build` (`exit code 0`, `35/35` rutas).

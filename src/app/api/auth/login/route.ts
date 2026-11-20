@@ -13,6 +13,15 @@ import {
 } from "@/lib/supabase";
 
 import { createAuthLoginHandler } from "@/lib/auth-login";
+import { getSingleUserAccessConfig } from "@/lib/single-user-guard";
+
+export async function GET() {
+  const cfg = getSingleUserAccessConfig();
+  return Response.json({
+    privateMode: cfg.privateMode,
+    publicSignupEnabled: cfg.publicSignupEnabled,
+  });
+}
 
 const login = createAuthLoginHandler({
   isSupabaseConfigured,

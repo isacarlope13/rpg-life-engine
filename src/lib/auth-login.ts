@@ -1,4 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  isAuthorizedSupabaseUserId,
+  isPublicSignupAllowed,
+  type SingleUserEnv,
+} from "./single-user-guard.ts";
 
 export interface RateLimitCheckResult {
   allowed: boolean;
@@ -118,6 +123,7 @@ export interface AuthLoginDependencies {
     accessToken: string;
     newPassword: string;
   }) => Promise<{ ok: boolean; error?: string }>;
+  singleUserEnv?: SingleUserEnv;
   rateLimiter?: AuthRateLimiter;
 }
 
@@ -135,6 +141,7 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
     DEFAULT_DEMO_EMAIL, DEFAULT_DEMO_PASSWORD, DEFAULT_DEMO_PIN,
     authenticateLocalUser, registerLocalUser, buildAuthSetCookieHeaders,
     updatePasswordWithRecoveryToken,
+    singleUserEnv,
     rateLimiter = createInMemoryAuthRateLimiter(),
   } = deps;
 
@@ -249,6 +256,15 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
     }
 
     if (action === "signup") {
+      if (!isPublicSignupAllowed(singleUserEnv)) {
+        return Response.json(
+          {
+            error: "El registro público está cerrado en modo privado de propietario único.",
+            code: "PUBLIC_SIGNUP_DISABLED",
+          },
+          { status: 403 }
+        );
+      }
       if (body.data_privacy_accepted !== true) {
         return Response.json(
           {
@@ -365,6 +381,20 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
           return Response.json(
             { error: "No se pudo verificar la sesión. Intenta iniciar sesión de nuevo." },
             { status: 401 }
+          );
+        }
+
+        const signedInUserId =
+          (result.data as { user?: { id?: string } }).user?.id ||
+          (result.data.session as { user?: { id?: string } }).user?.id;
+        if (!isAuthorizedSupabaseUserId(signedInUserId, singleUserEnv)) {
+          rateLimiter.recordFailure(bucketKey);
+          return Response.json(
+            {
+              error: "Acceso denegado: esta instancia privada de OakHaven está restringida a su propietario autorizado.",
+              code: "OWNER_ONLY_ACCESS",
+            },
+            { status: 403 }
           );
         }
 

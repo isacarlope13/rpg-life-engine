@@ -8,6 +8,8 @@ type AuthMode = "login" | "signup" | "recover" | "reset";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<AuthMode>("login");
+  const [publicSignupEnabled, setPublicSignupEnabled] = useState(true);
+  const [privateMode, setPrivateMode] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -38,6 +40,18 @@ export default function LoginPage() {
       if (m === "signup" || m === "recover" || m === "login" || m === "reset") {
         setMode(m);
       }
+
+      fetch("/api/auth/login")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((cfg: { privateMode?: boolean; publicSignupEnabled?: boolean } | null) => {
+          if (!cfg) return;
+          setPrivateMode(Boolean(cfg.privateMode));
+          if (cfg.publicSignupEnabled === false) {
+            setPublicSignupEnabled(false);
+            setMode((prev) => (prev === "signup" ? "login" : prev));
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 
@@ -166,7 +180,9 @@ export default function LoginPage() {
                 OakHaven — Acceso Seguro
               </h1>
               <span className="text-[11px] font-bold text-[#314C3C]">
-                Identidad verificada por correo · Supabase Auth
+                {privateMode
+                  ? "Modo Privado · Propietario Único · Supabase Auth"
+                  : "Identidad verificada por correo · Supabase Auth"}
               </span>
             </div>
           </div>
@@ -352,30 +368,36 @@ export default function LoginPage() {
         </button>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs font-bold">
-          {mode !== "signup" ? (
-            <button
-              type="button"
-              onClick={() => {
-                setMode("signup");
-                setError(null);
-                setInfo(null);
-              }}
-              className="text-[#314C3C] hover:underline cursor-pointer"
-            >
-              Crear cuenta nueva
-            </button>
+          {publicSignupEnabled ? (
+            mode !== "signup" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("signup");
+                  setError(null);
+                  setInfo(null);
+                }}
+                className="text-[#314C3C] hover:underline cursor-pointer"
+              >
+                Crear cuenta nueva
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("login");
+                  setError(null);
+                  setInfo(null);
+                }}
+                className="text-[#314C3C] hover:underline cursor-pointer"
+              >
+                Ya tengo cuenta
+              </button>
+            )
           ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setMode("login");
-                setError(null);
-                setInfo(null);
-              }}
-              className="text-[#314C3C] hover:underline cursor-pointer"
-            >
-              Ya tengo cuenta
-            </button>
+            <span className="text-[11px] font-bold text-[#795548]">
+              🔒 Registro público cerrado
+            </span>
           )}
 
           {mode !== "recover" ? (

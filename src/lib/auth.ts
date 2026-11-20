@@ -13,6 +13,7 @@ import {
   supabaseAdmin,
   supabaseAnon,
 } from "./supabase.ts";
+import { isAuthorizedSupabaseUserId } from "./single-user-guard.ts";
 import type { PersonalApiTokenInfo, UserProfile } from "../types/rpg.ts";
 
 export const RPG_ACCESS_TOKEN_COOKIE = "rpg_access_token";
@@ -714,6 +715,10 @@ export async function resolveAuthenticatedUser(
       }
     }
 
+    if (!isAuthorizedSupabaseUserId(sbUser.id)) {
+      return null;
+    }
+
     return {
       userId: sbUser.id,
       email: sbUser.email || "",
@@ -810,6 +815,14 @@ export async function resolveShortcutRequestUser(
           };
         }
 
+        if (!isAuthorizedSupabaseUserId(String(tokenRow.user_id))) {
+          return {
+            authorized: false,
+            status: 403,
+            error: "Forbidden: cuenta no autorizada en modo privado de propietario único.",
+          };
+        }
+
         await supabaseAdmin
           .from("api_tokens")
           .update({ last_used_at: new Date().toISOString() })
@@ -830,6 +843,13 @@ export async function resolveShortcutRequestUser(
           { p_token_hash: tokenHash }
         );
         if (!rpcErr && resolvedUid) {
+          if (!isAuthorizedSupabaseUserId(String(resolvedUid))) {
+            return {
+              authorized: false,
+              status: 403,
+              error: "Forbidden: cuenta no autorizada en modo privado de propietario único.",
+            };
+          }
           return {
             authorized: true,
             userId: String(resolvedUid),
