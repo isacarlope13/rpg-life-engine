@@ -1,2633 +1,1004 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Plus,
+  Save,
   ShieldCheck,
   Sparkles,
-  Wallet,
-  Swords,
-  Trophy,
-  Target,
-  Plus,
   Trash2,
-  CheckCircle2,
-  ArrowRight,
-  ArrowLeft,
+  Wallet,
+  CalendarClock,
+  Compass,
   AlertTriangle,
-  Bot,
-  Upload,
-  Gamepad2,
-  Dumbbell,
-  Lightbulb,
 } from "lucide-react";
-import type {
-  CurrencyCode,
-  DebtStrategy,
-  FixedCostItem,
-  OnboardingBossInput,
-  OnboardingPayload,
-  OnboardingQuestInput,
-  OnboardingWishlistInput,
-  PayFrequency,
-  PreferredSessionTime,
-  ProfessionClassOption,
-  SkillDomain,
-  UserSkillConfig,
-} from "@/types/rpg";
-import { computeBioCalendarPlan } from "@/lib/calendar-planner";
+import {
+  EIGHT_LIFE_AREAS,
+  buildCharacterSheet,
+  clearOnboardingDraft,
+  computeRealFinanceSummary,
+  createEmptyOnboardingDraft,
+  loadOnboardingDraft,
+  saveOnboardingDraft,
+  type PersonalOnboardingDraft,
+} from "@/lib/onboarding/personal-onboarding-engine";
+import {
+  buildAdaptiveDayPlan,
+  recommendFreeSlotActivities,
+} from "@/lib/planner/adaptive-calendar-engine";
+import { buildRowanDecisionRecommendation } from "@/lib/ai/rowan-decision-engine";
+import type { CurrencyCode, DebtStrategy } from "@/types/rpg";
 
-const INITIAL_CLASSES: ProfessionClassOption[] = [
-  {
-    name: "Erudito del Pomodoro Arcano",
-    badge: "📚 Estudio & Becas",
-    desc: "Convierte horas de estudio profundo y lectura académica en GP mientras mantiene gastos estudiantiles bajo control.",
-    recommended_skills: ["study", "reading", "rubik", "gaming"],
-  },
-  {
-    name: "Alquimista de Presupuesto Universitario",
-    badge: "🧪 Micro-Ahorro & Racha",
-    desc: "Multiplica presupuestos ajustados evitando gastos hormiga y desbloqueando recompensas sin endeudarse.",
-    recommended_skills: ["study", "sports", "reading"],
-  },
-  {
-    name: "Duelista de Exámenes & Speedcubing",
-    badge: "⚡ Agilidad Mental",
-    desc: "Entrena memoria activa, concentración bajo presión y deporte para subir de nivel cada semana.",
-    recommended_skills: ["study", "rubik", "sports", "gaming"],
-  },
+const STEPS = [
+  { id: 1 as const, label: "1. Identidad" },
+  { id: 2 as const, label: "2. Rutina" },
+  { id: 3 as const, label: "3. 8 Áreas" },
+  { id: 4 as const, label: "4. Finanzas" },
+  { id: 5 as const, label: "5. Objetivos" },
+  { id: 6 as const, label: "6. Revisión" },
+  { id: 7 as const, label: "7. Pueblo" },
 ];
 
-const QUICK_PROFESSIONS = [
-  "Estudiante Universitario",
-  "Ingeniero de Software / Programador",
-  "Médico / Ciencias de la Salud",
-  "Diseñador / Arquitecto / Creativo",
-  "Contador / Economista / Finanzas",
-  "Emprendedor / Freelancer",
-  "Abogado / Docente",
+const SUGGESTED_CLASSES = [
+  "Arquitecta de Sistemas y Equilibrio",
+  "Estratega Cozy de Proyectos & Datos",
+  "Exploradora de Conocimiento y Oficios",
 ];
 
-const SKILL_CATALOG: Array<{
-  domain: SkillDomain;
-  label: string;
-  desc: string;
-  defaultMinutes: number;
-  tag?: string;
-}> = [
-  {
-    domain: "rubik",
-    label: "Cubos de Rubik",
-    desc: "Cronómetro WCA, promedios Ao5/Ao12 y arsenal de cubos.",
-    defaultMinutes: 120,
-  },
-  {
-    domain: "reading",
-    label: "Sesiones de Lectura",
-    desc: "Seguimiento de páginas leídas, libros técnicos y bonos por terminar.",
-    defaultMinutes: 150,
-  },
-  {
-    domain: "knitting",
-    label: "Sesiones de Tejido & Artesanía",
-    desc: "Control de vueltas/filas en proyectos de Crochet, Dos Agujas o Amigurumi.",
-    defaultMinutes: 90,
-  },
-  {
-    domain: "study",
-    label: "Sesiones de Estudio",
-    desc: "Bloques Pomodoro, Deep Study y Active Recall.",
-    defaultMinutes: 180,
-  },
-  {
-    domain: "work",
-    label: "Sesiones de Trabajo Profundo",
-    desc: "Entregables de alto impacto y sprints de productividad profesional.",
-    defaultMinutes: 240,
-  },
-  {
-    domain: "gaming",
-    label: "Sesiones de Videojuegos / eSports",
-    desc: "Juego consciente con límite de tiempo, partidas clasificatorias y retos estratégicos sin tilt.",
-    defaultMinutes: 120,
-    tag: "🎮 Nuevo",
-  },
-  {
-    domain: "sports",
-    label: "Entrenamiento & Competencias Deportivas",
-    desc: "Running, gimnasio, fútbol, ciclismo, natación o preparación para torneos.",
-    defaultMinutes: 180,
-    tag: "🏅 Nuevo",
-  },
-];
+function makeId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+}
 
-const CURRENCY_LOCALE: Record<CurrencyCode, string> = {
-  COP: "es-CO",
-  MXN: "es-MX",
-  USD: "en-US",
-  EUR: "es-ES",
-};
-
-export default function OnboardingWizardPage() {
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-  const [submitting, setSubmitting] = useState(false);
-  const [acceptedDataPrivacy, setAcceptedDataPrivacy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Paso 1: Identidad única + Profesión + Clases con caché / Gemini
-  const [displayName, setDisplayName] = useState("Aventurero_" + Math.floor(100 + Math.random() * 900));
-  const [nameStatus, setNameStatus] = useState<{
+export default function PersonalOnboardingPage() {
+  const [draft, setDraft] = useState<PersonalOnboardingDraft>(() => createEmptyOnboardingDraft());
+  const [onboardingMode, setOnboardingMode] = useState<"initial" | "edit">("initial");
+  const [draftSavedNotice, setDraftSavedNotice] = useState<string | null>(null);
+  const [nameCheck, setNameCheck] = useState<{
     checking: boolean;
     available: boolean | null;
     reason: string;
-  }>({ checking: false, available: true, reason: "" });
+  }>({ checking: false, available: null, reason: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitResult, setSubmitResult] = useState<{
+    ok: boolean;
+    onboardingMode: "initial" | "edit";
+    preservedProgress: boolean;
+    partialErrors: Array<{ section: string; message: string }>;
+  } | null>(null);
 
-  const [profession, setProfession] = useState("Estudiante Universitario");
-  const [classOptions, setClassOptions] =
-    useState<ProfessionClassOption[]>(INITIAL_CLASSES);
-  const [classSource, setClassSource] = useState<
-    "catalog_cache" | "gemini_generated" | "fallback"
-  >("catalog_cache");
-  const [loadingClasses, setLoadingClasses] = useState(false);
-  const [characterClass, setCharacterClass] = useState(INITIAL_CLASSES[0].name);
-  const [currency, setCurrency] = useState<CurrencyCode>("COP");
-  const [timezone, setTimezone] = useState("America/Bogota");
-
-  // Paso 2: Finanzas + Evaluador IA (Pre-calibrado con el historial real Sep-Nov del usuario)
-  const [monthlyIncome, setMonthlyIncome] = useState(2415000);
-  const [payFrequency, setPayFrequency] = useState<PayFrequency>("biweekly");
-  const [payDay, setPayDay] = useState(15);
-  const [fixedCosts, setFixedCosts] = useState<FixedCostItem[]>([
-    { name: "Internet Hogar (Somos)", amount: 120000, category: "conectividad" },
-    { name: "Plan Celular", amount: 100000, category: "conectividad" },
-    { name: "Gimnasio Mensual", amount: 120000, category: "salud" },
-    { name: "Natillera (Ahorro Fijo)", amount: 100000, category: "ahorro" },
-    { name: "Salud & Medicamentos Fijos (Pastillas)", amount: 180000, category: "salud" },
-    { name: "Suscripciones (Spotify + Prime)", amount: 56000, category: "conectividad" },
-    { name: "Cuidado Personal (Uñas & Peluquería)", amount: 170000, category: "hogar" },
-  ]);
-  const [variableOpsBudget, setVariableOpsBudget] = useState(610000);
-  const [vaultCap, setVaultCap] = useState(400000);
-  const [savingsGoalMonthly, setSavingsGoalMonthly] = useState(280000);
-
-  const [financePrompt, setFinancePrompt] = useState("");
-  const [analyzingFinances, setAnalyzingFinances] = useState(false);
-  const [financeDiagnosis, setFinanceDiagnosis] = useState<string | null>(
-    "Historial Real Optimizado (106 movimientos Sep–Nov): Ingreso recurrente de $2,415,000 COP/mes (Sueldo quincenal prom. ×2: $2,065,000 + Clases Juanma: $350,000; excluyendo saldos iniciales y reembolsos). Costos Fijos: $846,000 (35%), Variables Operativos: $610,000 (25%), Bóveda GP: $400,000 (17%) y Flujo Libre / Bola de Nieve: $559,000 COP/mes (23%) para liquidar ADDI y Nequi."
-  );
-  const [financeAuditLog, setFinanceAuditLog] = useState<string[]>([
-    "📅 Historial auditado: 106 movimientos reales (Sep–Nov, 2.05 meses equivalentes).",
-    "💰 Ingreso Recurrente Optimizado: $2.415.000 COP/mes (Sueldo quincenal prom. ×2: $2.065.000 + Clases Juanma: $350.000).",
-    "🛡️ Excluidos del ingreso fijo: Saldos iniciales ($403.501) y reembolsos/terceros ($1.622.640) para no inflar tu presupuesto.",
-    "🏠 Costos Fijos (7 rubros): $846.000 COP/mes (Internet Somos, Celular, Gimnasio, Natillera, Pastillas, Spotify+Prime y Cuidado Personal).",
-    "🛒 Variables Operativos: $610.000 COP/mes (Comida diaria ~$410.000, Transporte Uber/Parqueadero ~$130.000, Salud/Uni ~$70.000).",
-    "⚔️ Obligaciones Financieras: ADDI (cuota $100.000/mes) y Préstamo Nequi (cuota $56.000/mes).",
-    "🎁 Hobbies reales detectados en compras: Cubos ($200.000), Libros ($229.000), Hilos de Tejer ($100.000), LEGO ($20.000) → Convertidos en tu Tienda de Recompensas (Paso 5).",
-  ]);
-  const [financeMetrics, setFinanceMetrics] = useState<{
-    fixed_pct: number;
-    variable_pct: number;
-    vault_pct: number;
-    snowball_power: number;
-    snowball_pct: number;
-    total_debt: number;
-    estimated_debt_free_months: number;
-    grouped_summary?: Array<{
-      bucket: "ingreso" | "fijo" | "variable" | "deuda" | "boveda" | "excluido";
-      bucket_label: string;
-      category_name: string;
-      tx_count: number;
-      historical_total: number;
-      monthly_assigned: number;
-      note: string;
-    }>;
-  } | null>({
-    fixed_pct: 35,
-    variable_pct: 25,
-    vault_pct: 17,
-    snowball_power: 559000,
-    snowball_pct: 23,
-    total_debt: 1050000,
-    estimated_debt_free_months: 2,
-    grouped_summary: [
-      {
-        bucket: "ingreso",
-        bucket_label: "💰 Ingreso Recurrente",
-        category_name: "Sueldo / Nómina Quincenal (×2)",
-        tx_count: 5,
-        historical_total: 5163707,
-        monthly_assigned: 2065000,
-        note: "Promedio de 5 pagos de nómina multiplicado ×2 quincenas/mes.",
-      },
-      {
-        bucket: "ingreso",
-        bucket_label: "💰 Ingreso Recurrente",
-        category_name: "Clases & Asesorías (Juanma)",
-        tx_count: 2,
-        historical_total: 350000,
-        monthly_assigned: 350000,
-        note: "2 ingresos recurrentes por clases particulares.",
-      },
-      {
-        bucket: "fijo",
-        bucket_label: "🏠 Costo Fijo Mensual",
-        category_name: "Internet Hogar (Somos)",
-        tx_count: 3,
-        historical_total: 240000,
-        monthly_assigned: 120000,
-        note: "Consolidado de facturas mensuales de Internet / Somos.",
-      },
-      {
-        bucket: "fijo",
-        bucket_label: "🏠 Costo Fijo Mensual",
-        category_name: "Plan Celular",
-        tx_count: 5,
-        historical_total: 229000,
-        monthly_assigned: 100000,
-        note: "Consolidado de 5 pagos de planes móviles.",
-      },
-      {
-        bucket: "fijo",
-        bucket_label: "🏠 Costo Fijo Mensual",
-        category_name: "Gimnasio Mensual",
-        tx_count: 2,
-        historical_total: 130000,
-        monthly_assigned: 120000,
-        note: "Mensualidad fija de entrenamiento (excluye inscripción única de $10k).",
-      },
-      {
-        bucket: "fijo",
-        bucket_label: "🏠 Costo Fijo Mensual",
-        category_name: "Natillera (Ahorro Fijo)",
-        tx_count: 3,
-        historical_total: 320000,
-        monthly_assigned: 100000,
-        note: "Cuota mensual fija de ahorro en Natillera (3 aportes).",
-      },
-      {
-        bucket: "fijo",
-        bucket_label: "🏠 Costo Fijo Mensual",
-        category_name: "Salud & Medicamentos Fijos (Pastillas)",
-        tx_count: 4,
-        historical_total: 380000,
-        monthly_assigned: 180000,
-        note: "Promedio mensual de 4 compras de medicamentos fijos.",
-      },
-      {
-        bucket: "fijo",
-        bucket_label: "🏠 Costo Fijo Mensual",
-        category_name: "Suscripciones (Spotify + Prime)",
-        tx_count: 4,
-        historical_total: 111500,
-        monthly_assigned: 56000,
-        note: "Spotify ($31.000) + Amazon Prime ($25.000) mensualizados.",
-      },
-      {
-        bucket: "fijo",
-        bucket_label: "🏠 Costo Fijo Mensual",
-        category_name: "Cuidado Personal (Uñas, Cejas & Peluquería)",
-        tx_count: 5,
-        historical_total: 385000,
-        monthly_assigned: 170000,
-        note: "Agrupado de 5 registros (Uñas, Cejas y Mona).",
-      },
-      {
-        bucket: "variable",
-        bucket_label: "🛒 Variable Operativo",
-        category_name: "Alimentación & Comida Diaria",
-        tx_count: 20,
-        historical_total: 678000,
-        monthly_assigned: 330000,
-        note: "20 consumos diarios (almuerzos, desayunos, fruta) optimizados al mes.",
-      },
-      {
-        bucket: "variable",
-        bucket_label: "🛒 Variable Operativo",
-        category_name: "Transporte (Uber & Parqueaderos)",
-        tx_count: 14,
-        historical_total: 275000,
-        monthly_assigned: 130000,
-        note: "14 trayectos de Uber y parqueaderos (universidad/centros comerciales).",
-      },
-      {
-        bucket: "variable",
-        bucket_label: "🛒 Variable Operativo",
-        category_name: "Salud & Universidad Operativa",
-        tx_count: 4,
-        historical_total: 205000,
-        monthly_assigned: 70000,
-        note: "4 gastos variables de citas médicas, exámenes y papelería.",
-      },
-      {
-        bucket: "deuda",
-        bucket_label: "⚔️ Obligación Financiera (Paso 3)",
-        category_name: "ADDI & Préstamo Nequi",
-        tx_count: 3,
-        historical_total: 206000,
-        monthly_assigned: 156000,
-        note: "Cuotas mensuales detectadas → Pasan a Jefes de Deuda en el Paso 3.",
-      },
-      {
-        bucket: "boveda",
-        bucket_label: "🎁 Bóveda GP (Gustos & Hobbies)",
-        category_name: "Hobbies (Cubos, Libros, Tejido, LEGO) y Salidas",
-        tx_count: 27,
-        historical_total: 1647000,
-        monthly_assigned: 400000,
-        note: "Tope saludable de Bóveda GP para proteger tu flujo libre sin dejar tus hobbies.",
-      },
-      {
-        bucket: "excluido",
-        bucket_label: "🛡️ Movimientos No Recurrentes (Separados)",
-        category_name: "Saldos Iniciales, Encargos/Terceros y Semestre",
-        tx_count: 14,
-        historical_total: 3473501,
-        monthly_assigned: 0,
-        note: "Saldos iniciales ($403.501), reembolsos/terceros ($1.515.000) e inglés semestral ($550.000) aislados para no distorsionar tu mes.",
-      },
-    ],
-  });
-
-  // Paso 3: Deudas (Bosses) — Pre-cargadas con ADDI y Nequi del CSV
-  const [bosses, setBosses] = useState<OnboardingBossInput[]>([
-    {
-      name: "ADDI",
-      total_balance: 600000,
-      interest_rate_ea: 29.0,
-      min_monthly_payment: 100000,
-    },
-    {
-      name: "Préstamo Nequi",
-      total_balance: 450000,
-      interest_rate_ea: 24.5,
-      min_monthly_payment: 56000,
-    },
-  ]);
-  const [debtStrategy, setDebtStrategy] = useState<DebtStrategy>("avalanche");
-
-  // Paso 4: Todas las habilidades pre-activadas en el mes + Calendario alrededor del Trabajo Inamovible
-  const [skills, setSkills] = useState<UserSkillConfig[]>(
-    SKILL_CATALOG.map((s) => ({
-      domain: s.domain,
-      label: s.label,
-      weekly_target_minutes: s.defaultMinutes,
-      preferred_session_time: s.domain === "work" || s.domain === "study" ? "manana" : "noche",
-    }))
-  );
-
-  // Configuración Biológica del Día (Hora de Levantarse -> Bloque Inamovible -> Hora de Acostarse)
-  const [wakeUpTime, setWakeUpTime] = useState("06:00");
-  const [sleepTime, setSleepTime] = useState("22:30");
-  const [weekendWakeUpTime, setWeekendWakeUpTime] = useState("08:00");
-  const [weekendSleepTime, setWeekendSleepTime] = useState("23:30");
-  const [workDaysPattern, setWorkDaysPattern] = useState<
-    "lun_vie" | "lun_sab" | "flexible"
-  >("lun_vie");
-  const [workStartHour, setWorkStartHour] = useState("08:00");
-  const [workEndHour, setWorkEndHour] = useState("17:30");
-  const [commuteAndMealsMinutes, setCommuteAndMealsMinutes] = useState(45);
-  const [freeSlotPreference, setFreeSlotPreference] = useState<
-    "after_work" | "before_work" | "mixed"
-  >("mixed");
-  const [weekdayFreeMinutes, setWeekdayFreeMinutes] = useState(50);
-  const [weekendFreeMinutes, setWeekendFreeMinutes] = useState(90);
-
-  const [customSkillName, setCustomSkillName] = useState("");
-  const [customSkillIdea, setCustomSkillIdea] = useState("");
-  const [customSkillMinutes, setCustomSkillMinutes] = useState(120);
-
-  // Paso 5: Agente IA Planificador de Misiones y Tienda de Recompensas (Basada en los hobbies del CSV)
-  const [mainGoal, setMainGoal] = useState(
-    "Liquidar ADDI y Nequi mientras mantengo mi racha en Cubos, Lectura, Tejido, Estudio y Gimnasio"
-  );
-  const [goalDeadline, setGoalDeadline] = useState("2027-06-30");
-  const [quests, setQuests] = useState<OnboardingQuestInput[]>([]);
-  const [wishlist, setWishlist] = useState<OnboardingWishlistInput[]>([
-    {
-      name: "Salida Social: Alitas con Saris / Plan con Chicas",
-      cost_gp: 65000,
-      priority: 1,
-    },
-    {
-      name: "Kit de Hilos para Tejer & Materiales de Crochet",
-      cost_gp: 100000,
-      priority: 2,
-    },
-    {
-      name: "Nuevo Cubo de Speedcubing / Set LEGO para Colección",
-      cost_gp: 180000,
-      priority: 3,
-    },
-    {
-      name: "Pack de Libros Nuevos / Edición Especial",
-      cost_gp: 220000,
-      priority: 4,
-    },
-  ]);
-  const [aiStrategyNote, setAiStrategyNote] = useState<string | null>(null);
-  const [planningStep5, setPlanningStep5] = useState(false);
-  const [hasAutoPlannedStep5, setHasAutoPlannedStep5] = useState(false);
-
+  // Cargar borrador local del usuario y modo (creación vs edición) sin inventar datos
   useEffect(() => {
-    try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (tz) setTimezone(tz);
-    } catch {
-      // conserva America/Bogota
+    const saved = loadOnboardingDraft("active");
+    if (saved) {
+      setDraft(saved);
     }
-    fetch("/api/state", { cache: "no-store" })
+    fetch("/api/onboarding")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.user?.display_name && d.user.display_name !== "Aventurero RPG") {
-          setDisplayName(d.user.display_name);
+      .then((data) => {
+        if (data?.onboardingMode === "edit") {
+          setOnboardingMode("edit");
         }
-        if (d?.user?.character_class) setCharacterClass(d.user.character_class);
       })
-      .catch(() => null);
+      .catch(() => {});
   }, []);
 
-  // Validación en vivo de que el nombre del aventurero sea único
-  useEffect(() => {
-    const clean = displayName.trim();
-    if (clean.length < 2) {
-      setNameStatus({
-        checking: false,
-        available: false,
-        reason: "Mínimo 2 caracteres.",
-      });
+  const updateDraft = (patch: Partial<PersonalOnboardingDraft>) => {
+    setDraft((prev) => {
+      const next = { ...prev, ...patch, updatedAt: new Date().toISOString() };
+      saveOnboardingDraft("active", next);
+      return next;
+    });
+  };
+
+  const handleCheckName = async () => {
+    const trimmed = draft.displayName.trim();
+    if (trimmed.length < 2) {
+      setNameCheck({ checking: false, available: false, reason: "Mínimo 2 caracteres." });
       return;
     }
-    const timer = setTimeout(async () => {
-      setNameStatus((prev) => ({ ...prev, checking: true }));
-      try {
-        const res = await fetch("/api/onboarding/ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "check_name", display_name: clean }),
-        });
-        const data = (await res.json()) as {
-          available: boolean;
-          reason: string;
-        };
-        setNameStatus({
-          checking: false,
-          available: data.available,
-          reason: data.reason,
-        });
-      } catch {
-        setNameStatus({ checking: false, available: true, reason: "" });
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [displayName]);
-
-  const fetchProfessionClasses = async (profText: string) => {
-    if (!profText.trim()) return;
-    setLoadingClasses(true);
+    setNameCheck({ checking: true, available: null, reason: "Verificando..." });
     try {
-      const res = await fetch("/api/onboarding/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "profession_classes",
-          profession: profText,
-        }),
-      });
-      const data = (await res.json()) as {
-        source: "catalog_cache" | "gemini_generated" | "fallback";
-        classes: ProfessionClassOption[];
+      const r = await fetch(`/api/onboarding?check_name=${encodeURIComponent(trimmed)}`);
+      const json = (await r.json().catch(() => ({}))) as {
+        available?: boolean;
+        reason?: string;
       };
-      if (data.classes && data.classes.length > 0) {
-        setClassOptions(data.classes);
-        setClassSource(data.source);
-        setCharacterClass(data.classes[0].name);
-        // Si la primera clase sugiere habilidades, pre-seleccionarlas suavemente
-        if (
-          data.classes[0].recommended_skills &&
-          data.classes[0].recommended_skills.length > 0
-        ) {
-          const rec = data.classes[0].recommended_skills;
-          const mapped = SKILL_CATALOG.filter((c) => rec.includes(c.domain)).map(
-            (c) => ({
-              domain: c.domain,
-              label: c.label,
-              weekly_target_minutes: c.defaultMinutes,
-              preferred_session_time: "noche" as PreferredSessionTime,
-            })
-          );
-          if (mapped.length > 0) setSkills(mapped);
-        }
-      }
-    } finally {
-      setLoadingClasses(false);
-    }
-  };
-
-  const runFinancialAnalysisWithText = async (rawText: string) => {
-    if (!rawText.trim()) return;
-    setAnalyzingFinances(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/onboarding/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "analyze_finances",
-          raw_text: rawText,
-          currency,
-        }),
+      setNameCheck({
+        checking: false,
+        available: Boolean(json.available),
+        reason: json.reason || (json.available ? "Nombre disponible" : "No disponible"),
       });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setError(data.error || "No se pudo analizar el texto financiero.");
-        return;
-      }
-      if (data.monthly_income) setMonthlyIncome(data.monthly_income);
-      if (Array.isArray(data.fixed_costs) && data.fixed_costs.length > 0) {
-        setFixedCosts(data.fixed_costs);
-      }
-      if (data.variable_ops_budget !== undefined) {
-        setVariableOpsBudget(data.variable_ops_budget);
-      }
-      if (data.vault_cap !== undefined) setVaultCap(data.vault_cap);
-      if (data.savings_goal_monthly !== undefined) {
-        setSavingsGoalMonthly(data.savings_goal_monthly);
-      }
-      if (Array.isArray(data.bosses) && data.bosses.length > 0) {
-        setBosses(data.bosses);
-      }
-      if (
-        Array.isArray(data.suggested_wishlist) &&
-        data.suggested_wishlist.length > 0
-      ) {
-        setWishlist(data.suggested_wishlist);
-        setHasAutoPlannedStep5(true);
-      }
-      if (data.recommended_debt_strategy) {
-        setDebtStrategy(data.recommended_debt_strategy);
-      }
-      setFinanceDiagnosis(data.diagnosis || null);
-      if (data.audit_metrics) {
-        setFinanceMetrics(data.audit_metrics);
-        setFinanceAuditLog(data.audit_metrics.detected_items_log || []);
-      }
-    } finally {
-      setAnalyzingFinances(false);
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const text = await file.text();
-    setFinancePrompt(text);
-    await runFinancialAnalysisWithText(text);
-  };
-
-  const runFinancialAnalysis = async () => {
-    await runFinancialAnalysisWithText(financePrompt);
-  };
-
-  const runStep5Planner = async (preserveExistingWishlist = false) => {
-    setPlanningStep5(true);
-    try {
-      const effectiveSkills: UserSkillConfig[] = [
-        ...skills,
-        ...(customSkillName.trim()
-          ? [
-              {
-                domain: "general" as SkillDomain,
-                label: customSkillName.trim(),
-                weekly_target_minutes: customSkillMinutes,
-                custom_description:
-                  customSkillIdea.trim() || "Sesión práctica registrada",
-              },
-            ]
-          : []),
-      ];
-
-      const res = await fetch("/api/onboarding/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "plan_quests_rewards",
-          profession,
-          character_class: characterClass,
-          currency,
-          monthly_income: monthlyIncome,
-          vault_cap: vaultCap,
-          fixed_costs: fixedCosts,
-          bosses,
-          skills: effectiveSkills,
-        }),
+    } catch {
+      setNameCheck({
+        checking: false,
+        available: null,
+        reason: "No se pudo verificar ahora; se validará al guardar.",
       });
-      const data = await res.json();
-      if (!preserveExistingWishlist && data.main_goal) {
-        setMainGoal(data.main_goal);
-      }
-      if (Array.isArray(data.quests) && data.quests.length > 0) {
-        setQuests(data.quests);
-      }
-      if (
-        !preserveExistingWishlist &&
-        Array.isArray(data.wishlist) &&
-        data.wishlist.length > 0
-      ) {
-        setWishlist(data.wishlist);
-      }
-      if (data.strategy_note) setAiStrategyNote(data.strategy_note);
-    } finally {
-      setPlanningStep5(false);
     }
   };
 
-  // Al entrar al Paso 5 por primera vez, el Agente IA genera misiones conservando la Wishlist de tus hobbies reales
-  useEffect(() => {
-    if (step === 5 && !hasAutoPlannedStep5) {
-      setHasAutoPlannedStep5(true);
-      runStep5Planner(true);
-    }
-  }, [step, hasAutoPlannedStep5]);
-
-  const fmt = (val: number) =>
-    `${currency} ${(Number(val) || 0).toLocaleString(CURRENCY_LOCALE[currency])}`;
-
-  const totalFixedCosts = useMemo(
+  const financeSummary = useMemo(() => computeRealFinanceSummary(draft), [draft]);
+  const characterSheet = useMemo(
+    () => buildCharacterSheet(draft, onboardingMode === "edit" ? undefined : 1),
+    [draft, onboardingMode]
+  );
+  const dayPlan = useMemo(
     () =>
-      fixedCosts.reduce(
-        (acc, fc) => acc + Math.max(0, Number(fc.amount) || 0),
-        0
-      ),
-    [fixedCosts]
+      buildAdaptiveDayPlan({
+        wakeTime: draft.wakeTime,
+        sleepTime: draft.sleepTime,
+        workStart: draft.workStart,
+        workEnd: draft.workEnd,
+        timezone: draft.timezone,
+      }),
+    [draft.wakeTime, draft.sleepTime, draft.workStart, draft.workEnd, draft.timezone]
+  );
+  const sampleFreeSlot = useMemo(
+    () =>
+      recommendFreeSlotActivities({
+        availableMinutes: 20,
+        enabledAreaIds: draft.enabledAreaIds,
+      }),
+    [draft.enabledAreaIds]
+  );
+  const rowanPreview = useMemo(
+    () =>
+      buildRowanDecisionRecommendation({
+        question: "Tengo 20 minutos libres",
+        availableMinutes: 20,
+        enabledAreaIds: draft.enabledAreaIds,
+      }),
+    [draft.enabledAreaIds]
   );
 
-  const freeCashflow = useMemo(
-    () => monthlyIncome - totalFixedCosts - variableOpsBudget - vaultCap,
-    [monthlyIncome, totalFixedCosts, variableOpsBudget, vaultCap]
-  );
-
-  const recommendedStrategy: DebtStrategy = useMemo(() => {
-    const valid = bosses.filter((b) => b.total_balance > 0);
-    if (valid.length <= 1) return "snowball";
-    const maxRate = Math.max(...valid.map((b) => b.interest_rate_ea));
-    return maxRate >= 24 ? "avalanche" : "snowball";
-  }, [bosses]);
-
-  const toggleSkill = (domain: SkillDomain) => {
-    const exists = skills.some((s) => s.domain === domain);
-    if (exists) {
-      if (skills.length <= 1) return;
-      setSkills(skills.filter((s) => s.domain !== domain));
-    } else {
-      const cat = SKILL_CATALOG.find((c) => c.domain === domain)!;
-      setSkills([
-        ...skills,
-        {
-          domain: cat.domain,
-          label: cat.label,
-          weekly_target_minutes: cat.defaultMinutes,
-          preferred_session_time: "noche",
-        },
-      ]);
-    }
+  const handleSaveDraftExplicit = () => {
+    saveOnboardingDraft("active", draft);
+    setDraftSavedNotice("Borrador guardado en este dispositivo. Puedes pausar y continuar cuando quieras.");
+    setTimeout(() => setDraftSavedNotice(null), 4000);
   };
 
-  const updateSkillConfig = (
-    domain: SkillDomain,
-    patch: Partial<UserSkillConfig>
-  ) => {
-    setSkills(
-      skills.map((s) => (s.domain === domain ? { ...s, ...patch } : s))
-    );
-  };
-
-  const finishOnboarding = async () => {
+  const handlePersistOnboarding = async () => {
     setError(null);
-    if (nameStatus.available === false) {
-      setError(
-        "El nombre de aventurero elegido ya está en uso. Por favor cámbialo en el Paso 1."
-      );
-      setStep(1);
+    if (draft.displayName.trim().length < 2) {
+      setError("Indica tu nombre de aventurero (mínimo 2 caracteres) en el paso 1.");
       return;
     }
-    if (freeCashflow < 0) {
-      setError(
-        "Tus presupuestos superan tu ingreso mensual. Ajusta el Paso 2 antes de finalizar."
-      );
-      setStep(2);
+    if (!draft.dataPrivacyAccepted) {
+      setError("Debes aceptar expresamente la Política de Tratamiento de Datos Personales.");
       return;
     }
-    if (!acceptedDataPrivacy) {
-      setError(
-        "Debes autorizar la Política de Tratamiento de Datos Personales y sus posibles cambios y mejoras para crear y guardar tu partida."
-      );
+    if (financeSummary.totalRecurringIncomeCop > 0 && !draft.financialDataConfirmed) {
+      setError("Confirma explícitamente que las cifras financieras introducidas son tuyas antes de guardar.");
       return;
     }
+
+    const enabledAreas = EIGHT_LIFE_AREAS.filter((a) => draft.enabledAreaIds.includes(a.id));
+    const skillsPayload = enabledAreas
+      .filter((a) => a.skillDomain !== null)
+      .map((a) => ({
+        domain: a.skillDomain!,
+        label: a.label,
+        weekly_target_minutes: Math.max(15, draft.areaWeeklyMinutes[a.id] ?? a.suggestedWeeklyMinutes),
+        preferred_session_time: "noche" as const,
+      }));
+
+    if (skillsPayload.length === 0) {
+      setError("Activa al menos una habilidad para tu pueblo.");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const finalSkills: UserSkillConfig[] = [
-        ...skills,
-        ...(customSkillName.trim()
-          ? [
-              {
-                domain: "general" as SkillDomain,
-                label: customSkillName.trim(),
-                weekly_target_minutes: customSkillMinutes,
-                preferred_session_time: "noche" as PreferredSessionTime,
-                custom_description:
-                  customSkillIdea.trim() || "Habilidad personalizada",
-              },
-            ]
-          : []),
-      ];
-
-      const payload: OnboardingPayload = {
-        display_name: displayName.trim(),
-        profession: profession.trim() || "Estudiante / Explorador",
-        character_class: characterClass,
-        currency,
-        timezone,
-        monthly_income: monthlyIncome,
-        pay_frequency: payFrequency,
-        pay_day: payDay,
-        fixed_costs: fixedCosts.filter((fc) => fc.name.trim().length > 0),
-        variable_ops_budget: variableOpsBudget,
-        vault_cap: vaultCap,
-        savings_goal_monthly: savingsGoalMonthly,
-        debt_strategy: debtStrategy,
-        bosses: bosses.filter(
-          (b) => b.name.trim().length > 0 && Number(b.total_balance) > 0
-        ),
-        skills: finalSkills,
-        custom_skill_suggestion: customSkillName.trim()
-          ? {
-              skill_name: customSkillName.trim(),
-              tracking_idea: customSkillIdea.trim(),
-              weekly_target_minutes: customSkillMinutes,
-            }
-          : null,
-        quests: quests.filter(
-          (q) => q.title.trim().length > 0 && Number(q.reward_gp) > 0
-        ),
-        wishlist: wishlist.filter(
-          (w) => w.name.trim().length > 0 && Number(w.cost_gp) > 0
-        ),
-        main_goal: mainGoal.trim() || undefined,
-        goal_deadline: goalDeadline || undefined,
-        daily_schedule: {
-          wake_up_time: wakeUpTime,
-          sleep_time: sleepTime,
-          weekend_wake_up_time: weekendWakeUpTime,
-          weekend_sleep_time: weekendSleepTime,
-          work_days_pattern: workDaysPattern,
-          work_start_hour: workStartHour,
-          work_end_hour: workEndHour,
-          commute_and_meals_minutes: commuteAndMealsMinutes,
-          free_slot_preference: freeSlotPreference,
-          weekday_free_minutes: weekdayFreeMinutes,
-          weekend_free_minutes: weekendFreeMinutes,
-        },
-        data_privacy_accepted: true,
-        privacy_accepted_at: new Date().toISOString(),
-        privacy_version: "3.4",
-      };
-
       const res = await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          display_name: draft.displayName.trim(),
+          profession: draft.profession.trim() || "Por definir",
+          character_class: draft.characterClass.trim() || SUGGESTED_CLASSES[0],
+          currency: draft.currency,
+          timezone: draft.timezone || "America/Bogota",
+          monthly_income: financeSummary.totalRecurringIncomeCop,
+          pay_frequency: draft.incomeSources.length > 1 ? "biweekly" : "monthly",
+          pay_day: draft.incomeSources[0]?.payDay || 1,
+          fixed_costs: draft.fixedCosts.map((fc) => ({
+            name: fc.name.trim() || "Costo fijo",
+            amount: Math.max(0, Math.round(fc.amountCop)),
+            category: fc.category || "hogar",
+          })),
+          variable_ops_budget: financeSummary.totalVariableBudgetCop,
+          vault_cap: financeSummary.allowedGpRewardsCap,
+          savings_goal_monthly: Math.max(0, Math.round(draft.monthlySavingsGoalCop)),
+          debt_strategy: draft.debtStrategy,
+          bosses: draft.debts.map((d) => ({
+            name: d.name.trim(),
+            total_balance: Math.max(0, Math.round(d.totalBalanceCop)),
+            interest_rate_ea: Math.max(0, Number(d.interestRateEa) || 0),
+            min_monthly_payment: Math.max(0, Math.round(d.minMonthlyPaymentCop)),
+          })),
+          skills: skillsPayload,
+          cinema_enabled: draft.enabledAreaIds.includes("cinema"),
+          routine: {
+            wake_time: draft.wakeTime,
+            sleep_time: draft.sleepTime,
+            work_start: draft.workStart,
+            work_end: draft.workEnd,
+            timezone: draft.timezone,
+          },
+          main_goal: draft.mainGoal.trim() || undefined,
+          goal_deadline: draft.goalDeadline.trim() || undefined,
+          wishlist: draft.wishlist.map((w) => ({
+            name: w.name.trim(),
+            cost_gp: Math.max(1, Math.round(w.costGp)),
+            priority: w.priority,
+          })),
+          data_privacy_accepted: draft.dataPrivacyAccepted,
+          privacy_accepted_at: new Date().toISOString(),
+          privacy_version: "3.4",
+          confirm_destructive_replace: false,
+        }),
       });
+
       const json = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        onboardingMode?: "initial" | "edit";
+        preservedProgress?: boolean;
+        partialErrors?: Array<{ section: string; message: string }>;
       };
-      if (!res.ok || json.error) {
-        setError(json.error || `Error ${res.status}`);
+
+      if (!res.ok && res.status !== 207) {
+        setError(json.error || `Error ${res.status} al guardar tu configuración.`);
         return;
       }
-      window.location.href = "/dashboard";
+
+      clearOnboardingDraft("active");
+      setSubmitResult({
+        ok: Boolean(json.ok),
+        onboardingMode: json.onboardingMode || onboardingMode,
+        preservedProgress: Boolean(json.preservedProgress),
+        partialErrors: json.partialErrors || [],
+      });
+      updateDraft({ step: 7 });
     } catch {
-      setError("No se pudo guardar tu configuración inicial.");
+      setError("No se pudo conectar con el servidor. Tu borrador local permanece guardado.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Generador automático de Calendario Biológico Semanal y Mensual (Hora de Levantarse a Hora de Acostarse)
-  const calendarPlan = useMemo(() => {
-    return computeBioCalendarPlan({
-      config: {
-        wake_up_time: wakeUpTime,
-        sleep_time: sleepTime,
-        weekend_wake_up_time: weekendWakeUpTime,
-        weekend_sleep_time: weekendSleepTime,
-        work_days_pattern: workDaysPattern,
-        work_start_hour: workStartHour,
-        work_end_hour: workEndHour,
-        commute_and_meals_minutes: commuteAndMealsMinutes,
-        free_slot_preference: freeSlotPreference,
-        weekday_free_minutes: weekdayFreeMinutes,
-        weekend_free_minutes: weekendFreeMinutes,
-      },
-      skills,
-      customSkillName,
-      vaultCap,
-    });
-  }, [
-    wakeUpTime,
-    sleepTime,
-    weekendWakeUpTime,
-    weekendSleepTime,
-    workDaysPattern,
-    workStartHour,
-    workEndHour,
-    commuteAndMealsMinutes,
-    freeSlotPreference,
-    weekdayFreeMinutes,
-    weekendFreeMinutes,
-    skills,
-    customSkillName,
-    vaultCap,
-  ]);
-
-  const syncSkillsFromCalendar = () => {
-    setSkills((prev) =>
-      prev.map((s) => ({
-        ...s,
-        weekly_target_minutes: Math.max(
-          30,
-          calendarPlan.weeklyMinutesByDomain[s.domain] || s.weekly_target_minutes
-        ),
-        preferred_session_time:
-          calendarPlan.preferredTimeByDomain[s.domain] ||
-          s.preferred_session_time ||
-          "noche",
-      }))
-    );
-    if (customSkillName.trim() && calendarPlan.weeklyMinutesByDomain["general"]) {
-      setCustomSkillMinutes(calendarPlan.weeklyMinutesByDomain["general"]);
-    }
-  };
-
-  // Sincroniza automáticamente las metas semanales y horarios con el calendario
-  useEffect(() => {
-    syncSkillsFromCalendar();
-  }, [
-    workDaysPattern,
-    workStartHour,
-    workEndHour,
-    freeSlotPreference,
-    weekdayFreeMinutes,
-    weekendFreeMinutes,
-  ]);
-
-  const donutSegments = useMemo(() => {
-    const total = Math.max(1, monthlyIncome);
-    const segments = [
-      {
-        label: "Costos Fijos",
-        value: Math.max(0, totalFixedCosts),
-        color: "#6366f1",
-      },
-      {
-        label: "Variables Operativos",
-        value: Math.max(0, variableOpsBudget),
-        color: "#10b981",
-      },
-      {
-        label: "Bóveda Mensual (GP)",
-        value: Math.max(0, vaultCap),
-        color: "#f59e0b",
-      },
-      {
-        label: "Flujo Libre / Bola de Nieve",
-        value: Math.max(0, freeCashflow),
-        color: "#06b6d4",
-      },
-    ];
-    let cumulativePct = 0;
-    return segments.map((s) => {
-      const pct = Math.min(100, Math.round((s.value / total) * 100));
-      const offset = 100 - cumulativePct;
-      cumulativePct += pct;
-      return { ...s, pct, offset };
-    });
-  }, [monthlyIncome, totalFixedCosts, variableOpsBudget, vaultCap, freeCashflow]);
-
   return (
-    <div className="min-h-screen bg-[#090d16] px-4 py-10 text-slate-200">
-      <div className="mx-auto max-w-4xl">
-        {/* ENCABEZADO Y BARRA DE PROGRESO DE 5 PASOS */}
-        <div className="mb-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="min-h-screen bg-[#F4EEDC] text-[#3A2E2B] p-4 sm:p-6">
+      <div className="mx-auto max-w-4xl space-y-5">
+        {/* Cabecera Cozy */}
+        <header className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 shadow-[0_6px_0_#3A2E2B] flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C] text-2xl shadow-[0_2px_0_#3A2E2B]">
+              🏡
+            </span>
             <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/30">
-                <Sparkles className="h-3.5 w-3.5" /> CREACIÓN DE PERSONAJE &
-                TESORERÍA IA
-              </span>
-              <h1 className="mt-2 text-2xl font-bold text-white">
-                Configura tu Motor de Vida RPG
+              <h1 className="text-lg sm:text-xl font-black tracking-tight">
+                Configuración Personal de OakHaven
               </h1>
-              <p className="text-xs text-slate-400">
-                Paso {step} de 5 — Personalización asistida por catálogo +
-                Gemini IA.
+              <p className="text-xs font-bold text-[#795548]">
+                {onboardingMode === "edit"
+                  ? "Modo edición segura: tu GP, XP, nivel, rachas y sesiones previas se preservan intactos."
+                  : "Configura tu perfil real paso a paso. Cero datos ficticios precargados."}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setStep(s as 1 | 2 | 3 | 4 | 5)}
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold transition ${
-                    step === s
-                      ? "bg-emerald-600 text-white ring-2 ring-emerald-400/50"
-                      : step > s
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : "bg-slate-800 text-slate-400"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
           </div>
-          <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-            <div
-              className="h-full bg-emerald-500 transition-all duration-300"
-              style={{ width: `${(step / 5) * 100}%` }}
-            />
-          </div>
-        </div>
+
+          <button
+            type="button"
+            onClick={handleSaveDraftExplicit}
+            className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C] px-3 py-2 text-xs font-black text-[#3A2E2B] shadow-[0_2px_0_#3A2E2B] hover:bg-[#F2E3B3] cursor-pointer"
+          >
+            <Save className="h-3.5 w-3.5" />
+            Guardar borrador
+          </button>
+        </header>
+
+        {draftSavedNotice && (
+          <p role="status" className="rounded-2xl border-2 border-[#314C3C] bg-[#EAF3ED] px-4 py-2.5 text-xs font-bold text-[#1A2B20]">
+            ✓ {draftSavedNotice}
+          </p>
+        )}
+
+        {/* Navegación por las 7 etapas */}
+        <nav aria-label="Etapas del onboarding" className="flex flex-wrap gap-1.5">
+          {STEPS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              disabled={s.id === 7 && !submitResult}
+              onClick={() => updateDraft({ step: s.id })}
+              className={`rounded-2xl border-2 border-[#3A2E2B] px-3 py-1.5 text-xs font-black transition cursor-pointer disabled:opacity-40 ${
+                draft.step === s.id
+                  ? "bg-[#314C3C] text-[#FFFDF8] shadow-[0_2px_0_#1A2B20]"
+                  : "bg-[#FFFDF8] text-[#3A2E2B] hover:bg-[#E7D69C]/40"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
 
         {error && (
-          <div className="mb-6 flex items-center gap-3 rounded-xl border border-rose-500/40 bg-rose-950/40 p-4 text-sm text-rose-200">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-rose-400" />
+          <div role="alert" className="rounded-2xl border-2 border-rose-700 bg-rose-50 p-3.5 text-xs font-bold text-rose-900 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* PASO 1: NOMBRE ÚNICO + PROFESIÓN + CLASES PERSONALIZADAS */}
-        {step === 1 && (
-          <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <ShieldCheck className="h-5 w-5" />
-              <h2 className="text-lg font-bold text-white">
-                Paso 1 · Nombre Único, Profesión y Clase Personalizada
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-slate-300">
-                  Nombre de Aventurero (Único en la base de datos)
-                </label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className={`mt-1 w-full rounded-xl border bg-slate-950 px-3.5 py-2.5 text-sm text-white outline-none ${
-                    nameStatus.available === false
-                      ? "border-rose-500"
-                      : "border-slate-700 focus:border-emerald-500"
-                  }`}
-                  placeholder="Ej. Isabella_RPG"
-                />
-                <p
-                  className={`mt-1 text-[11px] ${
-                    nameStatus.checking
-                      ? "text-slate-400"
-                      : nameStatus.available
-                      ? "text-emerald-400"
-                      : "text-rose-400"
-                  }`}
-                >
-                  {nameStatus.checking
-                    ? "Verificando disponibilidad en la base de datos..."
-                    : nameStatus.available
-                    ? `✅ ${nameStatus.reason || "Nombre único disponible"}`
-                    : `❌ ${nameStatus.reason}`}
-                </p>
+        {/* Contenido principal por etapa */}
+        <main className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-5 sm:p-6 shadow-[0_8px_0_#3A2E2B] space-y-5">
+          {/* PASO 1: IDENTIDAD */}
+          {draft.step === 1 && (
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-[#314C3C]" />
+                <h2 className="text-base font-black">1. Tu Identidad en OakHaven</h2>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300">
-                  Moneda Principal
-                </label>
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
-                >
-                  <option value="COP">COP — Peso Colombiano ($)</option>
-                  <option value="USD">USD — Dólar ($)</option>
-                  <option value="MXN">MXN — Peso Mexicano ($)</option>
-                  <option value="EUR">EUR — Euro (€)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* PROFESIÓN / OCUPACIÓN CON CACHÉ EN BD + FALLBACK A GEMINI */}
-            <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-4">
-              <label className="block text-xs font-bold uppercase tracking-wider text-indigo-300">
-                ¿Cuál es tu profesión u ocupación actual? (o indica si eres
-                estudiante)
-              </label>
-              <p className="mt-0.5 text-xs text-slate-400">
-                Primero buscamos en nuestra tabla de profesiones; si no existe,
-                Gemini genera tus clases RPG a medida y las guarda en la base de
-                datos.
-              </p>
-
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="text"
-                  value={profession}
-                  onChange={(e) => setProfession(e.target.value)}
-                  placeholder="Ej. Estudiante de Arquitectura, Chef, Ingeniero Civil, Médico..."
-                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-sm text-white outline-none focus:border-indigo-400"
-                />
-                <button
-                  type="button"
-                  disabled={loadingClasses}
-                  onClick={() => fetchProfessionClasses(profession)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
-                >
-                  <Bot className="h-4 w-4" />
-                  {loadingClasses
-                    ? "Consultando..."
-                    : "Generar Personajes según Profesión"}
-                </button>
-              </div>
-
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {QUICK_PROFESSIONS.map((qp) => (
-                  <button
-                    key={qp}
-                    type="button"
-                    onClick={() => {
-                      setProfession(qp);
-                      fetchProfessionClasses(qp);
-                    }}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
-                      profession === qp
-                        ? "bg-indigo-500 text-white"
-                        : "bg-slate-900 text-slate-300 hover:bg-slate-800"
-                    }`}
-                  >
-                    {qp}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <label className="text-xs font-semibold text-slate-300">
-                  Elige tu Clase de Personaje Personalizada
-                </label>
-                <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] text-cyan-300">
-                  {classSource === "catalog_cache"
-                    ? "⚡ Cargado desde Tabla de Búsqueda (sin gastar llamadas API)"
-                    : classSource === "gemini_generated"
-                    ? "✨ Creado por Gemini IA y guardado en la Tabla de Profesiones"
-                    : "🛡️ Arquetipo Adaptado a tu Profesión"}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {classOptions.map((c) => {
-                  const active = characterClass === c.name;
-                  return (
-                    <button
-                      key={c.name}
-                      type="button"
-                      onClick={() => setCharacterClass(c.name)}
-                      className={`rounded-xl border p-4 text-left transition ${
-                        active
-                          ? "border-emerald-500 bg-emerald-950/30 ring-1 ring-emerald-500/40"
-                          : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
-                      }`}
-                    >
-                      <span className="inline-block rounded-full bg-slate-800 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
-                        {c.badge}
-                      </span>
-                      <p className="mt-2 font-bold text-white">{c.name}</p>
-                      <p className="mt-1 text-xs text-slate-400">{c.desc}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* PASO 2: FINANZAS MENSUALES + EVALUADOR GEMINI + DONA EN VIVO */}
-        {step === 2 && (
-          <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <Wallet className="h-5 w-5" />
-              <h2 className="text-lg font-bold text-white">
-                Paso 2 · Ingresos, Costos Fijos y Evaluador Financiero con
-                Gemini
-              </h2>
-            </div>
-
-            {/* MOTOR FINANCIERO DETERMINISTA & GEMINI IA (TEXTO LIBRE O TABLA CSV) */}
-            <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-amber-400" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                    Motor Financiero IA — Autocompletar (Texto Libre o Tabla /
-                    CSV)
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFinancePrompt(
-                        "Gano 1.600.000 quincenal. Pago 780 mil de arriendo al mes, 165 mil de servicios, 95 mil de internet y celular, y 80 mil de gimnasio. En mercado gasto 480 mil y en transporte 15 mil diarios. Debo 850 mil en tarjeta Nu al 28.5% y 380 mil en Nequi."
-                      )
-                    }
-                    className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:border-amber-500/40 hover:text-amber-200"
-                  >
-                    📝 Ejemplo Texto Libre
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sampleRealCsv = [
-                        "Fecha,Tipo,Categoría,Monto,Descripción,Método de Pago,Detalle,ID Registro",
-                        '2026-09-04,Ingreso,Inversiones,"$233,501.00",Inicial cuenta,Debito,,1',
-                        '2026-09-17,Ingreso,Sueldo,"$1,224,561.00",Pago sept 1,Debito,,22',
-                        '2026-10-03,Ingreso,Sueldo,"$791,754.00",Pago sept 2,Debito,,43',
-                        '2026-10-04,Ingreso,Clases,"$200,000.00",Clases Juanma,Debito,,44',
-                        '2026-10-16,Ingreso,Sueldo,"$1,145,359.00",Pago oct 1,Debito,,60',
-                        '2026-10-21,Ingreso,Sueldo,"$915,000.00",Pago oct 2,Debito,,68',
-                        '2026-10-29,Ingreso,Clases,"$150,000.00",Clases Juanma,Debito,,76',
-                        '2026-09-09,Egreso,Pago internet,"$119,900.00",Internet Sep,Debito,,13',
-                        '2026-10-09,Egreso,Pago internet,"$120,000.00",Somos,Debito,,54',
-                        '2026-09-06,Egreso,Pago Celular,"$100,000.00",Cel Isa y Sandris,Debito,,5',
-                        '2026-10-09,Egreso,Pago Celular,"$99,519.00",Cel Isa,Debito,,55',
-                        '2026-09-20,Egreso,Otros,"$120,000.00",Gimnasio,Debito,,28',
-                        '2026-10-20,Egreso,Otros,"$120,000.00",Gimnasio,Debito,,66',
-                        '2026-09-21,Egreso,Otros,"$100,000.00",Natillera,Debito,,30',
-                        '2026-10-03,Egreso,Otros,"$100,000.00",Natillera,Debito,,41',
-                        '2026-09-06,Egreso,Salud,"$181,400.00",Pastillas,Debito,,6',
-                        '2026-10-05,Egreso,Salud,"$178,400.00",Pastillas,Debito,,48',
-                        '2026-09-18,Egreso,Suscripciones,"$31,000.00",Spotify,Debito,,23',
-                        '2026-09-19,Egreso,Suscripciones,"$25,000.00",Prime,Debito,,26',
-                        '2026-09-26,Egreso,Otros,"$115,000.00",Uñas,Debito,,37',
-                        '2026-09-26,Egreso,Otros,"$55,000.00",Mona,Efectivo,,38',
-                        '2026-09-18,Egreso,Comida,"$410,000.00",Almuerzos y mercado mes 1,Debito,,24',
-                        '2026-10-18,Egreso,Comida,"$410,000.00",Almuerzos y mercado mes 2,Debito,,62',
-                        '2026-09-12,Egreso,Transporte,"$130,000.00",Uber sede y parqueadero mes 1,Debito,,16',
-                        '2026-10-12,Egreso,Transporte,"$130,000.00",Uber sede y parqueadero mes 2,Debito,,58',
-                        '2026-09-09,Egreso,Obligaciones financieras,"$101,855.00",Addi,Debito,,11',
-                        '2026-10-09,Egreso,Obligaciones financieras,"$98,420.00",Addi,Debito,,56',
-                        '2026-09-19,Egreso,Obligaciones financieras,"$56,281.00",Nequi,Debito,,25',
-                        '2026-10-29,Egreso,Obligaciones financieras,"$55,213.00",Nequi,Debito,,78',
-                        '2026-09-07,Egreso,Otros,"$200,000.00",Cubitos,Debito,,10',
-                        '2026-09-15,Egreso,Otros,"$229,000.00",Libros,Debito,,20',
-                        '2026-09-14,Egreso,Otros,"$80,000.00",Hilos para tejer,Debito,,19',
-                        '2026-09-21,Egreso,Otros,"$20,000.00",LEGO,Debito,,29',
-                      ].join("\n");
-                      setFinancePrompt(sampleRealCsv);
-                      runFinancialAnalysisWithText(sampleRealCsv);
-                    }}
-                    className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/25"
-                  >
-                    📂 Cargar y Optimizar Mi Historial Real (CSV)
-                  </button>
-                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/20">
-                    <Upload className="h-3.5 w-3.5" />
-                    Adjuntar CSV / TXT
-                    <input
-                      type="file"
-                      accept=".csv,.txt,.tsv"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="ob-name" className="block text-xs font-black mb-1">
+                    Nombre de aventurero (único)
                   </label>
-                </div>
-              </div>
-              <p className="mt-1 text-xs text-slate-400">
-                El Motor Financiero mensualiza sueldos quincenales/semanales o
-                gastos diarios, clasifica tus 5 cubetas (Fijos, Variables,
-                Bóveda GP, Flujo Libre y Deudas) e infiere tasas E.A. y cuotas
-                mínimas.
-              </p>
-              <textarea
-                rows={3}
-                value={financePrompt}
-                onChange={(e) => setFinancePrompt(e.target.value)}
-                placeholder="Escribe tus ingresos (mensual o quincenal), arriendo, servicios, mercado, transporte y deudas, o pega filas de Excel/CSV..."
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 font-mono text-xs text-white outline-none focus:border-amber-400"
-              />
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-                <button
-                  type="button"
-                  disabled={analyzingFinances || !financePrompt.trim()}
-                  onClick={runFinancialAnalysis}
-                  className="inline-flex items-center gap-2 rounded-xl bg-amber-500/20 px-4 py-2 text-xs font-bold text-amber-200 ring-1 ring-amber-500/40 hover:bg-amber-500/30 disabled:opacity-40"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {analyzingFinances
-                    ? "Ejecutando Motor Financiero..."
-                    : "Ejecutar Motor Financiero y Autocompletar"}
-                </button>
-                {financeDiagnosis && (
-                  <span className="text-[11px] font-semibold text-emerald-300">
-                    ✅ Auditoría completada y aplicada a los Pasos 2 y 3
-                  </span>
-                )}
-              </div>
-              {financeDiagnosis && (
-                <div className="mt-3 space-y-2 rounded-xl border border-slate-800 bg-slate-950/90 p-3 text-xs">
-                  <p className="text-slate-200">
-                    💡 <strong>Dictamen del Motor Financiero:</strong>{" "}
-                    {financeDiagnosis}
-                  </p>
-                  {financeMetrics && (
-                    <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
-                      <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-2">
-                        <span className="text-[10px] text-slate-400">
-                          Ratio Costos Fijos
-                        </span>
-                        <p className="font-bold text-indigo-300">
-                          {financeMetrics.fixed_pct}% del ingreso
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-2">
-                        <span className="text-[10px] text-slate-400">
-                          Ratio Operativo
-                        </span>
-                        <p className="font-bold text-emerald-300">
-                          {financeMetrics.variable_pct}% del ingreso
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-2">
-                        <span className="text-[10px] text-slate-400">
-                          Bóveda GP (Gustos)
-                        </span>
-                        <p className="font-bold text-amber-300">
-                          {financeMetrics.vault_pct}% ({fmt(vaultCap)})
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-2">
-                        <span className="text-[10px] text-slate-400">
-                          Libertad de Deudas
-                        </span>
-                        <p className="font-bold text-cyan-300">
-                          {financeMetrics.estimated_debt_free_months > 0
-                            ? `~${financeMetrics.estimated_debt_free_months} meses (TTK)`
-                            : "Libre de deudas"}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  {financeMetrics?.grouped_summary &&
-                    financeMetrics.grouped_summary.length > 0 && (
-                      <div className="mt-3 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
-                        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-3 py-2">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">
-                            📊 Tabla Sistematizada y Agrupada por Categorías (
-                            {financeMetrics.grouped_summary.length} bloques)
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            Promedios mensuales limpios sin filas sueltas
-                          </span>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto">
-                          <table className="w-full text-left text-[11px]">
-                            <thead className="sticky top-0 bg-slate-950 text-[10px] uppercase text-slate-400">
-                              <tr>
-                                <th className="px-3 py-1.5">Bloque</th>
-                                <th className="px-3 py-1.5">
-                                  Categoría Consolidada
-                                </th>
-                                <th className="px-2 py-1.5 text-center">
-                                  Movs.
-                                </th>
-                                <th className="px-3 py-1.5 text-right">
-                                  Total Tabla
-                                </th>
-                                <th className="px-3 py-1.5 text-right">
-                                  Mensualizado
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/70">
-                              {financeMetrics.grouped_summary.map((grp, i) => (
-                                <tr
-                                  key={i}
-                                  className="hover:bg-slate-800/40"
-                                >
-                                  <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-300">
-                                    {grp.bucket_label}
-                                  </td>
-                                  <td className="px-3 py-1.5">
-                                    <p className="font-semibold text-white">
-                                      {grp.category_name}
-                                    </p>
-                                    <p className="text-[10px] text-slate-400">
-                                      {grp.note}
-                                    </p>
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center text-slate-300">
-                                    {grp.tx_count}
-                                  </td>
-                                  <td className="whitespace-nowrap px-3 py-1.5 text-right text-slate-400">
-                                    {fmt(grp.historical_total)}
-                                  </td>
-                                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold text-emerald-300">
-                                    {grp.bucket === "excluido"
-                                      ? "Aislado ($0/mes)"
-                                      : `${fmt(grp.monthly_assigned)}/mes`}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-                  {financeAuditLog.length > 0 && (
-                    <div className="mt-2 border-t border-slate-800 pt-2">
-                      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Resumen Ejecutivo del Asistente Financiero:
-                      </p>
-                      <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                        {financeAuditLog.map((line, i) => (
-                          <span
-                            key={i}
-                            className="rounded bg-slate-900 px-2 py-1 text-[11px] text-slate-300"
-                          >
-                            {line}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-              <div className="space-y-4 lg:col-span-7">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300">
-                      Ingreso Mensual ({currency})
-                    </label>
+                  <div className="flex gap-2">
                     <input
-                      type="number"
-                      min={1}
-                      value={monthlyIncome}
-                      onChange={(e) =>
-                        setMonthlyIncome(Math.max(0, Number(e.target.value)))
-                      }
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                      id="ob-name"
+                      type="text"
+                      placeholder="Ejemplo ilustrativo: tu alias único"
+                      value={draft.displayName}
+                      onChange={(e) => updateDraft({ displayName: e.target.value })}
+                      className="flex-1 rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-3 py-2 text-xs font-bold outline-none focus:bg-[#FFFDF8]"
                     />
+                    <button
+                      type="button"
+                      onClick={handleCheckName}
+                      className="rounded-2xl border-2 border-[#3A2E2B] bg-[#E7D69C] px-3 py-2 text-xs font-black cursor-pointer"
+                    >
+                      Verificar
+                    </button>
                   </div>
+                  {nameCheck.reason && (
+                    <p className={`mt-1 text-[11px] font-bold ${nameCheck.available ? "text-[#314C3C]" : "text-amber-800"}`}>
+                      {nameCheck.reason}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="ob-class" className="block text-xs font-black mb-1">
+                    Clase RPG
+                  </label>
+                  <input
+                    id="ob-class"
+                    type="text"
+                    value={draft.characterClass}
+                    onChange={(e) => updateDraft({ characterClass: e.target.value })}
+                    className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-3 py-2 text-xs font-bold outline-none focus:bg-[#FFFDF8]"
+                  />
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {SUGGESTED_CLASSES.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => updateDraft({ characterClass: c })}
+                        className="rounded-full border border-[#3A2E2B]/30 bg-[#F4EEDC] px-2 py-0.5 text-[10px] font-bold hover:bg-[#E7D69C] cursor-pointer"
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="ob-prof" className="block text-xs font-black mb-1">
+                    Profesión / Enfoque
+                  </label>
+                  <input
+                    id="ob-prof"
+                    type="text"
+                    placeholder="Ej. Ingeniería Administrativa, analítica y desarrollo"
+                    value={draft.profession}
+                    onChange={(e) => updateDraft({ profession: e.target.value })}
+                    className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-3 py-2 text-xs font-bold outline-none focus:bg-[#FFFDF8]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300">
-                      Frecuencia de Pago
+                    <label htmlFor="ob-currency" className="block text-xs font-black mb-1">
+                      Moneda
                     </label>
                     <select
-                      value={payFrequency}
-                      onChange={(e) =>
-                        setPayFrequency(e.target.value as PayFrequency)
-                      }
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                      id="ob-currency"
+                      value={draft.currency}
+                      onChange={(e) => updateDraft({ currency: e.target.value as CurrencyCode })}
+                      className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-3 py-2 text-xs font-bold"
                     >
-                      <option value="monthly">Mensual</option>
-                      <option value="biweekly">Quincenal</option>
-                      <option value="weekly">Semanal</option>
+                      <option value="COP">COP</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                      <option value="MXN">MXN</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300">
-                      Día de Corte / Pago
+                    <label htmlFor="ob-tz" className="block text-xs font-black mb-1">
+                      Zona horaria
                     </label>
                     <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={payDay}
-                      onChange={(e) =>
-                        setPayDay(
-                          Math.min(31, Math.max(1, Number(e.target.value)))
-                        )
-                      }
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
-                    />
-                  </div>
-                </div>
-
-                {/* DESGLOSE DE COSTOS FIJOS */}
-                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-300">
-                      Desglose de Costos Fijos ({fmt(totalFixedCosts)})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFixedCosts([
-                          ...fixedCosts,
-                          { name: "", amount: 0, category: "otros" },
-                        ])
-                      }
-                      className="inline-flex items-center gap-1 rounded-lg bg-indigo-500/20 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/30"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Añadir rubro
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {fixedCosts.map((fc, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="Ej. Arriendo, Gimnasio..."
-                          value={fc.name}
-                          onChange={(e) => {
-                            const next = [...fixedCosts];
-                            next[idx] = { ...fc, name: e.target.value };
-                            setFixedCosts(next);
-                          }}
-                          className="flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          value={fc.amount}
-                          onChange={(e) => {
-                            const next = [...fixedCosts];
-                            next[idx] = {
-                              ...fc,
-                              amount: Math.max(0, Number(e.target.value)),
-                            };
-                            setFixedCosts(next);
-                          }}
-                          className="w-32 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
-                        />
-                        {fixedCosts.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setFixedCosts(
-                                fixedCosts.filter((_, i) => i !== idx)
-                              )
-                            }
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300">
-                      Variables Operativos (Mercado, Transporte)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={variableOpsBudget}
-                      onChange={(e) =>
-                        setVariableOpsBudget(
-                          Math.max(0, Number(e.target.value))
-                        )
-                      }
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300">
-                      Tope Bóveda Mensual (Gustos / GP)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={vaultCap}
-                      onChange={(e) =>
-                        setVaultCap(Math.max(0, Number(e.target.value)))
-                      }
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300">
-                      Meta de Ahorro Mensual (Opcional)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={savingsGoalMonthly}
-                      onChange={(e) =>
-                        setSavingsGoalMonthly(
-                          Math.max(0, Number(e.target.value))
-                        )
-                      }
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                      id="ob-tz"
+                      type="text"
+                      value={draft.timezone}
+                      onChange={(e) => updateDraft({ timezone: e.target.value })}
+                      className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-3 py-2 text-xs font-bold"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* GRÁFICA DE DONA EN VIVO */}
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-800 bg-slate-950/80 p-5 lg:col-span-5">
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Distribución de tu Ingreso en Vivo
-                </p>
-                <div className="relative h-44 w-44">
-                  <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="15.915"
-                      fill="transparent"
-                      stroke="#1e293b"
-                      strokeWidth="3.8"
-                    />
-                    {donutSegments.map((seg) => (
-                      <circle
-                        key={seg.label}
-                        cx="18"
-                        cy="18"
-                        r="15.915"
-                        fill="transparent"
-                        stroke={seg.color}
-                        strokeWidth="3.8"
-                        strokeDasharray={`${seg.pct} ${100 - seg.pct}`}
-                        strokeDashoffset={seg.offset}
-                      />
-                    ))}
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                    <span className="text-[10px] text-slate-400">
-                      Flujo Libre
-                    </span>
-                    <span
-                      className={`text-sm font-extrabold ${
-                        freeCashflow < 0 ? "text-rose-400" : "text-cyan-400"
-                      }`}
-                    >
-                      {fmt(freeCashflow)}
-                    </span>
-                  </div>
+              {/* Vista previa de Ficha de Personaje */}
+              <div className="rounded-2xl border-2 border-[#3A2E2B] bg-[#EAF3ED] p-3.5 text-xs space-y-1">
+                <div className="font-black text-[#314C3C]">
+                  🪪 Vista previa de ficha · Nivel {characterSheet.level} ({onboardingMode === "edit" ? "progreso conservado" : "cuenta nueva"})
                 </div>
+                <p className="font-bold">
+                  {characterSheet.identity.adventurerName} — {characterSheet.identity.characterClass}
+                </p>
+                <p className="text-[#5C4033] text-[11px]">
+                  {characterSheet.identity.style} · {characterSheet.identity.currency} · {characterSheet.identity.timezone}
+                </p>
+              </div>
+            </section>
+          )}
 
-                <div className="mt-4 w-full space-y-1.5 text-xs">
-                  {donutSegments.map((seg) => (
+          {/* PASO 2: RUTINA Y DISPONIBILIDAD */}
+          {draft.step === 2 && (
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-[#314C3C]" />
+                <h2 className="text-base font-black">2. Rutina y Calendario Adaptativo</h2>
+              </div>
+              <p className="text-xs text-[#795548]">
+                {dayPlan.availabilityNotice}
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { id: "wakeTime", label: "Despertar", val: draft.wakeTime },
+                  { id: "workStart", label: "Inicio trabajo", val: draft.workStart },
+                  { id: "workEnd", label: "Fin trabajo", val: draft.workEnd },
+                  { id: "sleepTime", label: "Dormir", val: draft.sleepTime },
+                ].map((f) => (
+                  <div key={f.id}>
+                    <label htmlFor={`ob-${f.id}`} className="block text-xs font-black mb-1">
+                      {f.label}
+                    </label>
+                    <input
+                      id={`ob-${f.id}`}
+                      type="time"
+                      value={f.val}
+                      onChange={(e) => updateDraft({ [f.id]: e.target.value })}
+                      className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-3 py-2 text-xs font-bold"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1.5">
+                <h3 className="text-xs font-black uppercase text-[#795548]">
+                  Bloques estimados (protegiendo descansos y comidas)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {dayPlan.blocks.map((b) => (
                     <div
-                      key={seg.label}
-                      className="flex items-center justify-between"
+                      key={b.id}
+                      className="rounded-2xl border-2 border-[#3A2E2B]/30 bg-[#F7F4EB] p-2.5 text-xs flex items-center justify-between gap-2"
                     >
-                      <span className="flex items-center gap-2 text-slate-300">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: seg.color }}
-                        />
-                        {seg.label}
-                      </span>
-                      <span className="font-semibold text-white">
-                        {seg.pct}% ({fmt(seg.value)})
+                      <div>
+                        <span className="font-mono font-black text-[#314C3C]">
+                          {b.start}–{b.end}
+                        </span>{" "}
+                        <span className="font-bold">{b.label}</span>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-[#FFFDF8] border border-[#3A2E2B]/20 px-2 py-0.5 text-[10px] font-black">
+                        {b.status === "confirmed" ? "Confirmado" : "Estimado"}
                       </span>
                     </div>
                   ))}
                 </div>
-
-                {freeCashflow < 0 && (
-                  <div className="mt-3 w-full space-y-2 rounded-lg border border-rose-500/40 bg-rose-500/15 p-2.5 text-center text-[11px]">
-                    <p className="font-semibold text-rose-300">
-                      ⚠️ Tus gastos superan tu ingreso por{" "}
-                      {fmt(Math.abs(freeCashflow))}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const availAfterFixed = Math.max(
-                          0,
-                          monthlyIncome - totalFixedCosts
-                        );
-                        const nextVar = Math.round(availAfterFixed * 0.55);
-                        const nextVault = Math.round(availAfterFixed * 0.25);
-                        setVariableOpsBudget(nextVar);
-                        setVaultCap(nextVault);
-                      }}
-                      className="w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-500"
-                    >
-                      ⚖️ Auto-Equilibrar Presupuesto con IA (1 Clic)
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* PASO 3: DEUDAS (BOSSES) — OPCIONAL */}
-        {step === 3 && (
-          <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-rose-400">
-                <Swords className="h-5 w-5" />
-                <h2 className="text-lg font-bold text-white">
-                  Paso 3 · Deudas Actuales (Debt Bosses) — Opcional
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setBosses([]);
-                  setStep(4);
-                }}
-                className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20"
-              >
-                🎉 No tengo deudas → Activar Modo Ahorro y Saltar
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-400">
-              Cada deuda se convierte en un Jefe con barra de vida (HP). Puedes
-              poner cualquier nombre (ej. Tarjeta Nu, Crédito Vehículo, ICETEX,
-              Nequi).
-            </p>
-
-            <div className="space-y-3">
-              {bosses.map((b, idx) => (
-                <div
-                  key={idx}
-                  className="grid grid-cols-1 gap-2 rounded-xl border border-slate-800 bg-slate-950/70 p-3 sm:grid-cols-12 sm:items-end"
-                >
-                  <div className="sm:col-span-4">
-                    <label className="text-[11px] text-slate-400">
-                      Nombre de la Deuda / Entidad
-                    </label>
-                    <input
-                      type="text"
-                      value={b.name}
-                      onChange={(e) => {
-                        const next = [...bosses];
-                        next[idx] = { ...b, name: e.target.value };
-                        setBosses(next);
-                      }}
-                      className="mt-0.5 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="text-[11px] text-slate-400">
-                      Saldo Total (HP)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={b.total_balance}
-                      onChange={(e) => {
-                        const next = [...bosses];
-                        next[idx] = {
-                          ...b,
-                          total_balance: Math.max(0, Number(e.target.value)),
-                        };
-                        setBosses(next);
-                      }}
-                      className="mt-0.5 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="text-[11px] text-slate-400">
-                      Tasa E.A. (%)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min={0}
-                      value={b.interest_rate_ea}
-                      onChange={(e) => {
-                        const next = [...bosses];
-                        next[idx] = {
-                          ...b,
-                          interest_rate_ea: Math.max(0, Number(e.target.value)),
-                        };
-                        setBosses(next);
-                      }}
-                      className="mt-0.5 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="text-[11px] text-slate-400">
-                      Cuota Mínima
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={b.min_monthly_payment}
-                      onChange={(e) => {
-                        const next = [...bosses];
-                        next[idx] = {
-                          ...b,
-                          min_monthly_payment: Math.max(
-                            0,
-                            Number(e.target.value)
-                          ),
-                        };
-                        setBosses(next);
-                      }}
-                      className="mt-0.5 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                  <div className="flex justify-end sm:col-span-1">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setBosses(bosses.filter((_, i) => i !== idx))
-                      }
-                      className="rounded-lg p-2 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              <button
-                type="button"
-                onClick={() =>
-                  setBosses([
-                    ...bosses,
-                    {
-                      name: `Deuda ${bosses.length + 1}`,
-                      total_balance: 300000,
-                      interest_rate_ea: 24.0,
-                      min_monthly_payment: 45000,
-                    },
-                  ])
-                }
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:border-slate-600"
-              >
-                <Plus className="h-4 w-4" /> Añadir otra deuda
-              </button>
-            </div>
-
-            {bosses.length > 0 && (
-              <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-4">
-                <p className="text-xs font-semibold text-indigo-300">
-                  Estrategia de Amortización (Recomendada:{" "}
-                  {recommendedStrategy === "avalanche"
-                    ? "Avalancha por tasas altas"
-                    : "Bola de Nieve por victorias rápidas"}
-                  )
-                </p>
-                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setDebtStrategy("snowball")}
-                    className={`rounded-xl border p-3 text-left text-xs ${
-                      debtStrategy === "snowball"
-                        ? "border-emerald-500 bg-emerald-950/30 text-white"
-                        : "border-slate-800 bg-slate-950/50 text-slate-400"
-                    }`}
-                  >
-                    <span className="font-bold">❄️ Bola de Nieve</span> — Ataca
-                    primero la deuda de menor saldo para liberar flujo rápido.
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDebtStrategy("avalanche")}
-                    className={`rounded-xl border p-3 text-left text-xs ${
-                      debtStrategy === "avalanche"
-                        ? "border-emerald-500 bg-emerald-950/30 text-white"
-                        : "border-slate-800 bg-slate-950/50 text-slate-400"
-                    }`}
-                  >
-                    <span className="font-bold">🏔️ Avalancha</span> — Ataca
-                    primero la deuda con mayor tasa E.A. para pagar menos
-                    intereses.
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* PASO 4: CALENDARIO MENSUAL/SEMANAL CON TRABAJO INAMOVIBLE + TODAS LAS HABILIDADES */}
-        {step === 4 && (
-          <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-emerald-400">
-                <Trophy className="h-5 w-5" />
-                <h2 className="text-lg font-bold text-white">
-                  Paso 4 · Calendario Mensual del Santuario (Trabajo Inamovible
-                  + Todas tus Habilidades)
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setSkills(
-                    SKILL_CATALOG.map((s) => ({
-                      domain: s.domain,
-                      label: s.label,
-                      weekly_target_minutes:
-                        calendarPlan.weeklyMinutesByDomain[s.domain] ||
-                        s.defaultMinutes,
-                      preferred_session_time:
-                        calendarPlan.preferredTimeByDomain[s.domain] || "noche",
-                    }))
-                  )
-                }
-                className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20"
-              >
-                ✅ Activar Todas las Habilidades en el Mes
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-400">
-              Indica <strong>a qué hora te levantas y a qué hora te acuestas</strong>{" "}
-              normalmente, junto con tu horario inamovible de Trabajo/Estudio.
-              El motor analizará tus horas de sueño y tus ventanas libres reales
-              (mañana vs tarde/noche) para planear tu calendario completo hora
-              por hora desde que despiertas hasta que duermes.
-            </p>
-
-            {/* 1A. RITMO BIOLÓGICO: HORA DE LEVANTARSE Y ACOSTARSE */}
-            <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                  ☀️🌙 1A. Tu Ritmo Biológico (¿A qué hora te levantas y a qué hora te acuestas?)
-                </span>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                    calendarPlan.sleepHealthStatus.level === "optimal"
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : calendarPlan.sleepHealthStatus.level === "critical"
-                      ? "bg-rose-500/20 text-rose-300"
-                      : "bg-amber-500/20 text-amber-200"
-                  }`}
-                >
-                  {calendarPlan.sleepHealthStatus.label}
-                </span>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    ☀️ Te levantas (Lun–Vie)
-                  </label>
-                  <input
-                    type="time"
-                    value={wakeUpTime}
-                    onChange={(e) => setWakeUpTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    🌙 Te acuestas (Lun–Vie)
-                  </label>
-                  <input
-                    type="time"
-                    value={sleepTime}
-                    onChange={(e) => setSleepTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    ☀️ Te levantas (Fin de Sem.)
-                  </label>
-                  <input
-                    type="time"
-                    value={weekendWakeUpTime}
-                    onChange={(e) => setWeekendWakeUpTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    🌙 Te acuestas (Fin de Sem.)
-                  </label>
-                  <input
-                    type="time"
-                    value={weekendSleepTime}
-                    onChange={(e) => setWeekendSleepTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    🍽️ Traslado / Cena Post-Trabajo
-                  </label>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min={15}
-                      max={180}
-                      step={15}
-                      value={commuteAndMealsMinutes}
-                      onChange={(e) =>
-                        setCommuteAndMealsMinutes(
-                          Math.max(15, Number(e.target.value))
-                        )
-                      }
-                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                    />
-                    <span className="text-[11px] text-slate-400">min</span>
+              {sampleFreeSlot.length > 0 && (
+                <div className="rounded-2xl border-2 border-[#3A2E2B]/30 bg-[#FFF8E1] p-3 text-xs space-y-1">
+                  <div className="font-black text-[#5C381E]">
+                    🦉 Ejemplo si tienes 20 min libres (requiere tu confirmación; nunca se auto-inicia):
                   </div>
+                  <ul className="list-disc pl-5 space-y-0.5 text-[11px]">
+                    {sampleFreeSlot.map((s) => (
+                      <li key={s.areaId}>
+                        <strong>{s.title}</strong> ({s.specialist}) — {s.reason}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </div>
+              )}
+            </section>
+          )}
 
-              {/* Resumen de diagnóstico biológico */}
-              <div className="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-slate-800/80 bg-slate-950/60 p-2.5 text-[11px] sm:grid-cols-3">
-                <div>
-                  <span className="text-slate-400">Vigilia Activa (Lun–Vie):</span>{" "}
-                  <strong className="text-white">
-                    {calendarPlan.awakeHoursWeekday}h despierto
-                  </strong>{" "}
-                  <span className="text-slate-500">
-                    ({calendarPlan.sleepHoursWeekday}h sueño)
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Ventana Mañana Real:</span>{" "}
-                  <strong className="text-cyan-300">
-                    {calendarPlan.morningWindowMinsWeekday} min libres
-                  </strong>{" "}
-                  <span className="text-slate-500">(antes de trabajar)</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Ventana Tarde/Noche Real:</span>{" "}
-                  <strong className="text-emerald-300">
-                    {calendarPlan.eveningWindowMinsWeekday} min libres
-                  </strong>{" "}
-                  <span className="text-slate-500">(antes de dormir)</span>
-                </div>
-              </div>
-              <p className="mt-2 text-[11px] text-amber-200/90">
-                💡 {calendarPlan.sleepHealthStatus.recommendation}
+          {/* PASO 3: LAS 8 ÁREAS */}
+          {draft.step === 3 && (
+            <section className="space-y-4">
+              <h2 className="text-base font-black">3. Tus 8 Áreas y Especialistas</h2>
+              <p className="text-xs text-[#795548]">
+                Activa las áreas que deseas cultivar y ajusta metas semanales editables sin horarios rígidos. Cine se integra con su módulo dedicado y Journaling con su dominio propio.
               </p>
-            </div>
 
-            {/* 1B. CONFIGURADOR DEL BLOQUE INAMOVIBLE (TRABAJO / UNIVERSIDAD) */}
-            <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-indigo-300">
-                  🔒 1B. Define tu Bloque Inamovible (Trabajo / Clases = Motor
-                  del Sistema)
-                </span>
-                <span className="rounded-full bg-indigo-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-200">
-                  Meta mensual calculada sola
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    Días Inamovibles
-                  </label>
-                  <select
-                    value={workDaysPattern}
-                    onChange={(e) =>
-                      setWorkDaysPattern(
-                        e.target.value as "lun_vie" | "lun_sab" | "flexible"
-                      )
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                  >
-                    <option value="lun_vie">Lunes a Viernes</option>
-                    <option value="lun_sab">Lunes a Sábado</option>
-                    <option value="flexible">Horario Flexible / Remoto</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    Inicio Trabajo/Estudio
-                  </label>
-                  <input
-                    type="time"
-                    value={workStartHour}
-                    onChange={(e) => setWorkStartHour(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    Fin Trabajo/Estudio
-                  </label>
-                  <input
-                    type="time"
-                    value={workEndHour}
-                    onChange={(e) => setWorkEndHour(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    ¿Cuándo prefieres entrenar tus Skills?
-                  </label>
-                  <select
-                    value={freeSlotPreference}
-                    onChange={(e) =>
-                      setFreeSlotPreference(
-                        e.target.value as
-                          | "after_work"
-                          | "before_work"
-                          | "mixed"
-                      )
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                  >
-                    <option value="mixed">
-                      Mixto Inteligente (Mañana + Noche)
-                    </option>
-                    <option value="after_work">
-                      Después del Trabajo (Tarde / Noche)
-                    </option>
-                    <option value="before_work">
-                      Antes del Trabajo (Mañana Temprano)
-                    </option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-300">
-                    Meta Diaria Skills (Lun-Vie / FinSem)
-                  </label>
-                  <div className="mt-1 flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={20}
-                      max={180}
-                      step={5}
-                      value={weekdayFreeMinutes}
-                      onChange={(e) =>
-                        setWeekdayFreeMinutes(
-                          Math.max(20, Number(e.target.value))
-                        )
-                      }
-                      className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white"
-                      title="Minutos para habilidades por día entre semana"
-                    />
-                    <input
-                      type="number"
-                      min={30}
-                      max={240}
-                      step={15}
-                      value={weekendFreeMinutes}
-                      onChange={(e) =>
-                        setWeekendFreeMinutes(
-                          Math.max(30, Number(e.target.value))
-                        )
-                      }
-                      className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white"
-                      title="Minutos para habilidades por día en fin de semana"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. CALENDARIO VISUAL SEMANAL HORA POR HORA (DE LEVANTARSE A ACOSTARSE) */}
-            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
-                    🗓️ 2. Tu Calendario Biológico Semanal (De Hora de Levantarse
-                    a Hora de Acostarse)
-                  </span>
-                  <p className="text-[11px] text-slate-400">
-                    Cada día estructura tu rutina completa desde que despiertas
-                    hasta que duermes, rotando tus habilidades con horarios exactos
-                    para desbloquear{" "}
-                    <span className="font-semibold text-amber-300">
-                      {fmt(calendarPlan.weeklyGpTarget)}/semana
-                    </span>{" "}
-                    ({fmt(vaultCap)} en el mes).
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-7">
-                {calendarPlan.days.map((d) => (
-                  <div
-                    key={d.key}
-                    className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/75 p-2.5 text-xs"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-                        <span className="font-bold text-white">{d.label}</span>
-                        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
-                          {d.totalDayMins}m skills
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {EIGHT_LIFE_AREAS.map((area) => {
+                  const enabled = draft.enabledAreaIds.includes(area.id);
+                  const mins = draft.areaWeeklyMinutes[area.id] ?? area.suggestedWeeklyMinutes;
+                  return (
+                    <div
+                      key={area.id}
+                      className={`rounded-2xl border-2 p-3 space-y-2 transition ${
+                        enabled
+                          ? "border-[#314C3C] bg-[#EAF3ED]"
+                          : "border-[#3A2E2B]/25 bg-[#F7F4EB] opacity-70"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 font-black text-xs cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            onChange={() => {
+                              const next = enabled
+                                ? draft.enabledAreaIds.filter((x) => x !== area.id)
+                                : [...draft.enabledAreaIds, area.id];
+                              updateDraft({ enabledAreaIds: next });
+                            }}
+                            className="h-4 w-4 accent-[#314C3C]"
+                          />
+                          <span>{area.icon} {area.label}</span>
+                        </label>
+                        <span className="rounded-full bg-[#FFFDF8] border border-[#3A2E2B]/20 px-2 py-0.5 text-[10px] font-bold">
+                          {area.specialist}
                         </span>
                       </div>
-
-                      {/* Hora de Levantarse y Dormir del Día */}
-                      <div className="mt-1.5 flex items-center justify-between rounded-md bg-slate-950/80 px-2 py-1 text-[10px] text-amber-200">
-                        <span>☀️ {d.wakeUpTime}</span>
-                        <span>🌙 {d.sleepTime}</span>
-                      </div>
-
-                      {/* Habilidades Programadas con Horario Exacto */}
-                      <div className="mt-2 space-y-1.5">
-                        {d.scheduled.map((item, i) => (
-                          <div
-                            key={i}
-                            className="rounded-lg border border-emerald-500/30 bg-emerald-950/25 px-2 py-1.5 text-[11px] text-white"
-                          >
-                            <div className="flex items-center justify-between text-[10px] font-semibold text-cyan-300">
-                              <span>
-                                ⏰ {item.timeRange}
-                              </span>
-                              <span className="text-emerald-300">
-                                {item.minutes}m
-                              </span>
-                            </div>
-                            <p className="mt-0.5 font-semibold leading-tight">
-                              {item.label}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Línea de tiempo resumida del día */}
-                      <div className="mt-2 space-y-1 border-t border-slate-800/70 pt-1.5">
-                        {d.timeline
-                          .filter((slot) => slot.kind !== "skill")
-                          .map((slot, sIdx) => (
-                            <div
-                              key={sIdx}
-                              className="flex items-center justify-between text-[9px] text-slate-400"
-                            >
-                              <span className="truncate pr-1">{slot.title}</span>
-                              <span className="shrink-0 font-mono text-slate-500">
-                                {slot.timeRange ? slot.timeRange.split(" – ")[0] : ""}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-2 border-t border-slate-800/80 pt-1.5 text-right text-[10px] font-bold text-amber-300">
-                      +{d.gpUnlocked.toLocaleString("es-CO")} GP
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 3. RESUMEN MENSUAL Y SEMANAL POR HABILIDAD (AUTO-CALCULADO) */}
-            <div className="space-y-2.5">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                3. Habilidades Activas en el Mes (Metas Semanales y Mensuales
-                Auto-Calculadas por el Calendario)
-              </p>
-              {SKILL_CATALOG.map((item) => {
-                const selected = skills.find((s) => s.domain === item.domain);
-                const weeklyMins = selected?.weekly_target_minutes || 0;
-                const monthlyMins = weeklyMins * 4;
-                return (
-                  <div
-                    key={item.domain}
-                    className={`rounded-xl border p-3.5 transition ${
-                      selected
-                        ? "border-emerald-500/60 bg-emerald-950/20"
-                        : "border-slate-800 bg-slate-950/50 opacity-70"
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleSkill(item.domain)}
-                        className="flex items-center gap-3 text-left"
-                      >
-                        <CheckCircle2
-                          className={`h-5 w-5 ${
-                            selected ? "text-emerald-400" : "text-slate-600"
-                          }`}
-                        />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-bold text-white">
-                              {item.label}
-                            </p>
-                            {item.domain === "work" && (
-                              <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
-                                🔒 Motor Inamovible
-                              </span>
-                            )}
-                            {item.tag && (
-                              <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
-                                {item.tag}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-400">{item.desc}</p>
-                        </div>
-                      </button>
-
-                      {selected && (
-                        <div className="flex flex-wrap items-center gap-3">
-                          <div className="rounded-lg border border-slate-800 bg-slate-900/90 px-3 py-1 text-right">
-                            <span className="block text-[10px] text-slate-400">
-                              Proyección Mensual (4 sem)
-                            </span>
-                            <span className="text-xs font-bold text-emerald-300">
-                              {monthlyMins} min/mes (
-                              {(monthlyMins / 60).toFixed(1)} h)
-                            </span>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] text-slate-400">
-                              Semanal (min)
-                            </label>
-                            <input
-                              type="number"
-                              min={15}
-                              step={15}
-                              value={selected.weekly_target_minutes}
-                              onChange={(e) =>
-                                updateSkillConfig(item.domain, {
-                                  weekly_target_minutes: Math.max(
-                                    15,
-                                    Number(e.target.value)
-                                  ),
-                                })
-                              }
-                              className="w-20 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-white"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] text-slate-400">
-                              Turno asignado
-                            </label>
-                            <select
-                              value={selected.preferred_session_time || "noche"}
-                              onChange={(e) =>
-                                updateSkillConfig(item.domain, {
-                                  preferred_session_time: e.target
-                                    .value as PreferredSessionTime,
-                                })
-                              }
-                              className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-white"
-                            >
-                              <option value="manana">Mañana</option>
-                              <option value="tarde">Tarde</option>
-                              <option value="noche">Noche</option>
-                            </select>
-                          </div>
+                      <p className="text-[11px] text-[#5C4033]">{area.description}</p>
+                      {enabled && (
+                        <div className="flex items-center justify-between text-[11px] font-bold">
+                          <span>Meta semanal sugerida:</span>
+                          <input
+                            type="number"
+                            min={15}
+                            max={1500}
+                            step={15}
+                            value={mins}
+                            onChange={(e) =>
+                              updateDraft({
+                                areaWeeklyMinutes: {
+                                  ...draft.areaWeeklyMinutes,
+                                  [area.id]: Math.max(15, Number(e.target.value) || 15),
+                                },
+                              })
+                            }
+                            aria-label={`Minutos semanales para ${area.label}`}
+                            className="w-20 rounded-xl border border-[#3A2E2B] bg-[#FFFDF8] px-2 py-1 text-right font-mono"
+                          />
                         </div>
                       )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* SECCIÓN ABIERTA PARA EXPRESAR UNA HABILIDAD PERSONALIZADA */}
-            <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/15 p-4">
-              <div className="flex items-center gap-2 text-cyan-300">
-                <Lightbulb className="h-4 w-4" />
-                <span className="text-xs font-bold uppercase tracking-wider">
-                  Sección Abierta · ¿Qué otra habilidad o hábito entrenas?
-                </span>
+                  );
+                })}
               </div>
-              <p className="mt-1 text-xs text-slate-400">
-                Exprésala aquí: se activará hoy como misión personalizada en tu
-                tablero y quedará registrada en nuestra base de datos para crear
-                módulos dedicados en las próximas versiones.
+            </section>
+          )}
+
+          {/* PASO 4: FINANZAS PERSONALES REALES (0 DATOS PRECARGADOS) */}
+          {draft.step === 4 && (
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Wallet className="h-5 w-5 text-[#314C3C]" />
+                <h2 className="text-base font-black">4. Economía y Finanzas Privadas (COP vs GP)</h2>
+              </div>
+              <p className="text-xs text-[#795548]">
+                Este espacio inicia completamente vacío. Introduce únicamente tus cifras reales (o déjalo vacío y complétalo luego). Saldos iniciales y reembolsos nunca se suman como ingreso recurrente.
               </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-12">
-                <div className="sm:col-span-4">
-                  <label className="text-[11px] text-slate-300">
-                    Nombre de tu Habilidad
-                  </label>
-                  <input
-                    type="text"
-                    value={customSkillName}
-                    onChange={(e) => setCustomSkillName(e.target.value)}
-                    placeholder="Ej. Tocar Piano, Ajedrez, Idiomas..."
-                    className="mt-0.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div className="sm:col-span-6">
-                  <label className="text-[11px] text-slate-300">
-                    ¿Cómo mides tu avance en cada sesión?
-                  </label>
-                  <input
-                    type="text"
-                    value={customSkillIdea}
-                    onChange={(e) => setCustomSkillIdea(e.target.value)}
-                    placeholder="Ej. Partituras practicadas, partidas analizadas, lecciones..."
-                    className="mt-0.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="text-[11px] text-slate-300">
-                    Min / semana
-                  </label>
-                  <input
-                    type="number"
-                    min={15}
-                    value={customSkillMinutes}
-                    onChange={(e) =>
-                      setCustomSkillMinutes(Math.max(15, Number(e.target.value)))
+
+              {/* Ingresos múltiples/variables */}
+              <div className="space-y-2 rounded-2xl border-2 border-[#3A2E2B]/25 bg-[#F7F4EB] p-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black">Ingresos mensuales (múltiples fechas o variables)</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateDraft({
+                        incomeSources: [
+                          ...draft.incomeSources,
+                          {
+                            id: makeId("inc"),
+                            label: "",
+                            amountCop: 0,
+                            payDay: 15,
+                            isVariable: false,
+                            kind: "recurring_income",
+                          },
+                        ],
+                      })
                     }
-                    className="mt-0.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* PASO 5: AGENTE IA PLANIFICADOR DE MISIONES Y TIENDA DE RECOMPENSAS */}
-        {step === 5 && (
-          <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-amber-400">
-                <Target className="h-5 w-5" />
-                <h2 className="text-lg font-bold text-white">
-                  Paso 5 · Planificador IA de Misiones y Tienda de Recompensas
-                </h2>
-              </div>
-              <button
-                type="button"
-                disabled={planningStep5}
-                onClick={() => runStep5Planner(false)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500/20 px-3.5 py-2 text-xs font-bold text-amber-200 ring-1 ring-amber-500/40 hover:bg-amber-500/30 disabled:opacity-50"
-              >
-                <Bot className="h-4 w-4" />
-                {planningStep5
-                  ? "Calibrando misiones y tienda..."
-                  : "✨ Regenerar Plan con IA según mis Habilidades y Gastos"}
-              </button>
-            </div>
-
-            {aiStrategyNote && (
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 text-xs text-emerald-200">
-                🤖 <strong>Estrategia del Game Master:</strong> {aiStrategyNote}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-slate-300">
-                  Misión Principal (aparecerá en el banner superior)
-                </label>
-                <input
-                  type="text"
-                  value={mainGoal}
-                  onChange={(e) => setMainGoal(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-sm text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300">
-                  Fecha Meta
-                </label>
-                <input
-                  type="date"
-                  value={goalDeadline}
-                  onChange={(e) => setGoalDeadline(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-sm text-white"
-                />
-              </div>
-            </div>
-
-            {/* MISIONES DIARIAS INICIALES (QUESTS) */}
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
-                  Misiones Iniciales Sugeridas para tus Habilidades (desbloquean
-                  GP de tu Bóveda)
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setQuests([
-                      ...quests,
-                      {
-                        code: `QUEST_CUSTOM_${quests.length + 1}`,
-                        title: "Nueva Misión Diaria",
-                        domain: skills[0]?.domain || "general",
-                        difficulty: "medium",
-                        reward_gp: Math.max(100, Math.round(vaultCap / 25)),
-                        reward_xp: 90,
-                      },
-                    ])
-                  }
-                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-300"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Añadir misión
-                </button>
-              </div>
-              <div className="space-y-2">
-                {quests.map((q, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-1 gap-2 sm:grid-cols-12 sm:items-center"
+                    className="inline-flex items-center gap-1 rounded-xl border-2 border-[#3A2E2B] bg-[#E7D69C] px-2.5 py-1 text-[11px] font-black cursor-pointer"
                   >
+                    <Plus className="h-3 w-3" /> Añadir ingreso
+                  </button>
+                </div>
+                {draft.incomeSources.length === 0 && (
+                  <p className="text-[11px] italic text-[#795548]">
+                    Sin ingresos registrados aún (ejemplo ilustrativo: &quot;Quincena 1 — día 15&quot;).
+                  </p>
+                )}
+                {draft.incomeSources.map((src) => (
+                  <div key={src.id} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
                     <input
                       type="text"
-                      value={q.title}
-                      onChange={(e) => {
-                        const next = [...quests];
-                        next[idx] = { ...q, title: e.target.value };
-                        setQuests(next);
-                      }}
-                      className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white sm:col-span-7"
-                    />
-                    <select
-                      value={q.difficulty}
-                      onChange={(e) => {
-                        const next = [...quests];
-                        next[idx] = {
-                          ...q,
-                          difficulty: e.target.value as
-                            | "easy"
-                            | "medium"
-                            | "hard",
-                        };
-                        setQuests(next);
-                      }}
-                      className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300 sm:col-span-2"
-                    >
-                      <option value="easy">Fácil</option>
-                      <option value="medium">Media</option>
-                      <option value="hard">Difícil</option>
-                    </select>
-                    <div className="flex items-center gap-1 sm:col-span-2">
-                      <input
-                        type="number"
-                        min={1}
-                        value={q.reward_gp}
-                        onChange={(e) => {
-                          const next = [...quests];
-                          next[idx] = {
-                            ...q,
-                            reward_gp: Math.max(1, Number(e.target.value)),
-                          };
-                          setQuests(next);
-                        }}
-                        className="w-full rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-xs text-emerald-300"
-                      />
-                      <span className="text-[10px] text-slate-400">GP</span>
-                    </div>
-                    <div className="flex justify-end sm:col-span-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setQuests(quests.filter((_, i) => i !== idx))
-                        }
-                        className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* TIENDA DE RECOMPENSAS (WISHLIST) */}
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                  Tienda de Recompensas Inicial (calibrada a tu Bóveda de{" "}
-                  {fmt(vaultCap)})
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setWishlist([
-                      ...wishlist,
-                      {
-                        name: "",
-                        cost_gp: Math.max(50, Math.round(vaultCap * 0.15)),
-                        priority: wishlist.length + 1,
-                      },
-                    ])
-                  }
-                  className="inline-flex items-center gap-1 rounded-lg bg-amber-500/20 px-2.5 py-1 text-xs font-semibold text-amber-300"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Añadir recompensa
-                </button>
-              </div>
-              <div className="space-y-2">
-                {wishlist.map((w, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="rounded bg-slate-800 px-2 py-1 text-[10px] font-bold text-amber-300">
-                      P{w.priority}
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="Nombre del gusto o recompensa"
-                      value={w.name}
-                      onChange={(e) => {
-                        const next = [...wishlist];
-                        next[idx] = { ...w, name: e.target.value };
-                        setWishlist(next);
-                      }}
-                      className="flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
+                      placeholder="Ej. Nómina quincena 1"
+                      value={src.label}
+                      onChange={(e) =>
+                        updateDraft({
+                          incomeSources: draft.incomeSources.map((x) =>
+                            x.id === src.id ? { ...x, label: e.target.value } : x
+                          ),
+                        })
+                      }
+                      className="rounded-xl border border-[#3A2E2B] bg-[#FFFDF8] px-2.5 py-1.5 text-xs font-bold"
                     />
                     <input
                       type="number"
-                      min={1}
-                      value={w.cost_gp}
-                      onChange={(e) => {
-                        const next = [...wishlist];
-                        next[idx] = {
-                          ...w,
-                          cost_gp: Math.max(1, Number(e.target.value)),
-                        };
-                        setWishlist(next);
-                      }}
-                      className="w-36 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
+                      min={0}
+                      placeholder="Monto COP"
+                      value={src.amountCop || ""}
+                      onChange={(e) =>
+                        updateDraft({
+                          incomeSources: draft.incomeSources.map((x) =>
+                            x.id === src.id ? { ...x, amountCop: Math.max(0, Number(e.target.value) || 0) } : x
+                          ),
+                        })
+                      }
+                      className="rounded-xl border border-[#3A2E2B] bg-[#FFFDF8] px-2.5 py-1.5 text-xs font-mono font-bold"
                     />
+                    <select
+                      value={src.kind}
+                      onChange={(e) =>
+                        updateDraft({
+                          incomeSources: draft.incomeSources.map((x) =>
+                            x.id === src.id
+                              ? { ...x, kind: e.target.value as typeof src.kind }
+                              : x
+                          ),
+                        })
+                      }
+                      className="rounded-xl border border-[#3A2E2B] bg-[#FFFDF8] px-2 py-1.5 text-xs font-bold"
+                    >
+                      <option value="recurring_income">Ingreso recurrente</option>
+                      <option value="initial_balance">Saldo inicial (excluido)</option>
+                      <option value="refund">Reembolso (excluido)</option>
+                    </select>
                     <button
                       type="button"
                       onClick={() =>
-                        setWishlist(wishlist.filter((_, i) => i !== idx))
+                        updateDraft({
+                          incomeSources: draft.incomeSources.filter((x) => x.id !== src.id),
+                        })
                       }
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"
+                      aria-label="Eliminar ingreso"
+                      className="inline-flex items-center justify-center rounded-xl border border-rose-700 bg-rose-50 px-2 py-1.5 text-xs font-bold text-rose-800 cursor-pointer"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 ))}
               </div>
-            </div>
 
-            {/* AUTORIZACIÓN OBLIGATORIA DE HABEAS DATA & MEJORAS FUTURAS */}
-            <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/20 p-4 space-y-2 mt-4">
-              <label className="flex items-start gap-3 cursor-pointer select-none">
+              {/* Costos fijos */}
+              <div className="space-y-2 rounded-2xl border-2 border-[#3A2E2B]/25 bg-[#F7F4EB] p-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black">Gastos fijos mensuales</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateDraft({
+                        fixedCosts: [
+                          ...draft.fixedCosts,
+                          { id: makeId("fc"), name: "", amountCop: 0, category: "hogar" },
+                        ],
+                      })
+                    }
+                    className="inline-flex items-center gap-1 rounded-xl border-2 border-[#3A2E2B] bg-[#E7D69C] px-2.5 py-1 text-[11px] font-black cursor-pointer"
+                  >
+                    <Plus className="h-3 w-3" /> Añadir gasto fijo
+                  </button>
+                </div>
+                {draft.fixedCosts.map((fc) => (
+                  <div key={fc.id} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <input
+                      type="text"
+                      placeholder="Ej. Servicios o arriendo"
+                      value={fc.name}
+                      onChange={(e) =>
+                        updateDraft({
+                          fixedCosts: draft.fixedCosts.map((x) =>
+                            x.id === fc.id ? { ...x, name: e.target.value } : x
+                          ),
+                        })
+                      }
+                      className="rounded-xl border border-[#3A2E2B] bg-[#FFFDF8] px-2.5 py-1.5 text-xs font-bold"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Monto COP"
+                      value={fc.amountCop || ""}
+                      onChange={(e) =>
+                        updateDraft({
+                          fixedCosts: draft.fixedCosts.map((x) =>
+                            x.id === fc.id ? { ...x, amountCop: Math.max(0, Number(e.target.value) || 0) } : x
+                          ),
+                        })
+                      }
+                      className="rounded-xl border border-[#3A2E2B] bg-[#FFFDF8] px-2.5 py-1.5 text-xs font-mono font-bold"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateDraft({ fixedCosts: draft.fixedCosts.filter((x) => x.id !== fc.id) })
+                      }
+                      className="rounded-xl border border-rose-700 bg-rose-50 px-2 py-1.5 text-xs font-bold text-rose-800 cursor-pointer"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Presupuesto variable, ahorro y tope de recompensas GP */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label htmlFor="ob-var" className="block text-xs font-black mb-1">
+                    Variables (COP)
+                  </label>
+                  <input
+                    id="ob-var"
+                    type="number"
+                    min={0}
+                    value={draft.variableBudgetCop || ""}
+                    onChange={(e) => updateDraft({ variableBudgetCop: Math.max(0, Number(e.target.value) || 0) })}
+                    className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-2.5 py-1.5 text-xs font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="ob-sav" className="block text-xs font-black mb-1">
+                    Meta ahorro (COP)
+                  </label>
+                  <input
+                    id="ob-sav"
+                    type="number"
+                    min={0}
+                    value={draft.monthlySavingsGoalCop || ""}
+                    onChange={(e) => updateDraft({ monthlySavingsGoalCop: Math.max(0, Number(e.target.value) || 0) })}
+                    className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-2.5 py-1.5 text-xs font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="ob-vault" className="block text-xs font-black mb-1">
+                    Tope recompensas GP
+                  </label>
+                  <input
+                    id="ob-vault"
+                    type="number"
+                    min={0}
+                    value={draft.vaultCapGp || ""}
+                    onChange={(e) => updateDraft({ vaultCapGp: Math.max(0, Number(e.target.value) || 0) })}
+                    className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-2.5 py-1.5 text-xs font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="ob-strat" className="block text-xs font-black mb-1">
+                    Estrategia deudas
+                  </label>
+                  <select
+                    id="ob-strat"
+                    value={draft.debtStrategy}
+                    onChange={(e) => updateDraft({ debtStrategy: e.target.value as DebtStrategy })}
+                    className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-2.5 py-1.5 text-xs font-bold"
+                  >
+                    <option value="snowball">Bola de nieve</option>
+                    <option value="avalanche">Avalancha</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Resumen COP vs GP */}
+              <div className="rounded-2xl border-2 border-[#314C3C] bg-[#EAF3ED] p-3.5 text-xs space-y-1.5">
+                <div className="font-black text-[#314C3C]">
+                  📊 Panorama Real (Dinero COP separado de Puntos GP)
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-bold">
+                  <div>Ingreso recurrente: ${financeSummary.totalRecurringIncomeCop.toLocaleString("es-CO")} COP</div>
+                  <div>Comprometido: ${financeSummary.committedCop.toLocaleString("es-CO")} COP</div>
+                  <div>Disponible real: ${financeSummary.availableRealMoneyCop.toLocaleString("es-CO")} COP</div>
+                  <div>Tope GP permitido: {financeSummary.allowedGpRewardsCap.toLocaleString("es-CO")} GP</div>
+                </div>
+                {financeSummary.preventiveAlerts.map((a, i) => (
+                  <p key={i} className="text-[11px] font-bold text-amber-900">
+                    ⚠️ {a}
+                  </p>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* PASO 5: OBJETIVOS Y MISIONES */}
+          {draft.step === 5 && (
+            <section className="space-y-4">
+              <h2 className="text-base font-black">5. Objetivos, Wishlist y Asistente Rowan</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="ob-goal" className="block text-xs font-black mb-1">
+                    Objetivo principal actual
+                  </label>
+                  <input
+                    id="ob-goal"
+                    type="text"
+                    placeholder="Ej. Mantener equilibrio semanal y avanzar en proyectos clave"
+                    value={draft.mainGoal}
+                    onChange={(e) => updateDraft({ mainGoal: e.target.value })}
+                    className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-3 py-2 text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="ob-deadline" className="block text-xs font-black mb-1">
+                    Horizonte / fecha objetivo
+                  </label>
+                  <input
+                    id="ob-deadline"
+                    type="date"
+                    value={draft.goalDeadline}
+                    onChange={(e) => updateDraft({ goalDeadline: e.target.value })}
+                    className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] px-3 py-2 text-xs font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border-2 border-[#3A2E2B]/30 bg-[#FFF8E1] p-3.5 text-xs space-y-1">
+                <div className="font-black text-[#314C3C]">
+                  🦉 Vista previa de Rowan como Asistente de Decisiones (0 llamadas a Gemini)
+                </div>
+                <p><strong>Acción propuesta:</strong> {rowanPreview.proposedAction}</p>
+                <p><strong>Motivo:</strong> {rowanPreview.reason}</p>
+                <p><strong>Tiempo estimado:</strong> {rowanPreview.estimatedMinutes} min · <strong>Alternativa:</strong> {rowanPreview.alternative}</p>
+              </div>
+            </section>
+          )}
+
+          {/* PASO 6: REVISIÓN FINAL Y PRIVACIDAD */}
+          {draft.step === 6 && (
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-[#314C3C]" />
+                <h2 className="text-base font-black">6. Revisión Final y Confirmación Explícita</h2>
+              </div>
+
+              <div className="rounded-2xl border-2 border-[#3A2E2B]/30 bg-[#F7F4EB] p-4 text-xs space-y-1.5">
+                <p><strong>Aventurero:</strong> {characterSheet.identity.adventurerName} ({characterSheet.identity.characterClass})</p>
+                <p><strong>Áreas activas ({characterSheet.areas.length}):</strong> {characterSheet.areas.map((a) => a.label).join(", ")}</p>
+                <p><strong>Rutina ({draft.timezone}):</strong> {draft.wakeTime}–{draft.sleepTime} · Trabajo {draft.workStart}–{draft.workEnd}</p>
+                <p><strong>Ingreso recurrente declarado:</strong> ${financeSummary.totalRecurringIncomeCop.toLocaleString("es-CO")} COP</p>
+              </div>
+
+              <label className="flex items-start gap-2.5 rounded-2xl border-2 border-[#3A2E2B]/30 bg-[#FFFDF8] p-3 text-xs cursor-pointer">
                 <input
                   type="checkbox"
-                  required
-                  checked={acceptedDataPrivacy}
-                  onChange={(e) => setAcceptedDataPrivacy(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-950 text-emerald-600 focus:ring-emerald-500 shrink-0 cursor-pointer"
+                  checked={draft.dataPrivacyAccepted}
+                  onChange={(e) => updateDraft({ dataPrivacyAccepted: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 accent-[#314C3C]"
                 />
-                <span className="text-xs text-slate-200 leading-relaxed">
-                  Autorizo el tratamiento de mis datos personales, métricas de productividad, ritmos circadianos y estimaciones financieras conforme a la{" "}
-                  <a
-                    href="/privacidad"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-emerald-400 font-bold underline hover:text-emerald-300"
-                  >
-                    Política de Tratamiento de Datos Personales (Habeas Data)
-                  </a>
-                  , y acepto expresamente sus <strong>posibles cambios, actualizaciones y mejoras futuras</strong> en la plataforma.
+                <span>
+                  Acepto expresamente la{" "}
+                  <Link href="/privacidad" target="_blank" className="underline font-black text-[#314C3C]">
+                    Política de Tratamiento de Datos Personales
+                  </Link>{" "}
+                  y entiendo que mis datos financieros privados permanecen aislados y nunca son mutados automáticamente por la IA.
                 </span>
               </label>
-            </div>
-          </div>
-        )}
 
-        {/* NAVEGACIÓN INFERIOR */}
-        <div className="mt-6 flex items-center justify-between">
-          <button
-            type="button"
-            disabled={step === 1 || submitting}
-            onClick={() =>
-              setStep((s) => Math.max(1, s - 1) as 1 | 2 | 3 | 4 | 5)
-            }
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-40"
-          >
-            <ArrowLeft className="h-4 w-4" /> Anterior
-          </button>
+              {financeSummary.totalRecurringIncomeCop > 0 && (
+                <label className="flex items-start gap-2.5 rounded-2xl border-2 border-[#314C3C]/40 bg-[#EAF3ED] p-3 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draft.financialDataConfirmed}
+                    onChange={(e) => updateDraft({ financialDataConfirmed: e.target.checked })}
+                    className="mt-0.5 h-4 w-4 accent-[#314C3C]"
+                  />
+                  <span className="font-bold">
+                    Confirmo que las cifras financieras introducidas son mías y autorizo guardarlas en mi cuenta privada.
+                  </span>
+                </label>
+              )}
 
-          {step < 5 ? (
-            <button
-              type="button"
-              onClick={() =>
-                setStep((s) => Math.min(5, s + 1) as 1 | 2 | 3 | 4 | 5)
-              }
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-emerald-500"
-            >
-              Siguiente <ArrowRight className="h-4 w-4" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={submitting || (step === 5 && !acceptedDataPrivacy)}
-              onClick={finishOnboarding}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500 disabled:opacity-50 cursor-pointer"
-            >
-              <Sparkles className="h-4 w-4" />
-              {submitting
-                ? "Construyendo tu mundo RPG..."
-                : "Finalizar y Entrar al Dashboard"}
-            </button>
+              <button
+                type="button"
+                disabled={submitting || !draft.dataPrivacyAccepted}
+                onClick={handlePersistOnboarding}
+                className="w-full rounded-2xl border-3 border-[#3A2E2B] bg-[#314C3C] py-3 text-xs font-black text-[#FFFDF8] shadow-[0_4px_0_#1A2B20] hover:bg-[#273E30] disabled:opacity-40 cursor-pointer"
+              >
+                {submitting ? "Guardando de forma segura..." : "Confirmar y Guardar Configuración"}
+              </button>
+            </section>
           )}
-        </div>
+
+          {/* PASO 7: ENTRADA AL PUEBLO */}
+          {draft.step === 7 && (
+            <section className="space-y-4 text-center py-4">
+              <CheckCircle2 className="mx-auto h-12 w-12 text-[#314C3C]" />
+              <h2 className="text-lg font-black">¡Tu Santuario en OakHaven está listo!</h2>
+              <p className="text-xs text-[#5C4033] max-w-md mx-auto">
+                {submitResult?.preservedProgress
+                  ? "Configuración actualizada en modo edición: todo tu progreso anterior (GP, XP, nivel y rachas) fue preservado."
+                  : "Tu perfil personal y tus áreas quedaron guardados de forma segura."}
+              </p>
+              {submitResult && submitResult.partialErrors.length > 0 && (
+                <div className="rounded-2xl border-2 border-amber-700 bg-amber-50 p-3 text-left text-xs text-amber-950">
+                  <strong>Avisos parciales:</strong>
+                  <ul className="list-disc pl-5 mt-1">
+                    {submitResult.partialErrors.map((pe, idx) => (
+                      <li key={idx}>{pe.section}: {pe.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Link
+                href="/cozy"
+                className="inline-flex items-center gap-2 rounded-2xl border-3 border-[#3A2E2B] bg-[#FDDA24] px-6 py-3 text-xs font-black text-[#3A2E2B] shadow-[0_4px_0_#3A2E2B] hover:bg-[#FDE24F]"
+              >
+                <Compass className="h-4 w-4" />
+                Entrar al Pueblo Vivo ➜
+              </Link>
+            </section>
+          )}
+
+          {/* Controles de navegación Inferior */}
+          {draft.step < 7 && (
+            <div className="flex items-center justify-between pt-4 border-t-2 border-[#3A2E2B]/15">
+              <button
+                type="button"
+                disabled={draft.step === 1}
+                onClick={() => updateDraft({ step: Math.max(1, draft.step - 1) as PersonalOnboardingDraft["step"] })}
+                className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-4 py-2 text-xs font-black disabled:opacity-40 cursor-pointer"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> Anterior
+              </button>
+
+              {draft.step < 6 && (
+                <button
+                  type="button"
+                  onClick={() => updateDraft({ step: Math.min(6, draft.step + 1) as PersonalOnboardingDraft["step"] })}
+                  className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#314C3C] px-4 py-2 text-xs font-black text-[#FFFDF8] cursor-pointer"
+                >
+                  Siguiente <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );
