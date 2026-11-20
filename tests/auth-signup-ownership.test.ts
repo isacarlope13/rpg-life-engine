@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   createAuthLoginHandler,
   createInMemoryAuthRateLimiter,
@@ -62,6 +63,10 @@ function provider(options: {
     buildAuthSetCookieHeaders() {
       calls.push("cookies");
       return ["synthetic_session=test; HttpOnly; Path=/"];
+    },
+    async updatePasswordWithRecoveryToken({ accessToken }) {
+      calls.push("updatePasswordWithRecoveryToken");
+      return { ok: accessToken === "valid-recovery-token" };
     },
     rateLimiter: createInMemoryAuthRateLimiter({ maxAttempts: options.maxAttempts ?? 8 }),
   };
@@ -188,4 +193,55 @@ test("JSON malformado o tipos inválidos se rechazan sin contactar proveedor", a
     assert.equal(response.status, 400);
     assert.deepEqual(p.calls, []);
   }
+});
+
+test("RELEASE 3.3: cambio efectivo de contraseña tras recuperación exige token válido y contraseña robusta (sin service_role)", async () => {
+  const p = provider();
+
+  // Sin token -> 400
+  const missingToken = await p.handle(
+    new Request("https://app.example.invalid/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update_password", password: strongPassword }),
+    })
+  );
+  assert.equal(missingToken.status, 400);
+
+  // Contraseña débil -> 400
+  const weakPwd = await p.handle(
+    new Request("https://app.example.invalid/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "update_password",
+        recovery_access_token: "valid-recovery-token",
+        password: "202611",
+      }),
+    })
+  );
+  assert.equal(weakPwd.status, 400);
+
+  // Token válido + contraseña robusta -> 200 password_updated, sin service_role ni cookies automáticas
+  const okRes = await p.handle(
+    new Request("https://app.example.invalid/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "update_password",
+        recovery_access_token: "valid-recovery-token",
+        password: "NewSecurePassword2026",
+      }),
+    })
+  );
+  const okBody = await okRes.json();
+  assert.equal(okRes.status, 200);
+  assert.equal(okBody.password_updated, true);
+  assert.equal(okRes.headers.get("set-cookie"), null);
+  assert.deepEqual(p.calls, ["updatePasswordWithRecoveryToken"]);
+
+  // Verificar que /login limpia el hash de la URL y tiene pantalla dedicada de cambio de contraseña
+  const loginSrc = fs.readFileSync("src/app/login/page.tsx", "utf8");
+  assert.match(loginSrc, /window\.history\.replaceState\(null, "", "\/login\?mode=reset"\)/);
+  assert.match(loginSrc, /Guardar Nueva Contraseña/);
 });

@@ -4,13 +4,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { KeyRound, ShieldCheck, Lock, ArrowLeft, Eye, EyeOff, Mail } from "lucide-react";
 
-type AuthMode = "login" | "signup" | "recover";
+type AuthMode = "login" | "signup" | "recover" | "reset";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [recoveryToken, setRecoveryToken] = useState<string>("");
   const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [acceptDataPolicy, setAcceptDataPolicy] = useState(false);
@@ -21,8 +22,20 @@ export default function LoginPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const hashToken = hashParams.get("access_token");
+      const hashType = hashParams.get("type");
       const m = params.get("mode");
-      if (m === "signup" || m === "recover" || m === "login") {
+
+      if (hashToken && (hashType === "recovery" || m === "reset")) {
+        // Guardar el token únicamente en memoria del componente y limpiar el hash de la URL
+        setRecoveryToken(hashToken);
+        setMode("reset");
+        window.history.replaceState(null, "", "/login?mode=reset");
+        return;
+      }
+
+      if (m === "signup" || m === "recover" || m === "login" || m === "reset") {
         setMode(m);
       }
     }
@@ -49,6 +62,23 @@ export default function LoginPage() {
     setError(null);
     setInfo(null);
 
+    if (mode === "reset") {
+      if (!recoveryToken) {
+        setError("El enlace de recuperación no es válido o expiró. Solicita uno nuevo.");
+        return;
+      }
+      if (!isStrongSignupPassword) {
+        setError(
+          "Usa una nueva contraseña segura de al menos 10 caracteres que combine letras y números."
+        );
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("Las contraseñas no coinciden.");
+        return;
+      }
+    }
+
     if (mode === "signup") {
       if (!isStrongSignupPassword) {
         setError(
@@ -73,30 +103,40 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          password: mode === "recover" ? undefined : password,
-          action: mode,
-          display_name: mode === "signup" && displayName.trim() ? displayName.trim() : undefined,
-          data_privacy_accepted: mode === "signup" ? acceptDataPolicy : undefined,
-        }),
+        body: JSON.stringify(
+          mode === "reset"
+            ? {
+                action: "update_password",
+                recovery_access_token: recoveryToken,
+                password,
+              }
+            : {
+                email: email.trim(),
+                password: mode === "recover" ? undefined : password,
+                action: mode,
+                display_name: mode === "signup" && displayName.trim() ? displayName.trim() : undefined,
+                data_privacy_accepted: mode === "signup" ? acceptDataPolicy : undefined,
+              }
+        ),
       });
       const json = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
         needs_confirmation?: boolean;
         recovery_sent?: boolean;
+        password_updated?: boolean;
         message?: string;
       };
       if (!res.ok || json.error) {
         setError(json.error || `Error ${res.status}`);
         return;
       }
-      if (json.recovery_sent || json.needs_confirmation) {
+      if (json.password_updated || json.recovery_sent || json.needs_confirmation) {
         setInfo(
           json.message ||
             "Revisa tu correo electrónico para confirmar tu cuenta o completar la recuperación."
         );
+        setRecoveryToken("");
         setPassword("");
         setConfirmPassword("");
         setMode("login");
@@ -135,9 +175,17 @@ export default function LoginPage() {
               ? "Inicia sesión con tu correo verificado y contraseña."
               : mode === "signup"
               ? "Crea tu cuenta personal con contraseña robusta y verificación real de correo."
+              : mode === "reset"
+              ? "Establece una nueva contraseña robusta para completar tu recuperación de acceso."
               : "Te enviaremos un enlace seguro si existe una cuenta asociada a tu correo."}
           </p>
         </div>
+
+        {mode === "reset" && !recoveryToken && (
+          <p role="alert" className="rounded-2xl border-2 border-amber-700 bg-amber-50 p-3 text-xs font-bold text-amber-950">
+            Abre esta pantalla directamente desde el enlace recibido en tu correo de recuperación, o solicita un nuevo enlace.
+          </p>
+        )}
 
         {mode === "signup" && (
           <div>
@@ -156,41 +204,43 @@ export default function LoginPage() {
           </div>
         )}
 
-        <div>
-          <label htmlFor="auth-email" className="block text-xs font-black text-[#3A2E2B] mb-1">
-            Correo Electrónico
-          </label>
-          <div className="relative">
-            <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#795548]" />
-            <input
-              id="auth-email"
-              type="email"
-              autoComplete="email"
-              required
-              placeholder="tu-correo@ejemplo.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] pl-9 pr-3.5 py-2.5 text-xs font-bold text-[#3A2E2B] placeholder-[#795548]/60 outline-none focus:bg-[#FFFDF8] focus:ring-2 focus:ring-[#314C3C]"
-            />
+        {mode !== "reset" && (
+          <div>
+            <label htmlFor="auth-email" className="block text-xs font-black text-[#3A2E2B] mb-1">
+              Correo Electrónico
+            </label>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#795548]" />
+              <input
+                id="auth-email"
+                type="email"
+                autoComplete="email"
+                required
+                placeholder="tu-correo@ejemplo.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-2xl border-2 border-[#3A2E2B] bg-[#F7F4EB] pl-9 pr-3.5 py-2.5 text-xs font-bold text-[#3A2E2B] placeholder-[#795548]/60 outline-none focus:bg-[#FFFDF8] focus:ring-2 focus:ring-[#314C3C]"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {mode !== "recover" && (
           <div>
             <label htmlFor="auth-password" className="block text-xs font-black text-[#3A2E2B] mb-1">
-              Contraseña {mode === "signup" ? "(mínimo 10 caracteres)" : ""}
+              {mode === "reset" ? "Nueva Contraseña (mínimo 10 caracteres)" : `Contraseña ${mode === "signup" ? "(mínimo 10 caracteres)" : ""}`}
             </label>
             <div className="relative">
               <Lock className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#795548]" />
               <input
                 id="auth-password"
                 type={showPassword ? "text" : "password"}
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                autoComplete={mode === "signup" || mode === "reset" ? "new-password" : "current-password"}
                 required
-                minLength={mode === "signup" ? 10 : 4}
+                minLength={mode === "signup" || mode === "reset" ? 10 : 4}
                 maxLength={128}
                 placeholder={
-                  mode === "signup"
+                  mode === "signup" || mode === "reset"
                     ? "Combina letras y números (10+ caracteres)"
                     : "Ingresa tu contraseña"
                 }
@@ -208,7 +258,7 @@ export default function LoginPage() {
               </button>
             </div>
 
-            {mode === "signup" && (
+            {(mode === "signup" || mode === "reset") && (
               <div className="mt-2 grid grid-cols-2 gap-1.5 text-[11px] font-bold">
                 <span className={passwordChecks.length ? "text-[#314C3C]" : "text-[#795548]"}>
                   {passwordChecks.length ? "✓" : "○"} 10+ caracteres
@@ -227,7 +277,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        {mode === "signup" && (
+        {(mode === "signup" || mode === "reset") && (
           <div>
             <label htmlFor="auth-confirm-password" className="block text-xs font-black text-[#3A2E2B] mb-1">
               Confirmar Contraseña
@@ -283,7 +333,11 @@ export default function LoginPage() {
 
         <button
           type="submit"
-          disabled={submitting || (mode === "signup" && !acceptDataPolicy)}
+          disabled={
+            submitting ||
+            (mode === "signup" && !acceptDataPolicy) ||
+            (mode === "reset" && !recoveryToken)
+          }
           className="w-full rounded-2xl border-3 border-[#3A2E2B] bg-[#314C3C] py-3 text-xs font-black text-[#FFFDF8] shadow-[0_4px_0_#1A2B20] hover:bg-[#273E30] disabled:opacity-40 transition cursor-pointer"
         >
           {submitting
@@ -292,6 +346,8 @@ export default function LoginPage() {
             ? "Iniciar Sesión"
             : mode === "signup"
             ? "Crear Cuenta y Enviar Confirmación"
+            : mode === "reset"
+            ? "Guardar Nueva Contraseña"
             : "Enviar Enlace de Recuperación"}
         </button>
 

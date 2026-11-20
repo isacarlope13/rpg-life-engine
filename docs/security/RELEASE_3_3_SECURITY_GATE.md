@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-11-20  
 **Rama:** `feat/oakhaven-secure-personal-onboarding` (base `main` @ `c083a57`, Release 3.2)  
-**Clasificación Final:** **`BLOQUEADO — CORRECCIONES NECESARIAS`** *(específicamente: pendiente verificación humana de `Site URL`/`Redirect URLs` + envío real de correo SMTP en Supabase Dashboard y prueba E2E visual en navegador del flujo completo de registro/onboarding antes de crear la cuenta real `isacarlope`)*
+**Clasificación Final:** **`RELEASE 3.3 — BLOQUEADO POR CONFIGURACIÓN EXTERNA`** *(pendiente verificación humana de `Site URL`, `Redirect URLs`, SMTP personalizado / rate limits en Supabase Dashboard y prueba E2E real con correo desechable tras confirmar Supabase)*
 
 > **Transparencia QA:** Todos los defectos de código detectados en el gate (aislamiento de borradores financieros, RPC race-free y purga de datos históricos en `initial-financial-movements.ts`) fueron corregidos y probados en PostgreSQL real (PGlite). Se clasifica como `BLOQUEADO` únicamente porque las verificaciones de infraestructura de correo real (SMTP / `Site URL` / `Redirect URLs` / token de recuperación) y la prueba E2E de registro con correo real no pueden completarse ni simularse desde el entorno local sin intervención en Supabase Dashboard.
 
@@ -22,6 +22,11 @@
    - Eliminados nombres personales reales (`Juanma`, `Saris`, `Somos`) del fixture de modo demo/pruebas `src/lib/initial-financial-movements.ts` y de `src/lib/onboarding-ai.ts`.
    - Confirmado que `initial-financial-movements.ts` solo se importa en `demo-store.ts` (modo demo en memoria) y **nunca** inicializa cuentas reales en Supabase ni se incluye en `/onboarding` o `/login`.
 
+4. **Pantalla y endpoint de cambio efectivo de contraseña tras recuperación (`src/app/login/page.tsx`, `src/lib/auth-login.ts`, `src/app/api/auth/login/route.ts`):**
+   - `resetPasswordForEmail` redirige ahora a `/login?mode=reset`.
+   - `/login` extrae `#access_token=...&type=recovery` únicamente en memoria del componente, limpia el hash de la URL inmediatamente vía `window.history.replaceState`, exige nueva contraseña robusta (10+ caracteres letras+números) y llama a `action: "update_password"` (`PUT /auth/v1/user` con el token del usuario, sin `service_role`).
+   - *Nota explícita de seguridad:* `sessionStorage` para borradores financieros es únicamente aislamiento de vida útil por pestaña, **NO es cifrado**.
+
 ## 2. Resultados de Autenticación Real (GATE 1 — Supabase Auth)
 - **Verificado directamente vía `GET /auth/v1/settings` (solo lectura):**
   - `email: true`
@@ -35,7 +40,7 @@
 
 ## 3. Resultados de Pruebas y Build (GATE 6)
 - `npx tsc --noEmit`: **0 errores**.
-- `npm test`: **340 / 340 pruebas aprobadas** (`17` suites, incluye `tests/phase10-onboarding-pglite.test.ts` en PostgreSQL real).
+- `npm test`: **341 / 341 pruebas aprobadas** (`17` suites, incluye cambio efectivo de contraseña en recuperación y `tests/phase10-onboarding-pglite.test.ts` en PostgreSQL real).
 - `npm run build`: **APROBADO (exit code `0`, `35/35` rutas)**.
 - **E2E visual en navegador del flujo completo con correo real (GATE 5):** Pendiente de ejecutar tras validar SMTP/`Redirect URLs` en Supabase Dashboard y desplegar la rama.
 

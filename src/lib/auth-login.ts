@@ -114,6 +114,10 @@ export interface AuthLoginDependencies {
     refreshToken?: string;
     localSessionToken?: string;
   }) => string[];
+  updatePasswordWithRecoveryToken?: (params: {
+    accessToken: string;
+    newPassword: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
   rateLimiter?: AuthRateLimiter;
 }
 
@@ -130,6 +134,7 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
     isSupabaseConfigured, supabaseAdmin, supabaseAnon, allowDemoBootstrap = false,
     DEFAULT_DEMO_EMAIL, DEFAULT_DEMO_PASSWORD, DEFAULT_DEMO_PIN,
     authenticateLocalUser, registerLocalUser, buildAuthSetCookieHeaders,
+    updatePasswordWithRecoveryToken,
     rateLimiter = createInMemoryAuthRateLimiter(),
   } = deps;
 
@@ -138,13 +143,70 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
     const body = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const rawPassword = typeof body.password === "string" ? body.password : "";
+    const recoveryAccessToken =
+      typeof body.recovery_access_token === "string" ? body.recovery_access_token.trim() : "";
     const displayName = typeof body.display_name === "string" ? body.display_name.trim().slice(0, 60) : undefined;
     const action =
       body.action === "signup"
         ? "signup"
         : body.action === "recover"
         ? "recover"
+        : body.action === "update_password"
+        ? "update_password"
         : "login";
+
+    // Flujo de cambio efectivo de contraseña tras abrir enlace de recuperación (sin service_role)
+    if (action === "update_password") {
+      const bucketKey = getClientBucketKey(req, "recovery_reset");
+      const rateCheck = rateLimiter.check(bucketKey);
+      if (!rateCheck.allowed) {
+        return Response.json(
+          { error: "Demasiados intentos en poco tiempo. Espera unos minutos antes de volver a intentarlo." },
+          { status: 429, headers: { "Retry-After": String(rateCheck.retryAfterSeconds ?? 60) } }
+        );
+      }
+      if (!recoveryAccessToken) {
+        return Response.json(
+          { error: "El enlace de recuperación es inválido o expiró. Solicita uno nuevo." },
+          { status: 400 }
+        );
+      }
+      const pwdCheck = validateSignupPassword(rawPassword);
+      if (!pwdCheck.valid) {
+        return Response.json({ error: pwdCheck.error }, { status: 400 });
+      }
+      if (!isSupabaseConfigured || !updatePasswordWithRecoveryToken) {
+        return Response.json(
+          { error: "El servicio de recuperación de contraseña no está disponible en modo local." },
+          { status: 503 }
+        );
+      }
+      try {
+        const result = await updatePasswordWithRecoveryToken({
+          accessToken: recoveryAccessToken,
+          newPassword: rawPassword,
+        });
+        if (!result.ok) {
+          rateLimiter.recordFailure(bucketKey);
+          return Response.json(
+            { error: "No se pudo actualizar la contraseña. El enlace pudo haber caducado; solicita uno nuevo." },
+            { status: 401 }
+          );
+        }
+        rateLimiter.reset(bucketKey);
+        return Response.json({
+          ok: true,
+          password_updated: true,
+          message: "Contraseña actualizada correctamente. Ahora inicia sesión con tu nueva contraseña.",
+        });
+      } catch {
+        rateLimiter.recordFailure(bucketKey);
+        return Response.json(
+          { error: "No se pudo completar el cambio de contraseña. Solicita un nuevo enlace." },
+          { status: 401 }
+        );
+      }
+    }
 
     if (!email || !EMAIL_PATTERN.test(email)) {
       return Response.json({ error: "Ingresa un correo electrónico válido." }, { status: 400 });
@@ -169,7 +231,7 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
         if (isSupabaseConfigured && supabaseAnon && typeof supabaseAnon.auth.resetPasswordForEmail === "function") {
           const origin = req.headers.get("origin") || new URL(req.url).origin;
           await supabaseAnon.auth.resetPasswordForEmail(email, {
-            redirectTo: `${origin}/login?mode=login`,
+            redirectTo: `${origin}/login?mode=reset`,
           });
         }
       } catch {
