@@ -29,8 +29,8 @@ export default function LoginPage() {
       const hashType = hashParams.get("type");
       const m = params.get("mode");
 
-      if (hashToken && (hashType === "recovery" || m === "reset")) {
-        // Guardar el token únicamente en memoria del componente y limpiar el hash de la URL
+      if (hashToken && (hashType === "recovery" || hashType === "invite" || m === "reset")) {
+        // Guardar el token de invitación/recuperación únicamente en memoria y limpiar el hash de la URL
         setRecoveryToken(hashToken);
         setMode("reset");
         window.history.replaceState(null, "", "/login?mode=reset");
@@ -192,7 +192,7 @@ export default function LoginPage() {
               : mode === "signup"
               ? "Crea tu cuenta personal con contraseña robusta y verificación real de correo."
               : mode === "reset"
-              ? "Establece una nueva contraseña robusta para completar tu recuperación de acceso."
+              ? "Establece una contraseña robusta (10+ caracteres) para activar tu invitación o completar tu recuperación de acceso."
               : "Te enviaremos un enlace seguro si existe una cuenta asociada a tu correo."}
           </p>
         </div>

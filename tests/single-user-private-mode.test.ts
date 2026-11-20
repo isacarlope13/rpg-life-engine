@@ -155,10 +155,46 @@ describe("OAKHAVEN RELEASE 3.3 — PRIVATE SINGLE-USER MODE", () => {
   test("5. Defensa en profundidad: auth.ts aplica isAuthorizedSupabaseUserId en sesiones y API tokens, sin puertas traseras", () => {
     const authSrc = fs.readFileSync("src/lib/auth.ts", "utf8");
     const loginPageSrc = fs.readFileSync("src/app/login/page.tsx", "utf8");
+    const rootPageSrc = fs.readFileSync("src/app/page.tsx", "utf8");
     assert.match(authSrc, /isAuthorizedSupabaseUserId\(sbUser\.id\)/);
     assert.match(authSrc, /isAuthorizedSupabaseUserId\(String\(tokenRow\.user_id\)\)/);
     assert.match(authSrc, /isAuthorizedSupabaseUserId\(String\(resolvedUid\)\)/);
     assert.match(loginPageSrc, /Registro público cerrado/);
+    assert.match(loginPageSrc, /hashType === "invite"/);
+    assert.match(rootPageSrc, /type=invite/);
     assert.ok(!loginPageSrc.includes("player1@rpg-life-engine.local"));
+  });
+
+  test("6. FAIL-CLOSED: en producción sin OAKHAVEN_OWNER_USER_ID (o UUID inválido), bloquea login, APIs y registro público", async () => {
+    for (const badEnv of [
+      { NODE_ENV: "production" },
+      { NODE_ENV: "production", OAKHAVEN_OWNER_USER_ID: "" },
+      { NODE_ENV: "production", OAKHAVEN_OWNER_USER_ID: "not-a-valid-uuid" },
+      { OAKHAVEN_OWNER_USER_ID: "invalid-uuid-in-dev" },
+    ]) {
+      const cfg = getSingleUserAccessConfig(badEnv);
+      assert.equal(cfg.ownerConfigInvalid, true);
+      assert.equal(cfg.publicSignupEnabled, false);
+      assert.equal(isAuthorizedSupabaseUserId(OWNER_UUID, badEnv), false);
+      assert.equal(isPublicSignupAllowed(badEnv), false);
+
+      const { handle, calls } = makePrivateHandler(OWNER_UUID, badEnv);
+      const loginRes = await handle(
+        new Request("https://app.example.invalid/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "login",
+            email: "owner@example.invalid",
+            password: "OwnerStrongPassword2026",
+          }),
+        })
+      );
+      const loginBody = await loginRes.json();
+      assert.equal(loginRes.status, 503);
+      assert.equal(loginBody.code, "OWNER_NOT_CONFIGURED");
+      assert.equal(loginRes.headers.get("set-cookie"), null);
+      assert.deepEqual(calls, []);
+    }
   });
 });

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  getSingleUserAccessConfig,
   isAuthorizedSupabaseUserId,
   isPublicSignupAllowed,
   type SingleUserEnv,
@@ -122,7 +123,7 @@ export interface AuthLoginDependencies {
   updatePasswordWithRecoveryToken?: (params: {
     accessToken: string;
     newPassword: string;
-  }) => Promise<{ ok: boolean; error?: string }>;
+  }) => Promise<{ ok: boolean; status?: number; error?: string }>;
   singleUserEnv?: SingleUserEnv;
   rateLimiter?: AuthRateLimiter;
 }
@@ -162,7 +163,7 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
         ? "update_password"
         : "login";
 
-    // Flujo de cambio efectivo de contraseña tras abrir enlace de recuperación (sin service_role)
+    // Flujo de cambio efectivo de contraseña tras abrir enlace de invitación o recuperación (sin service_role)
     if (action === "update_password") {
       const bucketKey = getClientBucketKey(req, "recovery_reset");
       const rateCheck = rateLimiter.check(bucketKey);
@@ -172,9 +173,18 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
           { status: 429, headers: { "Retry-After": String(rateCheck.retryAfterSeconds ?? 60) } }
         );
       }
+      if (isSupabaseConfigured && getSingleUserAccessConfig(singleUserEnv).ownerConfigInvalid) {
+        return Response.json(
+          {
+            error: "Instancia privada pendiente de configuración de propietario autorizado.",
+            code: "OWNER_NOT_CONFIGURED",
+          },
+          { status: 503 }
+        );
+      }
       if (!recoveryAccessToken) {
         return Response.json(
-          { error: "El enlace de recuperación es inválido o expiró. Solicita uno nuevo." },
+          { error: "El enlace de invitación o recuperación es inválido o expiró. Solicita uno nuevo." },
           { status: 400 }
         );
       }
@@ -184,7 +194,7 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
       }
       if (!isSupabaseConfigured || !updatePasswordWithRecoveryToken) {
         return Response.json(
-          { error: "El servicio de recuperación de contraseña no está disponible en modo local." },
+          { error: "El servicio de actualización de contraseña no está disponible en modo local." },
           { status: 503 }
         );
       }
@@ -195,6 +205,15 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
         });
         if (!result.ok) {
           rateLimiter.recordFailure(bucketKey);
+          if (result.status === 403) {
+            return Response.json(
+              {
+                error: "Acceso denegado: este enlace no corresponde a la identidad propietaria autorizada.",
+                code: "OWNER_ONLY_ACCESS",
+              },
+              { status: 403 }
+            );
+          }
           return Response.json(
             { error: "No se pudo actualizar la contraseña. El enlace pudo haber caducado; solicita uno nuevo." },
             { status: 401 }
@@ -204,7 +223,7 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
         return Response.json({
           ok: true,
           password_updated: true,
-          message: "Contraseña actualizada correctamente. Ahora inicia sesión con tu nueva contraseña.",
+          message: "Contraseña guardada correctamente. Ahora inicia sesión con tu correo y tu nueva contraseña.",
         });
       } catch {
         rateLimiter.recordFailure(bucketKey);
@@ -298,6 +317,17 @@ export function createAuthLoginHandler(deps: AuthLoginDependencies) {
       if (isSupabaseConfigured) {
         if (!supabaseAnon) {
           return Response.json({ error: "El servicio de acceso no está disponible." }, { status: 503 });
+        }
+
+        // Fail-closed: si falta o es inválido OAKHAVEN_OWNER_USER_ID en producción, rechazar acceso
+        if (getSingleUserAccessConfig(singleUserEnv).ownerConfigInvalid) {
+          return Response.json(
+            {
+              error: "Instancia privada pendiente de configuración de propietario autorizado.",
+              code: "OWNER_NOT_CONFIGURED",
+            },
+            { status: 503 }
+          );
         }
 
         // HITO 1 (P0): El registro público NUNCA usa service_role ni email_confirm: true.
