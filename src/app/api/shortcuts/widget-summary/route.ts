@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { demoStore } from "@/lib/demo-store";
 import { requireShortcutUser } from "@/lib/request-auth";
 
 export async function GET(req: Request) {
   const authCtx = await requireShortcutUser(req);
-  const store = authCtx.ok ? authCtx.store : demoStore;
+  if (!authCtx.ok) {
+    return authCtx.response;
+  }
+  const store = authCtx.store;
 
   const activeBoss =
     store.bosses.find((b) => b.current_hp > 0) || store.bosses[0] || null;

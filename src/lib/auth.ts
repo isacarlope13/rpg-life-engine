@@ -674,6 +674,10 @@ export async function resolveAuthenticatedUser(
       return null;
     }
 
+    if (!isAuthorizedSupabaseUserId(sbUser.id)) {
+      return null;
+    }
+
     const userClient = createSupabaseUserClient(validAccessToken);
     const meta = (sbUser.user_metadata || {}) as Record<string, unknown>;
     let displayName = String(
@@ -713,10 +717,6 @@ export async function resolveAuthenticatedUser(
       } catch {
         // Si la tabla profiles aún no existe, usa user_metadata
       }
-    }
-
-    if (!isAuthorizedSupabaseUserId(sbUser.id)) {
-      return null;
     }
 
     return {
@@ -908,6 +908,13 @@ export async function resolveShortcutRequestUser(
           status: 401,
           error:
             "SHORTCUTS_API_SECRET requiere DEFAULT_PLAYER_USER_ID explícito o usar un token personal (rpg_usr_...) generado desde tu perfil.",
+        };
+      }
+      if (!isAuthorizedSupabaseUserId(String(legacyOwnerId))) {
+        return {
+          authorized: false,
+          status: 403,
+          error: "Forbidden: cuenta no autorizada en modo privado de propietario único.",
         };
       }
       return {

@@ -8,8 +8,9 @@ type AuthMode = "login" | "signup" | "recover" | "reset";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<AuthMode>("login");
-  const [publicSignupEnabled, setPublicSignupEnabled] = useState(true);
-  const [privateMode, setPrivateMode] = useState(false);
+  const [publicSignupEnabled, setPublicSignupEnabled] = useState(false);
+  const [privateMode, setPrivateMode] = useState(true);
+  const [ownerConfigured, setOwnerConfigured] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,16 +38,22 @@ export default function LoginPage() {
         return;
       }
 
-      if (m === "signup" || m === "recover" || m === "login" || m === "reset") {
+      if (m === "recover" || m === "login" || m === "reset") {
         setMode(m);
       }
 
       fetch("/api/auth/login")
         .then((r) => (r.ok ? r.json() : null))
-        .then((cfg: { privateMode?: boolean; publicSignupEnabled?: boolean } | null) => {
+        .then((cfg: { privateMode?: boolean; publicSignupEnabled?: boolean; ownerConfigured?: boolean } | null) => {
           if (!cfg) return;
           setPrivateMode(Boolean(cfg.privateMode));
-          if (cfg.publicSignupEnabled === false) {
+          setOwnerConfigured(cfg.ownerConfigured !== false);
+          if (cfg.publicSignupEnabled === true) {
+            setPublicSignupEnabled(true);
+            if (m === "signup") {
+              setMode("signup");
+            }
+          } else {
             setPublicSignupEnabled(false);
             setMode((prev) => (prev === "signup" ? "login" : prev));
           }
@@ -196,6 +203,12 @@ export default function LoginPage() {
               : "Te enviaremos un enlace seguro si existe una cuenta asociada a tu correo."}
           </p>
         </div>
+
+        {!ownerConfigured && (
+          <p role="alert" className="rounded-2xl border-2 border-amber-700 bg-amber-50 p-3 text-xs font-bold text-amber-950">
+            Instancia privada pendiente de configuración del propietario autorizado. El acceso permanece cerrado por seguridad.
+          </p>
+        )}
 
         {mode === "reset" && !recoveryToken && (
           <p role="alert" className="rounded-2xl border-2 border-amber-700 bg-amber-50 p-3 text-xs font-bold text-amber-950">

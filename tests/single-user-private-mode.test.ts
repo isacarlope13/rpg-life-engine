@@ -152,20 +152,32 @@ describe("OAKHAVEN RELEASE 3.3 — PRIVATE SINGLE-USER MODE", () => {
     assert.deepEqual(calls, []);
   });
 
-  test("5. Defensa en profundidad: auth.ts aplica isAuthorizedSupabaseUserId en sesiones y API tokens, sin puertas traseras", () => {
+  test("5. Defensa en profundidad: auth.ts aplica isAuthorizedSupabaseUserId en sesiones, API tokens y legacy secret; sin fallback a demoStore", () => {
     const authSrc = fs.readFileSync("src/lib/auth.ts", "utf8");
     const loginPageSrc = fs.readFileSync("src/app/login/page.tsx", "utf8");
     const rootPageSrc = fs.readFileSync("src/app/page.tsx", "utf8");
-    assert.match(authSrc, /isAuthorizedSupabaseUserId\(sbUser\.id\)/);
+    const widgetSummarySrc = fs.readFileSync("src/app/api/shortcuts/widget-summary/route.ts", "utf8");
+
+    const resolveAuthFn = authSrc.slice(authSrc.indexOf("export async function resolveAuthenticatedUser"));
+    assert.match(resolveAuthFn, /isAuthorizedSupabaseUserId\(sbUser\.id\)/);
+    assert.ok(
+      resolveAuthFn.indexOf("isAuthorizedSupabaseUserId(sbUser.id)") <
+        resolveAuthFn.indexOf('.from("profiles")'),
+      "isAuthorizedSupabaseUserId debe evaluarse ANTES de consultar public.profiles"
+    );
     assert.match(authSrc, /isAuthorizedSupabaseUserId\(String\(tokenRow\.user_id\)\)/);
     assert.match(authSrc, /isAuthorizedSupabaseUserId\(String\(resolvedUid\)\)/);
+    assert.match(authSrc, /isAuthorizedSupabaseUserId\(String\(legacyOwnerId\)\)/);
+    assert.match(loginPageSrc, /useState\(false\)/);
     assert.match(loginPageSrc, /Registro público cerrado/);
     assert.match(loginPageSrc, /hashType === "invite"/);
     assert.match(rootPageSrc, /type=invite/);
     assert.ok(!loginPageSrc.includes("player1@rpg-life-engine.local"));
+    assert.ok(!widgetSummarySrc.includes("demoStore"), "widget-summary no debe hacer fallback a demoStore");
+    assert.match(widgetSummarySrc, /if \(!authCtx\.ok\)\s*\{\s*return authCtx\.response;/);
   });
 
-  test("6. FAIL-CLOSED: en producción sin OAKHAVEN_OWNER_USER_ID (o UUID inválido), bloquea login, APIs y registro público", async () => {
+  test("6. FAIL-CLOSED: en producción sin OAKHAVEN_OWNER_USER_ID (o UUID inválido), bloquea login, update_password, APIs y registro público", async () => {
     for (const badEnv of [
       { NODE_ENV: "production" },
       { NODE_ENV: "production", OAKHAVEN_OWNER_USER_ID: "" },
@@ -194,7 +206,71 @@ describe("OAKHAVEN RELEASE 3.3 — PRIVATE SINGLE-USER MODE", () => {
       assert.equal(loginRes.status, 503);
       assert.equal(loginBody.code, "OWNER_NOT_CONFIGURED");
       assert.equal(loginRes.headers.get("set-cookie"), null);
+
+      const resetRes = await handle(
+        new Request("https://app.example.invalid/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update_password",
+            recovery_access_token: "invite-token-demo",
+            password: "OwnerStrongPassword2026",
+          }),
+        })
+      );
+      const resetBody = await resetRes.json();
+      assert.equal(resetRes.status, 503);
+      assert.equal(resetBody.code, "OWNER_NOT_CONFIGURED");
+      assert.equal(resetRes.headers.get("set-cookie"), null);
       assert.deepEqual(calls, []);
     }
+  });
+
+  test("7. Token de invitación o recuperación perteneciente a otro usuario recibe HTTP 403 OWNER_ONLY_ACCESS y cero cookies", async () => {
+    const client = {
+      auth: {
+        admin: { async createUser() { return { data: { user: null }, error: null }; } },
+        async signInWithPassword() { return { data: { session: null }, error: null }; },
+        async signUp() { return { data: { session: null }, error: null }; },
+      },
+    } as unknown as NonNullable<AuthLoginDependencies["supabaseAnon"]>;
+
+    const handle = createAuthLoginHandler({
+      isSupabaseConfigured: true,
+      supabaseAdmin: client,
+      supabaseAnon: client,
+      allowDemoBootstrap: false,
+      DEFAULT_DEMO_EMAIL: "pilot@example.invalid",
+      DEFAULT_DEMO_PASSWORD: "synthetic-pilot-password-99",
+      DEFAULT_DEMO_PIN: "876543",
+      authenticateLocalUser: () => ({ sessionToken: "local" }),
+      registerLocalUser: () => ({ sessionToken: "local" }),
+      buildAuthSetCookieHeaders: () => ["sb_session=ok; HttpOnly; Path=/"],
+      singleUserEnv: {
+        NODE_ENV: "production",
+        OAKHAVEN_OWNER_USER_ID: OWNER_UUID,
+        OAKHAVEN_PUBLIC_SIGNUP_ENABLED: "false",
+      },
+      rateLimiter: createInMemoryAuthRateLimiter({ maxAttempts: 10 }),
+      async updatePasswordWithRecoveryToken() {
+        return { ok: false, status: 403, error: "owner_only_access" };
+      },
+    });
+
+    const res = await handle(
+      new Request("https://app.example.invalid/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_password",
+          recovery_access_token: "intruder-recovery-token",
+          password: "IntruderStrongPassword2026",
+        }),
+      })
+    );
+    const body = await res.json();
+    assert.equal(res.status, 403);
+    assert.equal(body.code, "OWNER_ONLY_ACCESS");
+    assert.equal(res.headers.get("set-cookie"), null);
   });
 });
