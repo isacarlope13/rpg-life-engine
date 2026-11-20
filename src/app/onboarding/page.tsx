@@ -19,6 +19,7 @@ import {
 import {
   EIGHT_LIFE_AREAS,
   buildCharacterSheet,
+  clearAllOnboardingDrafts,
   clearOnboardingDraft,
   computeRealFinanceSummary,
   createEmptyOnboardingDraft,
@@ -55,6 +56,7 @@ function makeId(prefix: string): string {
 
 export default function PersonalOnboardingPage() {
   const [draft, setDraft] = useState<PersonalOnboardingDraft>(() => createEmptyOnboardingDraft());
+  const [ownerUserId, setOwnerUserId] = useState<string>("");
   const [onboardingMode, setOnboardingMode] = useState<"initial" | "edit">("initial");
   const [draftSavedNotice, setDraftSavedNotice] = useState<string | null>(null);
   const [nameCheck, setNameCheck] = useState<{
@@ -71,16 +73,26 @@ export default function PersonalOnboardingPage() {
     partialErrors: Array<{ section: string; message: string }>;
   } | null>(null);
 
-  // Cargar borrador local del usuario y modo (creación vs edición) sin inventar datos
+  // Cargar identidad verificada y borrador aislado por userId (limpia claves heredadas)
   useEffect(() => {
-    const saved = loadOnboardingDraft("active");
-    if (saved) {
-      setDraft(saved);
-    }
     fetch("/api/onboarding")
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (r.status === 401) {
+          clearAllOnboardingDrafts();
+          window.location.href = "/login";
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      })
       .then((data) => {
-        if (data?.onboardingMode === "edit") {
+        if (!data) return;
+        const uid = typeof data.user_id === "string" ? data.user_id : "";
+        if (uid) {
+          setOwnerUserId(uid);
+          const saved = loadOnboardingDraft(uid);
+          if (saved) setDraft(saved);
+        }
+        if (data.onboardingMode === "edit") {
           setOnboardingMode("edit");
         }
       })
@@ -90,7 +102,9 @@ export default function PersonalOnboardingPage() {
   const updateDraft = (patch: Partial<PersonalOnboardingDraft>) => {
     setDraft((prev) => {
       const next = { ...prev, ...patch, updatedAt: new Date().toISOString() };
-      saveOnboardingDraft("active", next);
+      if (ownerUserId) {
+        saveOnboardingDraft(ownerUserId, next);
+      }
       return next;
     });
   };
@@ -157,9 +171,13 @@ export default function PersonalOnboardingPage() {
   );
 
   const handleSaveDraftExplicit = () => {
-    saveOnboardingDraft("active", draft);
-    setDraftSavedNotice("Borrador guardado en este dispositivo. Puedes pausar y continuar cuando quieras.");
-    setTimeout(() => setDraftSavedNotice(null), 4000);
+    if (ownerUserId) {
+      saveOnboardingDraft(ownerUserId, draft);
+    }
+    setDraftSavedNotice(
+      "Borrador guardado para tu usuario (cifras financieras solo en sesión temporal; se borran al cerrar pestaña o sesión)."
+    );
+    setTimeout(() => setDraftSavedNotice(null), 5000);
   };
 
   const handlePersistOnboarding = async () => {
@@ -257,7 +275,8 @@ export default function PersonalOnboardingPage() {
         return;
       }
 
-      clearOnboardingDraft("active");
+      clearAllOnboardingDrafts();
+      if (ownerUserId) clearOnboardingDraft(ownerUserId);
       setSubmitResult({
         ok: Boolean(json.ok),
         onboardingMode: json.onboardingMode || onboardingMode,

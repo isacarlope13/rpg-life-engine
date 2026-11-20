@@ -391,28 +391,104 @@ export function buildCharacterSheet(
   };
 }
 
-const DRAFT_PREFIX = "oakhaven_phase10_onboarding_draft_";
+const DRAFT_PROFILE_PREFIX = "oakhaven_phase10_onboarding_profile_";
+const DRAFT_FINANCE_PREFIX = "oakhaven_phase10_onboarding_fin_";
+const LEGACY_DRAFT_PREFIX = "oakhaven_phase10_onboarding_draft_";
 
+function isValidDraftOwner(userScope: string): boolean {
+  const clean = userScope.trim();
+  return clean.length >= 3 && clean !== "active" && clean !== "anon";
+}
+
+function getSessionStorageSafe(): Storage | null {
+  try {
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      return window.sessionStorage;
+    }
+  } catch {
+    // Entorno sin sessionStorage
+  }
+  return null;
+}
+
+/**
+ * GATE 2 (Seguridad de borradores):
+ * - Separa estrictamente por userId autenticado (rechaza claves compartidas como "active" o "anon").
+ * - NUNCA persiste cifras financieras sensibles en localStorage:
+ *   - Configuración no financiera (identidad, rutina, 8 áreas, metas) -> localStorage por usuario.
+ *   - Cifras financieras privadas (ingresos, cuentas, gastos, deudas) -> SOLO sessionStorage (volátil por pestaña).
+ */
 export function saveOnboardingDraft(userScope: string, draft: PersonalOnboardingDraft): void {
+  if (!isValidDraftOwner(userScope)) return;
+  const updatedAt = new Date().toISOString();
+
+  // 1. Perfil y rutina (sin cifras financieras) en localStorage por usuario
+  const nonSensitiveDraft: PersonalOnboardingDraft = {
+    ...draft,
+    updatedAt,
+    incomeSources: [],
+    accounts: [],
+    fixedCosts: [],
+    variableBudgetCop: 0,
+    debts: [],
+    monthlySavingsGoalCop: 0,
+    emergencyFundTargetCop: 0,
+    vaultCapGp: 0,
+    financialGoalsNote: "",
+    financialDataConfirmed: false,
+  };
   try {
     safeLocalStorage.setItem(
-      `${DRAFT_PREFIX}${userScope || "anon"}`,
-      JSON.stringify({ ...draft, updatedAt: new Date().toISOString() })
+      `${DRAFT_PROFILE_PREFIX}${userScope}`,
+      JSON.stringify(nonSensitiveDraft)
     );
   } catch {
-    // Silencioso en entornos sin storage
+    // Silencioso
+  }
+
+  // 2. Cifras financieras únicamente en sessionStorage (se limpian al cerrar pestaña o sesión)
+  const ss = getSessionStorageSafe();
+  if (ss) {
+    try {
+      ss.setItem(
+        `${DRAFT_FINANCE_PREFIX}${userScope}`,
+        JSON.stringify({
+          updatedAt,
+          incomeSources: draft.incomeSources,
+          accounts: draft.accounts,
+          fixedCosts: draft.fixedCosts,
+          variableBudgetCop: draft.variableBudgetCop,
+          debts: draft.debts,
+          debtStrategy: draft.debtStrategy,
+          monthlySavingsGoalCop: draft.monthlySavingsGoalCop,
+          emergencyFundTargetCop: draft.emergencyFundTargetCop,
+          vaultCapGp: draft.vaultCapGp,
+          financialGoalsNote: draft.financialGoalsNote,
+        })
+      );
+    } catch {
+      // Silencioso
+    }
   }
 }
 
 export function loadOnboardingDraft(userScope: string): PersonalOnboardingDraft | null {
+  if (!isValidDraftOwner(userScope)) return null;
   try {
-    const raw = safeLocalStorage.getItem(`${DRAFT_PREFIX}${userScope || "anon"}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<PersonalOnboardingDraft>;
-    if (parsed && parsed.version === 2) {
-      return { ...createEmptyOnboardingDraft(), ...parsed };
-    }
-    return null;
+    const rawProfile = safeLocalStorage.getItem(`${DRAFT_PROFILE_PREFIX}${userScope}`);
+    const ss = getSessionStorageSafe();
+    const rawFin = ss ? ss.getItem(`${DRAFT_FINANCE_PREFIX}${userScope}`) : null;
+    if (!rawProfile && !rawFin) return null;
+
+    const base = createEmptyOnboardingDraft();
+    const profilePart = rawProfile ? (JSON.parse(rawProfile) as Partial<PersonalOnboardingDraft>) : {};
+    const finPart = rawFin ? (JSON.parse(rawFin) as Partial<PersonalOnboardingDraft>) : {};
+    return {
+      ...base,
+      ...profilePart,
+      ...finPart,
+      version: 2,
+    };
   } catch {
     return null;
   }
@@ -420,8 +496,55 @@ export function loadOnboardingDraft(userScope: string): PersonalOnboardingDraft 
 
 export function clearOnboardingDraft(userScope: string): void {
   try {
-    safeLocalStorage.removeItem(`${DRAFT_PREFIX}${userScope || "anon"}`);
-  } catch {
-    // Silencioso
+    if (isValidDraftOwner(userScope)) {
+      safeLocalStorage.removeItem(`${DRAFT_PROFILE_PREFIX}${userScope}`);
+    }
+    safeLocalStorage.removeItem(`${LEGACY_DRAFT_PREFIX}active`);
+  } catch {}
+  const ss = getSessionStorageSafe();
+  if (ss && isValidDraftOwner(userScope)) {
+    try {
+      ss.removeItem(`${DRAFT_FINANCE_PREFIX}${userScope}`);
+    } catch {}
+  }
+}
+
+/** Limpia TODOS los borradores de onboarding al cerrar sesión o cambiar de usuario. */
+export function clearAllOnboardingDrafts(): void {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      const toRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (
+          key &&
+          (key.startsWith(DRAFT_PROFILE_PREFIX) ||
+            key.startsWith(DRAFT_FINANCE_PREFIX) ||
+            key.startsWith(LEGACY_DRAFT_PREFIX))
+        ) {
+          toRemove.push(key);
+        }
+      }
+      for (const k of toRemove) window.localStorage.removeItem(k);
+    }
+  } catch {}
+
+  const ss = getSessionStorageSafe();
+  if (ss) {
+    try {
+      const toRemove: string[] = [];
+      for (let i = 0; i < ss.length; i++) {
+        const key = ss.key(i);
+        if (
+          key &&
+          (key.startsWith(DRAFT_PROFILE_PREFIX) ||
+            key.startsWith(DRAFT_FINANCE_PREFIX) ||
+            key.startsWith(LEGACY_DRAFT_PREFIX))
+        ) {
+          toRemove.push(key);
+        }
+      }
+      for (const k of toRemove) ss.removeItem(k);
+    } catch {}
   }
 }
