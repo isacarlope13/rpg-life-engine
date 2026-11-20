@@ -145,18 +145,18 @@ export async function POST(req: Request) {
 
   // 1. Actualizar espejo en memoria preservando progreso previo si existe
   const userStore = getUserStore(session.userId);
-  const prevWalletGp = userStore.treasury.wallet_gp;
-  const prevLevel = userStore.treasury.player_level;
-  const prevXp = userStore.treasury.current_xp;
-  const prevStreak = userStore.treasury.current_streak_days;
+  const prevWalletGp = userStore.wallet_gp;
+  const prevLevel = userStore.player_level;
+  const prevXp = userStore.current_xp;
+  const prevStreak = userStore.current_streak_days;
   const hadProgress = prevWalletGp > 0 || prevLevel > 1 || prevXp > 0 || prevStreak > 0;
 
   userStore.applyOnboarding(body);
   if (hadProgress) {
-    userStore.treasury.wallet_gp = prevWalletGp;
-    userStore.treasury.player_level = prevLevel;
-    userStore.treasury.current_xp = prevXp;
-    userStore.treasury.current_streak_days = prevStreak;
+    userStore.wallet_gp = prevWalletGp;
+    userStore.player_level = prevLevel;
+    userStore.current_xp = prevXp;
+    userStore.current_streak_days = prevStreak;
   }
 
   updateLocalUserProfile(session.userId, {
