@@ -505,6 +505,11 @@ export function BankBuilding({
         ambientWarmth: "candlelight",
       }}
     >
+      {/* La conciliación real vive en el libro privado con RLS; no reutilizar los datos de ejemplo de la vista legacy. */}
+      <div className="rounded-xl border-2 border-amber-700 bg-amber-50 p-3 text-xs text-amber-950">
+        <strong>Vista histórica (no conciliada).</strong> Los importes de este banco pueden corresponder a un caso de estudio antiguo y no deben usarse para autorizar gastos ni pagar deudas.
+        <a href="/finance" className="ml-2 underline font-black">Abrir Libro Financiero Privado →</a>
+      </div>
       {/* NOTIFICACIÓN FLOTANTE */}
       {notification && (
         <div className="mb-4">
