@@ -87,6 +87,11 @@ export function PrivateFinancePanel(){
    {error&&<p role="alert" className="rounded-xl bg-red-100 text-red-900 p-3">{error}</p>}
    {message&&<p role="status" className="rounded-xl bg-green-100 text-green-900 p-3">{message}</p>}
    <div className="rounded-xl bg-amber-50 border border-amber-300 p-3 text-sm">Los saldos se concilian por cuenta; el historial y las previsiones no se suman automáticamente. Los compromisos de deuda y los pagos futuros pueden referirse a la misma cuota: no los sumes dos veces. El GP no equivale a dinero bancario disponible.</div>
+   <section className={section}>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-bold">Guardian Financiero</h2><span className="rounded-lg bg-amber-100 border border-amber-300 px-2 py-1 text-xs font-bold">Canjes reales pausados</span></div>
+    <p className="text-sm">Las recompensas GP siguen siendo progreso del juego, no saldo bancario. Los canjes monetarios y las operaciones antiguas de deuda permanecen bloqueados hasta validar una integración transaccional con reservas y obligaciones reales.</p>
+    <p className="text-xs">Puedes registrar tus hábitos y habilidades normalmente. Registra gastos reales en el libro privado; concilia los saldos por cuenta. El calendario no ejecuta pagos.</p>
+   </section>
    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
     <div className={section}><div className="text-sm">Cuentas conciliadas</div><div className="text-2xl font-bold">{ledger?.accounts.length?money(totalBalance):"Sin conciliar"}</div></div>
     <div className={section}><div className="text-sm">Importes exigibles</div><div className="text-2xl font-bold">{ledger?.debts.length?money(committed):"Sin verificar"}</div></div>

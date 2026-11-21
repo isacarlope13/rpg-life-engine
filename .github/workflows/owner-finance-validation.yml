@@ -9,6 +9,7 @@ on:
       - 'src/lib/state-builder.ts'
       - 'src/lib/demo-store.ts'
       - 'src/app/api/finance/**'
+      - 'src/app/api/shortcuts/**'
       - 'src/lib/finance/**'
       - 'src/components/sanctuary/bank-building.tsx'
       - 'src/components/sanctuary/living-interior-room.tsx'

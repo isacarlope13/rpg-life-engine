@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { legacyFinanceHeld, legacyFinanceHoldResponse } from "@/lib/finance/guardian";
 import { ReceiptScanShortcutRequest } from "@/types/rpg";
 import { parseReceiptWithGeminiVision } from "@/lib/gemini";
 import { isSupabaseConfigured, resolvePlayerTreasury } from "@/lib/supabase";
@@ -8,6 +9,7 @@ export async function POST(req: Request) {
   try {
     const authCtx = await requireShortcutUser(req);
     if (!authCtx.ok) return authCtx.response;
+    if (legacyFinanceHeld(authCtx.mode)) return legacyFinanceHoldResponse();
     const { userId, store, db } = authCtx;
 
     const body = (await req.json()) as ReceiptScanShortcutRequest;

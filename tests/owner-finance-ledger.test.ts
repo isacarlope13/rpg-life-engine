@@ -89,3 +89,32 @@ test("bank preserves LivingInteriorRoom and suppresses unverified specialist pan
  const bank=load("../src/components/sanctuary/bank-building.tsx");
  assert.match(bank,/<LivingInteriorRoom/);assert.match(bank,/hideSpecialistAndLibrary/);
 });
+
+import { legacyFinanceHeld, isLegacyFinancialSkillAction, legacyFinanceHoldResponse } from "../src/lib/finance/guardian.ts";
+test("guardian fails closed for private or cloud economy, permits isolated development only",async()=>{
+ assert.equal(legacyFinanceHeld("supabase",{NODE_ENV:"test"}),true);
+ assert.equal(legacyFinanceHeld("local_engine",{NODE_ENV:"production"}),true);
+ assert.equal(legacyFinanceHeld("local_engine",{NODE_ENV:"test",OAKHAVEN_OWNER_USER_ID:"invalid"}),true);
+ assert.equal(legacyFinanceHeld("local_engine",{NODE_ENV:"test"}),false);
+ const r=legacyFinanceHoldResponse();assert.equal(r.status,409);
+ assert.equal((await r.json()).code,"PRIVATE_FINANCE_RECONCILIATION_REQUIRED");
+});
+test("guardian distinguishes real economy actions from normal skills and library records",()=>{
+ for(const action of ["redeem_wishlist","purify_boss","limit_break","set_debt_strategy","import_backup"])
+  assert.equal(isLegacyFinancialSkillAction({action}),true);
+ assert.equal(isLegacyFinancialSkillAction({action:"add_book",record_purchase_in_treasury:true}),true);
+ assert.equal(isLegacyFinancialSkillAction({action:"add_cube",record_purchase_in_treasury:true}),true);
+ for(const action of ["log_session","new_scramble","add_book","add_knitting_project","add_work_project_task"])
+  assert.equal(isLegacyFinancialSkillAction({action}),false);
+});
+test("legacy finance handlers guard writes, while omni habit branch stays available",()=>{
+ for(const path of ["quick-expense","receipt-scan","boss-counterattack","omni","skill-session"]){
+  const src=load("../src/app/api/shortcuts/"+path+"/route.ts");
+  assert.match(src,/legacyFinanceHeld\(authCtx.mode\)/);
+  assert.match(src,/return legacyFinanceHoldResponse\(\)/);
+ }
+ const omni=load("../src/app/api/shortcuts/omni/route.ts");
+ assert.ok(omni.indexOf('detected.intent === "habit_session"')<omni.indexOf("if (legacyFinanceHeld(authCtx.mode))"));
+ const skill=load("../src/app/api/shortcuts/skill-session/route.ts");
+ assert.ok(skill.indexOf("isLegacyFinancialSkillAction(body)")<skill.indexOf('if (body.action === "redeem_wishlist"'));
+});
