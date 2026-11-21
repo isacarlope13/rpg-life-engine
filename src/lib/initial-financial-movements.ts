@@ -37,7 +37,7 @@ export const INITIAL_FINANCIAL_MOVEMENTS: FinancialMovementRecord[] = [
     "tipo": "Gasto",
     "categoria": "Transporte",
     "monto": 33000,
-    "descripcion": "Uber a donde Saris",
+    "descripcion": "Transporte urbano",
     "metodo_pago": "Efectivo",
     "detalle": ""
   },
@@ -47,7 +47,7 @@ export const INITIAL_FINANCIAL_MOVEMENTS: FinancialMovementRecord[] = [
     "tipo": "Gasto",
     "categoria": "Comida",
     "monto": 117000,
-    "descripcion": "Alitas con Saris :)",
+    "descripcion": "Alitas con Contacto :)",
     "metodo_pago": "Transferencia",
     "detalle": ""
   },
@@ -597,7 +597,7 @@ export const INITIAL_FINANCIAL_MOVEMENTS: FinancialMovementRecord[] = [
     "tipo": "Gasto",
     "categoria": "Pago internet",
     "monto": 84000,
-    "descripcion": "Somos",
+    "descripcion": "Servicio Internet",
     "metodo_pago": "Transferencia",
     "detalle": ""
   },
@@ -647,7 +647,7 @@ export const INITIAL_FINANCIAL_MOVEMENTS: FinancialMovementRecord[] = [
     "tipo": "Ingreso",
     "categoria": "Clases",
     "monto": 200000,
-    "descripcion": "Clases Juanma",
+    "descripcion": "Clases particulares",
     "metodo_pago": "Efectivo",
     "detalle": ""
   },
@@ -977,7 +977,7 @@ export const INITIAL_FINANCIAL_MOVEMENTS: FinancialMovementRecord[] = [
     "tipo": "Ingreso",
     "categoria": "Clases",
     "monto": 150000,
-    "descripcion": "Clases Juanma",
+    "descripcion": "Clases particulares",
     "metodo_pago": "Transferencia",
     "detalle": ""
   },

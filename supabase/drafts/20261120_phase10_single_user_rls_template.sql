@@ -1,0 +1,27 @@
+-- ============================================================================
+-- OAKHAVEN RELEASE 3.3 — PLANTILLA OPCIONAL RLS PARA MODO PROPIETARIO ÚNICO
+-- ============================================================================
+-- NO EJECUTAR AUTOMÁTICAMENTE.
+-- Uso opcional DESPUÉS de crear la cuenta `isacarlope` y obtener su UUID real
+-- desde Supabase Dashboard -> Authentication -> Users.
+-- Reemplaza <OWNER_UUID_REAL> antes de ejecutar en SQL Editor.
+-- ============================================================================
+
+-- Ejemplo de endurecimiento adicional sobre tablas sensibles (además del
+-- RLS existente auth.uid() = user_id y del guard en aplicación OAKHAVEN_OWNER_USER_ID):
+--
+-- CREATE POLICY "owner_only_guard_player_treasury"
+--   ON public.player_treasury
+--   AS RESTRICTIVE
+--   FOR ALL
+--   TO authenticated
+--   USING (auth.uid() = '<OWNER_UUID_REAL>'::uuid)
+--   WITH CHECK (auth.uid() = '<OWNER_UUID_REAL>'::uuid);
+--
+-- CREATE POLICY "owner_only_guard_financial_transactions"
+--   ON public.financial_transactions
+--   AS RESTRICTIVE
+--   FOR ALL
+--   TO authenticated
+--   USING (auth.uid() = '<OWNER_UUID_REAL>'::uuid)
+--   WITH CHECK (auth.uid() = '<OWNER_UUID_REAL>'::uuid);

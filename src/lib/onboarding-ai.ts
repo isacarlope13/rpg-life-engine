@@ -899,7 +899,7 @@ function analyzeTransactionHistoryCsv(
     groupedSummary.push({
       bucket: "ingreso",
       bucket_label: "💰 Ingreso Recurrente",
-      category_name: "Clases & Asesorías (Juanma)",
+      category_name: "Clases & Asesorías Particulares",
       tx_count: clasesCount,
       historical_total: clasesTotal,
       monthly_assigned: monthlyClases,
