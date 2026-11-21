@@ -118,3 +118,24 @@ test("legacy finance handlers guard writes, while omni habit branch stays availa
  const skill=load("../src/app/api/shortcuts/skill-session/route.ts");
  assert.ok(skill.indexOf("isLegacyFinancialSkillAction(body)")<skill.indexOf('if (body.action === "redeem_wishlist"'));
 });
+
+test("reserve payload is validated independently of real cash",()=>{
+ const v={essentialCop:500,emergencyCop:60,horizon:"2025-03-01"};
+ const saved=validateFinanceItem("reserve",v)!;
+ assert.equal(saved.essential_cop,500);assert.equal(saved.emergency_cop,60);
+ assert.equal(validateFinanceItem("reserve",{...v,emergencyCop:-1}),null);
+ assert.equal(validateFinanceItem("reserve",{...v,horizon:"2025-02-30"}),null);
+ assert.equal(validateFinanceItem("reserve",{...v,essentialCop:"500"}),null);
+});
+test("manual import uses source-bound preview and same duplicate fingerprint as CSV",()=>{
+ const route=load("../src/app/api/finance/import/route.ts");
+ assert.match(route,/signingSecret=secret\+"\|finance-source:"\+source/);
+ assert.match(route,/origin:source/);
+ assert.match(route,/source==="manual"&&body.rows.length!==1/);
+ assert.match(route,/rows\[0\].date.slice\(0,10\)>bogotaDate/);
+ const key=movementFingerprint(row);
+ assert.equal(planImport([row],new Set([key])).fresh.length,0);
+ const secret="fixture";
+ const ticket=signPreview("synthetic",[row],secret+"|finance-source:csv");
+ assert.equal(verifyPreview(ticket,"synthetic",[row],secret+"|finance-source:manual"),false);
+});

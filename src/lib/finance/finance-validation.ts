@@ -52,6 +52,8 @@ export function transactionTimestamp(date:string):string{
 export function validateFinanceItem(kind:string,value:unknown):Record<string,unknown>|null{
   if(!value||typeof value!=="object")return null;
   const v=value as Record<string,unknown>;
+  if(kind==="reserve"&&money(v.essentialCop)&&money(v.emergencyCop)&&validDate(v.horizon))
+    return {essential_cop:v.essentialCop,emergency_cop:v.emergencyCop,horizon:v.horizon,updated_at:new Date().toISOString()};
   if(kind==="account"&&label(v.label)&&money(v.balanceCop)&&validDate(v.asOfDate))
     return {label:normalizeLabel(v.label),balance_cop:v.balanceCop,as_of_date:v.asOfDate};
   if(kind==="debt"&&label(v.creditor)&&money(v.principalRemainingCop)&&money(v.amountDueCop)&&

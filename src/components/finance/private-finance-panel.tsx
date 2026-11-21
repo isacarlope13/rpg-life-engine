@@ -10,6 +10,7 @@ type Ledger = {
  accounts:Array<{id:string;label:string;balance_cop:number;as_of_date:string}>;
  debts:Array<{id:string;creditor:string;principal_remaining_cop:number;amount_due_cop:number;due_date:string|null;status:string}>;
  events:Array<{id:string;label:string;expected_on:string;amount_cop:number;kind:string;status:string}>;
+ reserves:Array<{essential_cop:number;emergency_cop:number;horizon:string;updated_at:string}>;
 };
 const money = (value:number) => new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(value);
 const writeHeaders = {"Content-Type":"application/json","x-oakhaven-finance-write":"1"};
@@ -25,6 +26,9 @@ export function PrivateFinancePanel(){
  const [reading,setReading]=useState(false);
  const [checked,setChecked]=useState(false);
  const [reserve,setReserve]=useState("");
+ const [emergency,setEmergency]=useState("");
+ const [source,setSource]=useState<"csv"|"manual">("csv");
+ const [manual,setManual]=useState({date:today(),time:"",kind:"expense" as "expense"|"income",category:"",description:"",amount:"",method:""});
  const [horizon,setHorizon]=useState(horizonDefault);
  const [additionalExpenses,setAdditionalExpenses]=useState<string[]>([]);
  const [account,setAccount]=useState({label:"",balanceCop:"",asOfDate:today()});
@@ -32,7 +36,8 @@ export function PrivateFinancePanel(){
  const [event,setEvent]=useState({label:"",expectedOn:today(),amountCop:"",kind:"income",status:"expected"});
  const totalBalance=useMemo(()=>ledger?.accounts.reduce((s,a)=>s+Number(a.balance_cop),0)||0,[ledger]);
  const committed=useMemo(()=>ledger?.debts.filter(d=>d.status!=="settled").reduce((s,d)=>s+Number(d.amount_due_cop),0)||0,[ledger]);
- const reserveAmount=reserve.trim()!==""&&Number.isSafeInteger(Number(reserve))&&Number(reserve)>=0?Number(reserve):null;
+ const validReserve=(v:string)=>v.trim()!==""&&Number.isSafeInteger(Number(v))&&Number(v)>=0&&Number(v)<=100_000_000_000;
+ const reserveAmount=validReserve(reserve)&&validReserve(emergency)?Number(reserve)+Number(emergency):null;
  const projection=useMemo(()=>{
    if(!ledger||!ledger.accounts.length||reserveAmount===null||!isCalendarDate(horizon)||horizon<today())return null;
    try{return projectCashflow({today:today(),until:horizon,accounts:ledger.accounts,debts:ledger.debts,events:ledger.events,reserveCop:reserveAmount,additionalExpenseIds:additionalExpenses});}
@@ -43,12 +48,15 @@ export function PrivateFinancePanel(){
    const res=await fetch("/api/finance/ledger",{cache:"no-store"});
    const json=await res.json();
    if(!res.ok){setLedger(null);throw new Error(json.error||"No se pudo abrir la tesorería");}
-   setLedger(json as Ledger);
+   const snapshot=json as Ledger;
+   setLedger(snapshot);
+   if(snapshot.reserves?.[0]){const saved=snapshot.reserves[0];setReserve(String(saved.essential_cop));setEmergency(String(saved.emergency_cop));setHorizon(saved.horizon);}
+   else{setReserve("");setEmergency("");setHorizon(horizonDefault());}
    setAdditionalExpenses([]); // Reconfirm overlap exclusions after each server refresh.
  }
  useEffect(()=>{refresh().catch(e=>setError(String(e.message||e)))},[]);
  async function onCsv(file:File|undefined){
-   setError("");setMessage("");setPreview(null);setChecked(false);setRows([]);
+   setError("");setMessage("");setPreview(null);setChecked(false);setRows([]);setSource("csv");
    if(!file)return;
    if(file.size>300000){setError("El archivo es demasiado grande (máx. 300 KB).");return;}
    setReading(true);
@@ -56,12 +64,20 @@ export function PrivateFinancePanel(){
    catch(e){setRows([]);setError(e instanceof Error?e.message:"Error al leer el CSV");}
    finally{setReading(false);}
  }
+ function prepareManual(){
+   if(busy||reading)return;
+   const amount=Number(manual.amount);
+   if(!manual.description.trim()||!manual.method.trim()||!manual.category.trim()||!manual.amount.trim()||!Number.isSafeInteger(amount)||amount<=0||amount>100_000_000_000||!isCalendarDate(manual.date)||manual.date>today()||!/^([01]\d|2[0-3]):[0-5]\d$/.test(manual.time)){setError("Completa los datos reales del movimiento, fecha y hora.");return;}
+   setError("");setPreview(null);setChecked(false);setSource("manual");
+   setRows([{date:manual.date+" "+manual.time,kind:manual.kind,category:manual.category,description:manual.description,amountCop:amount,paymentMethod:manual.method}]);
+   setMessage("Movimiento preparado. Comprueba coincidencias y confirma en la siguiente sección.");
+ }
  async function runImport(mode:"preview"|"commit"){
    if(busy||reading||!rows.length)return;
    if(mode==="commit"&&(!checked||!preview))return;
    setBusy(true);setError("");setMessage("");
    try{
-     const res=await fetch("/api/finance/import",{method:"POST",headers:writeHeaders,body:JSON.stringify({mode,rows,confirmed:mode==="commit"&&checked,previewTicket:mode==="commit"?preview?.previewTicket:undefined})});
+     const res=await fetch("/api/finance/import",{method:"POST",headers:writeHeaders,body:JSON.stringify({mode,rows,source,confirmed:mode==="commit"&&checked,previewTicket:mode==="commit"?preview?.previewTicket:undefined})});
      const json=await res.json();
      if(!res.ok)throw new Error(json.error||"No fue posible importar");
      if(mode==="preview"){setChecked(false);setPreview(json);setMessage("Vista previa completa. Confirma solo si los datos son correctos.");}
@@ -69,7 +85,7 @@ export function PrivateFinancePanel(){
    }catch(e){setPreview(null);setChecked(false);setError(e instanceof Error?e.message:"Error inesperado");}
    finally{setBusy(false);}
  }
- async function save(kind:"account"|"debt"|"event",item:Record<string,unknown>){
+ async function save(kind:"account"|"debt"|"event"|"reserve",item:Record<string,unknown>){
    if(busy)return;setBusy(true);setError("");setMessage("");
    try{
      const res=await fetch("/api/finance/ledger",{method:"POST",headers:writeHeaders,body:JSON.stringify({kind,item})});
@@ -99,8 +115,12 @@ export function PrivateFinancePanel(){
    </div>
    <section className={section}>
     <h2 className="text-xl font-bold">Plan de caja prudente</h2>
-    <p className="text-sm">Introduce una reserva esencial de prueba. Es una simulación en memoria, no una orden de pago ni un cambio de saldo. No usa ingresos esperados.</p>
+    <p className="text-sm">Define la reserva esencial y de emergencia para todo el horizonte. Puedes guardarlas en tu cuenta; las simulaciones no ejecutan pagos ni modifican saldos.</p>
     <label className="block text-sm">Reserva para necesidades (COP)<input type="number" min="0" step="1" value={reserve} onChange={e=>setReserve(e.target.value)} className={input}/></label>
+    <label className="block text-sm">Colchón de emergencia (COP)<input type="number" min="0" step="1" value={emergency} onChange={e=>setEmergency(e.target.value)} className={input}/></label>
+    <label className="block text-sm">Horizonte de reserva<input type="date" min={today()} value={horizon} onChange={e=>setHorizon(e.target.value)} className={input}/></label>
+    <button type="button" disabled={busy||!ledger||reserveAmount===null||!isCalendarDate(horizon)||horizon<today()} onClick={()=>void save("reserve",{essentialCop:Number(reserve),emergencyCop:Number(emergency),horizon})} className="bg-green-800 text-white p-3 rounded-lg disabled:opacity-40">Guardar reservas protegidas</button>
+    <p className="text-xs">{ledger?.reserves?.[0]?"Última reserva guardada: "+money(Number(ledger.reserves[0].essential_cop)+Number(ledger.reserves[0].emergency_cop))+" · hasta "+ledger.reserves[0].horizon:"No hay reserva persistente configurada."} Los cambios sin guardar son solo simulaciones y pueden perderse al actualizar.</p>
     {ledger?.accounts.length&&reserveAmount!==null&&ledger.debts.length>0?<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       <p>Margen después de reserva e importes exigibles: <strong>{money(Math.max(0,totalBalance-reserveAmount-committed))}</strong></p>
       <p>Faltante para cubrir lo anterior: <strong>{money(Math.max(0,reserveAmount+committed-totalBalance))}</strong></p>
@@ -124,10 +144,24 @@ export function PrivateFinancePanel(){
     <p className="text-xs font-bold">Simulación orientativa. No habilita recompensas ni modifica datos reales. No uses estos importes como dinero libre confirmado.</p>
    </section>
    <section className={section}>
+    <h2 className="text-xl font-bold">Registro rápido · móvil</h2>
+    <p className="text-sm">Registra ingresos o gastos ya realizados. No se ejecuta ninguna transferencia ni se cambian automáticamente cuentas, deudas o GP. Usa la fecha, hora y descripción del registro original para detectar coincidencias con tu CSV.</p>
+    <form className="grid sm:grid-cols-2 gap-2" onSubmit={e=>{e.preventDefault();prepareManual();}}>
+     <label className="text-sm">Fecha<input className={input} type="date" max={today()} required value={manual.date} onChange={e=>setManual({...manual,date:e.target.value})}/></label>
+     <label className="text-sm">Hora (Colombia)<input className={input} type="time" required value={manual.time} onChange={e=>setManual({...manual,time:e.target.value})}/></label>
+     <label className="text-sm">Tipo<select className={input} value={manual.kind} onChange={e=>setManual({...manual,kind:e.target.value as "income"|"expense"})}><option value="expense">Gasto</option><option value="income">Ingreso</option></select></label>
+     <label className="text-sm">Valor COP<input className={input} type="number" inputMode="numeric" min="1" step="1" required value={manual.amount} onChange={e=>setManual({...manual,amount:e.target.value})}/></label>
+     <label className="text-sm">Categoría<input className={input} maxLength={100} required value={manual.category} onChange={e=>setManual({...manual,category:e.target.value})}/></label>
+     <label className="text-sm">Medio de pago<input className={input} maxLength={80} required value={manual.method} onChange={e=>setManual({...manual,method:e.target.value})}/></label>
+     <label className="text-sm sm:col-span-2">Concepto<input className={input} maxLength={300} required value={manual.description} onChange={e=>setManual({...manual,description:e.target.value})}/></label>
+     <button disabled={busy||reading||!ledger} className="bg-amber-200 p-3 rounded-lg font-semibold disabled:opacity-40 sm:col-span-2">Preparar movimiento para revisión</button>
+    </form>
+   </section>
+   <section className={section}>
     <h2 className="text-xl font-bold">1. Importar movimientos con vista previa</h2>
     <p className="text-sm">Selecciona un CSV UTF-8 con columnas Fecha, Tipo, Categoría, Monto, Descripción y Método de Pago. Revisa siempre antes de confirmar. No vuelvas a importar tus saldos iniciales como sueldos.</p>
     <input aria-label="Seleccionar CSV financiero" type="file" disabled={busy||reading} accept=".csv,text/csv" onChange={e=>void onCsv(e.currentTarget.files?.[0])}/>
-    <p className="text-sm">Filas cargadas: {rows.length}</p>
+    <p className="text-sm">Origen: {source==="manual"?"Registro manual":"Archivo CSV"} · Filas cargadas: {rows.length}</p>
     <button disabled={busy||reading||!ledger||rows.length===0} onClick={()=>void runImport("preview")} className="bg-amber-200 p-3 rounded-lg font-semibold disabled:opacity-40">Comprobar duplicados (sin guardar)</button>
     {preview&&<>
      <p className="text-sm">Recibidas: <b>{preview.received}</b> · Nuevas: <b>{preview.newCount}</b> · Duplicadas: <b>{preview.duplicateCount}</b></p>

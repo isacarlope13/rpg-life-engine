@@ -9,7 +9,7 @@ create table if not exists public.owner_finance_transactions (
   description text not null default '',
   amount_cop bigint not null check (amount_cop > 0 and amount_cop <= 100000000000),
   payment_method text not null default '',
-  origin text not null default 'csv',
+  origin text not null default 'csv' check (origin in ('csv','manual')),
   created_at timestamptz not null default now(),
   constraint owner_finance_transactions_unique unique (user_id, fingerprint)
 );
@@ -50,10 +50,17 @@ create table if not exists public.owner_finance_events (
   created_at timestamptz not null default now(),
   constraint owner_finance_events_unique unique (user_id, label_key, expected_on, kind)
 );
+create table if not exists public.owner_finance_reserves (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  essential_cop bigint not null check (essential_cop between 0 and 100000000000),
+  emergency_cop bigint not null check (emergency_cop between 0 and 100000000000),
+  horizon date not null,
+  updated_at timestamptz not null default now()
+);
 do $$
 declare t text;
 begin
-  foreach t in array array['owner_finance_transactions','owner_finance_accounts','owner_finance_debts','owner_finance_events'] loop
+  foreach t in array array['owner_finance_transactions','owner_finance_accounts','owner_finance_debts','owner_finance_events','owner_finance_reserves'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from PUBLIC, anon, authenticated', t);
     execute format('grant select, insert on public.%I to authenticated', t);
