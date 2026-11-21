@@ -7,7 +7,9 @@ export async function POST(req: Request) {
   if (!owner?.db) return NextResponse.json({error:"Unauthorized"}, {status:401,headers:noStore});
   if (!financeWriteAllowed(req)) return NextResponse.json({error:"Invalid request origin"}, {status:403,headers:noStore});
   if (Number(req.headers.get("content-length")||"0") > 300_000) return NextResponse.json({error:"Payload too large"},{status:413,headers:noStore});
-  const body=await req.json().catch(()=>null) as { mode?:string; rows?:unknown[] }|null;
+  const raw=await req.text().catch(()=>"");
+  if(raw.length>300_000)return NextResponse.json({error:"Payload too large"},{status:413,headers:noStore});
+  const body=(()=>{try{return JSON.parse(raw)}catch{return null}})() as { mode?:string; rows?:unknown[] }|null;
   if (!body || !["preview","commit"].includes(body.mode||"") || !Array.isArray(body.rows) ||
       body.rows.length===0 || body.rows.length>maxBatch)
     return NextResponse.json({error:"Provide 1–150 rows and preview/commit mode"}, {status:400,headers:noStore});
