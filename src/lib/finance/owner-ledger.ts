@@ -55,6 +55,7 @@ export function validateFinanceItem(kind:string, value:unknown): Record<string,u
     return {label:(v.label as string).trim(),balance_cop:v.balanceCop,as_of_date:v.asOfDate};
   if(kind==="debt" && label(v.creditor) && money(v.principalRemainingCop) && money(v.amountDueCop) &&
       ["active","overdue","settled","arrangement"].includes(String(v.status)) &&
+      (v.status!=="settled" || (v.principalRemainingCop===0 && v.amountDueCop===0)) &&
       (v.dueDate==null || date(v.dueDate)))
     return {creditor:(v.creditor as string).trim(),principal_remaining_cop:v.principalRemainingCop,
       amount_due_cop:v.amountDueCop,due_date:v.dueDate||null,status:v.status,updated_at:new Date().toISOString()};
