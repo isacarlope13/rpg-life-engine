@@ -139,3 +139,15 @@ test("manual import uses source-bound preview and same duplicate fingerprint as 
  const ticket=signPreview("synthetic",[row],secret+"|finance-source:csv");
  assert.equal(verifyPreview(ticket,"synthetic",[row],secret+"|finance-source:manual"),false);
 });
+
+test("preview and commit use identical signing scope and bind selected account revision",()=>{
+ const route=load("../src/app/api/finance/import/route.ts");
+ assert.match(route,/previewTicket:signPreview\(owner.userId,rows,signingSecret\)/);
+ assert.match(route,/verifyPreview\(body.previewTicket,owner.userId,rows,signingSecret\)/);
+ assert.match(route,/\+source\+"\|account:"/);
+ assert.match(route,/owner.db.rpc\("owner_finance_post_manual"/);
+ const scope="test|finance-source:manual|account:a|revision:r";
+ const ticket=signPreview("fixture",[row],scope);
+ assert.ok(verifyPreview(ticket,"fixture",[row],scope));
+ assert.equal(verifyPreview(ticket,"fixture",[row],scope+"2"),false);
+});

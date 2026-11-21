@@ -4,7 +4,7 @@ import { parseFinanceCsv } from "@/lib/finance/csv";
 import { projectCashflow, isCalendarDate } from "@/lib/finance/cashflow";
 
 type FinanceRow = {date:string;kind:"income"|"expense"|"opening_balance"|"transfer";category:string;description:string;amountCop:number;paymentMethod:string};
-type Preview = {received:number;newCount:number;duplicateCount:number;duplicateRows:number[];incomingCop:number;expenseCop:number;previewTicket:string;preview?:boolean;inserted?:number;skipped?:number};
+type Preview = {received:number;newCount:number;duplicateCount:number;duplicateRows:number[];incomingCop:number;expenseCop:number;previewTicket:string;accountPreview?:{label:string;before:number;after:number;revision:string}|null;preview?:boolean;inserted?:number;skipped?:number};
 type Ledger = {
  transactions:Array<{id:string;occurred_at:string;kind:string;amount_cop:number;category:string;description:string}>;
  accounts:Array<{id:string;label:string;balance_cop:number;as_of_date:string}>;
@@ -28,6 +28,9 @@ export function PrivateFinancePanel(){
  const [reserve,setReserve]=useState("");
  const [emergency,setEmergency]=useState("");
  const [source,setSource]=useState<"csv"|"manual">("csv");
+ const [postingAccount,setPostingAccount]=useState<string|null>(null);
+ const [manualAccount,setManualAccount]=useState("");
+ const [notReflected,setNotReflected]=useState(false);
  const [manual,setManual]=useState({date:today(),time:"",kind:"expense" as "expense"|"income",category:"",description:"",amount:"",method:""});
  const [horizon,setHorizon]=useState(horizonDefault);
  const [additionalExpenses,setAdditionalExpenses]=useState<string[]>([]);
@@ -56,7 +59,7 @@ export function PrivateFinancePanel(){
  }
  useEffect(()=>{refresh().catch(e=>setError(String(e.message||e)))},[]);
  async function onCsv(file:File|undefined){
-   setError("");setMessage("");setPreview(null);setChecked(false);setRows([]);setSource("csv");
+   setError("");setMessage("");setPreview(null);setChecked(false);setRows([]);setSource("csv");setPostingAccount(null);
    if(!file)return;
    if(file.size>300000){setError("El archivo es demasiado grande (máx. 300 KB).");return;}
    setReading(true);
@@ -68,7 +71,8 @@ export function PrivateFinancePanel(){
    if(busy||reading)return;
    const amount=Number(manual.amount);
    if(!manual.description.trim()||!manual.method.trim()||!manual.category.trim()||!manual.amount.trim()||!Number.isSafeInteger(amount)||amount<=0||amount>100_000_000_000||!isCalendarDate(manual.date)||manual.date>today()||!/^([01]\d|2[0-3]):[0-5]\d$/.test(manual.time)){setError("Completa los datos reales del movimiento, fecha y hora.");return;}
-   setError("");setPreview(null);setChecked(false);setSource("manual");
+   if(manualAccount&&!notReflected){setError("Confirma que el movimiento aún no está incluido en el saldo conciliado.");return;}
+   setError("");setPreview(null);setChecked(false);setSource("manual");setPostingAccount(manualAccount||null);
    setRows([{date:manual.date+" "+manual.time,kind:manual.kind,category:manual.category,description:manual.description,amountCop:amount,paymentMethod:manual.method}]);
    setMessage("Movimiento preparado. Comprueba coincidencias y confirma en la siguiente sección.");
  }
@@ -77,11 +81,11 @@ export function PrivateFinancePanel(){
    if(mode==="commit"&&(!checked||!preview))return;
    setBusy(true);setError("");setMessage("");
    try{
-     const res=await fetch("/api/finance/import",{method:"POST",headers:writeHeaders,body:JSON.stringify({mode,rows,source,confirmed:mode==="commit"&&checked,previewTicket:mode==="commit"?preview?.previewTicket:undefined})});
+     const res=await fetch("/api/finance/import",{method:"POST",headers:writeHeaders,body:JSON.stringify({mode,rows,source,accountId:postingAccount,accountRevision:mode==="commit"?preview?.accountPreview?.revision:undefined,confirmed:mode==="commit"&&checked,previewTicket:mode==="commit"?preview?.previewTicket:undefined})});
      const json=await res.json();
      if(!res.ok)throw new Error(json.error||"No fue posible importar");
      if(mode==="preview"){setChecked(false);setPreview(json);setMessage("Vista previa completa. Confirma solo si los datos son correctos.");}
-     else{setMessage("Insertados: "+json.inserted+". Omitidos: "+json.skipped+".");setRows([]);setPreview(null);setChecked(false);await refresh();}
+     else{setMessage("Insertados: "+json.inserted+". Omitidos: "+json.skipped+"."+(json.balanceUpdated?" Saldo registrado actualizado.":" Sin cambio de saldo."));setRows([]);setPreview(null);setChecked(false);await refresh();}
    }catch(e){setPreview(null);setChecked(false);setError(e instanceof Error?e.message:"Error inesperado");}
    finally{setBusy(false);}
  }
@@ -145,7 +149,7 @@ export function PrivateFinancePanel(){
    </section>
    <section className={section}>
     <h2 className="text-xl font-bold">Registro rápido · móvil</h2>
-    <p className="text-sm">Registra ingresos o gastos ya realizados. No se ejecuta ninguna transferencia ni se cambian automáticamente cuentas, deudas o GP. Usa la fecha, hora y descripción del registro original para detectar coincidencias con tu CSV.</p>
+    <p className="text-sm">Registra ingresos o gastos ya realizados. No se ejecuta ninguna transferencia bancaria ni se cambian deudas o GP. Puedes actualizar una cuenta interna al guardar si el movimiento aún no está reflejado en su saldo. Usa la fecha, hora y descripción del registro original para detectar coincidencias con tu CSV.</p>
     <form className="grid sm:grid-cols-2 gap-2" onSubmit={e=>{e.preventDefault();prepareManual();}}>
      <label className="text-sm">Fecha<input className={input} type="date" max={today()} required value={manual.date} onChange={e=>setManual({...manual,date:e.target.value})}/></label>
      <label className="text-sm">Hora (Colombia)<input className={input} type="time" required value={manual.time} onChange={e=>setManual({...manual,time:e.target.value})}/></label>
@@ -154,6 +158,8 @@ export function PrivateFinancePanel(){
      <label className="text-sm">Categoría<input className={input} maxLength={100} required value={manual.category} onChange={e=>setManual({...manual,category:e.target.value})}/></label>
      <label className="text-sm">Medio de pago<input className={input} maxLength={80} required value={manual.method} onChange={e=>setManual({...manual,method:e.target.value})}/></label>
      <label className="text-sm sm:col-span-2">Concepto<input className={input} maxLength={300} required value={manual.description} onChange={e=>setManual({...manual,description:e.target.value})}/></label>
+     <label className="text-sm sm:col-span-2">Cuenta a actualizar (opcional)<select className={input} value={manualAccount} onChange={e=>{setManualAccount(e.target.value);setNotReflected(false)}}><option value="">Solo historial · sin cambiar saldo</option>{ledger?.accounts.map(a=><option key={a.id} value={a.id}>{a.label} · {money(Number(a.balance_cop))}</option>)}</select></label>
+     {manualAccount&&<label className="flex gap-2 items-center text-sm sm:col-span-2"><input type="checkbox" checked={notReflected} onChange={e=>setNotReflected(e.target.checked)}/> Confirmo que este movimiento ya ocurrió y aún no se refleja en el saldo conciliado de esa cuenta.</label>}
      <button disabled={busy||reading||!ledger} className="bg-amber-200 p-3 rounded-lg font-semibold disabled:opacity-40 sm:col-span-2">Preparar movimiento para revisión</button>
     </form>
    </section>
@@ -165,6 +171,8 @@ export function PrivateFinancePanel(){
     <button disabled={busy||reading||!ledger||rows.length===0} onClick={()=>void runImport("preview")} className="bg-amber-200 p-3 rounded-lg font-semibold disabled:opacity-40">Comprobar duplicados (sin guardar)</button>
     {preview&&<>
      <p className="text-sm">Recibidas: <b>{preview.received}</b> · Nuevas: <b>{preview.newCount}</b> · Duplicadas: <b>{preview.duplicateCount}</b></p>
+     {preview.accountPreview&&<div className="rounded-lg border border-green-700 p-3 text-sm"><strong>{preview.accountPreview.label}</strong>: {money(preview.accountPreview.before)} → {money(preview.accountPreview.after)}. Si el saldo cambia antes de confirmar, la operación se rechazará.</div>}
+     {source==="manual"&& !preview.accountPreview&&<p className="text-xs">Sin modificación de saldo: registro histórico o coincidencia detectada.</p>}
      <p className="text-sm">Ingresos nuevos: {money(preview.incomingCop)} · Gastos nuevos: {money(preview.expenseCop)} (saldos iniciales excluidos)</p>
      <div className="overflow-auto max-h-56"><table className="w-full text-sm"><thead><tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Revisión</th></tr></thead><tbody>
      {rows.slice(0,150).map((r,i)=><tr key={i} className="border-t"><td>{r.date}</td><td>{r.kind}</td><td>{money(r.amountCop)}</td><td>{r.description}</td><td>{preview.duplicateRows.includes(i)?"Coincidencia exacta; se omite":"Nuevo"}</td></tr>)}

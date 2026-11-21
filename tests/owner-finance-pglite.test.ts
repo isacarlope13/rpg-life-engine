@@ -53,6 +53,23 @@ test("isolated PostgreSQL finance migration: ownership, idempotent import, persi
   const replay=await db.query("insert into public.owner_finance_transactions(user_id,fingerprint,occurred_at,kind,amount_cop,origin) values($1,$2,'2025-01-01T12:00:00Z','expense',$3,'manual') on conflict(user_id,fingerprint) do nothing returning id",[a,movementFingerprint(same),same.amountCop]);
   assert.equal(replay.rows.length,0);
   assert.equal(Number((await db.query<{balance_cop:number}>("select balance_cop from public.owner_finance_accounts")).rows[0].balance_cop),2345);
+  const account=(await db.query<{id:string;revision:string;balance_cop:number}>("select id,revision,balance_cop from public.owner_finance_accounts")).rows[0];
+  const fingerprint="e".repeat(64), otherFingerprint="d".repeat(64);
+  const call="select public.owner_finance_post_manual($1,$2,$3,'2025-02-05T12:00:00Z','expense',$4,'Test','Fixture manual','Cash') as result";
+  const posted=await db.query<{result:{inserted:number;balanceUpdated:boolean;balanceCop:number}}>(call,[account.id,account.revision,fingerprint,100]);
+  assert.equal(posted.rows[0].result.inserted,1);assert.equal(posted.rows[0].result.balanceUpdated,true);
+  assert.equal(Number(posted.rows[0].result.balanceCop),2245);
+  const repeat=await db.query<{result:{inserted:number}}>(call,[account.id,account.revision,fingerprint,100]);
+  assert.equal(repeat.rows[0].result.inserted,0);
+  await assert.rejects(db.query(call,[account.id,account.revision,otherFingerprint,100])); // stale preview
+  const latest=(await db.query<{revision:string;balance_cop:number}>("select revision,balance_cop from public.owner_finance_accounts")).rows[0];
+  assert.notEqual(latest.revision,account.revision);assert.equal(Number(latest.balance_cop),2245);
+  await assert.rejects(db.query(call,[account.id,latest.revision,otherFingerprint,9999])); // no overdraft
+  assert.equal(await count("owner_finance_transactions"),131);
+  await auth(b);
+  await assert.rejects(db.query(call,[account.id,latest.revision,otherFingerprint,1]));
+  await auth(a);assert.equal(await count("owner_finance_transactions"),131);
+  assert.equal(Number((await db.query<{balance_cop:number}>("select balance_cop from public.owner_finance_accounts")).rows[0].balance_cop),2245);
   await assert.rejects(db.query("delete from public.owner_finance_transactions"));
   await db.exec("reset role; set role anon;");
   for(const t of tables)await assert.rejects(db.query("select * from public."+t));
