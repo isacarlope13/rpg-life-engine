@@ -46,6 +46,8 @@ function provider(options: {
   };
   const client = { auth } as unknown as NonNullable<AuthLoginDependencies["supabaseAnon"]>;
   const deps: AuthLoginDependencies = {
+    // These tests intentionally exercise the explicit non-production signup mode.
+    singleUserEnv: { NODE_ENV: "test", OAKHAVEN_PUBLIC_SIGNUP_ENABLED: "true" },
     isSupabaseConfigured: !options.local,
     supabaseAdmin: client,
     supabaseAnon: client,

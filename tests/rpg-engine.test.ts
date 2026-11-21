@@ -420,7 +420,7 @@ test("8. Currency parser edge cases (leading dates, quantities, *4491 card suffi
   assert.equal(store.bosses[0].status, "active");
 });
 
-test("9. Supabase .env.local setup, seed.sql idempotency & Shortcut API Key verification", async () => {
+test("9. Supabase .env.example setup, seed.sql idempotency & Shortcut API Key verification", async () => {
   const fs = await import("node:fs");
   const path = await import("node:path");
   const {
@@ -430,9 +430,10 @@ test("9. Supabase .env.local setup, seed.sql idempotency & Shortcut API Key veri
     verifyShortcutApiKey,
   } = await import("../src/lib/supabase.ts");
 
-  const envLocalPath = path.resolve(process.cwd(), ".env.local");
-  assert.ok(fs.existsSync(envLocalPath), ".env.local must exist");
-  const envContent = fs.readFileSync(envLocalPath, "utf8");
+  // Validate the versioned template, never a developer\u0027s private credentials file.
+  const envTemplatePath = path.resolve(process.cwd(), ".env.example");
+  assert.ok(fs.existsSync(envTemplatePath), ".env.example must exist");
+  const envContent = fs.readFileSync(envTemplatePath, "utf8");
   assert.ok(envContent.includes("NEXT_PUBLIC_SUPABASE_URL="));
   assert.ok(envContent.includes("NEXT_PUBLIC_SUPABASE_ANON_KEY="));
   assert.ok(envContent.includes("SUPABASE_SERVICE_ROLE_KEY="));

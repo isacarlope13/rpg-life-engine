@@ -8,7 +8,9 @@ on:
       - 'src/lib/finance/**'
       - 'src/components/sanctuary/bank-building.tsx'
       - 'supabase/owner_finance_ledger.sql'
-      - 'tests/owner-finance-ledger.test.ts'
+      - 'tests/owner-finance*.test.ts'
+      - 'tests/auth-signup-ownership.test.ts'
+      - 'tests/rpg-engine.test.ts'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/owner-finance-validation.yml'
@@ -25,6 +27,8 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

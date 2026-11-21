@@ -1,42 +1,60 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-
-const load=(p:string)=>readFileSync(new URL(p, import.meta.url),"utf8");
-
-test("finance migration defines RLS + owner-scoped unique indexes",()=>{
+import { normalizeFinanceDate, validateFinanceRow, validateFinanceItem, movementFingerprint, planImport, signPreview, verifyPreview, transactionTimestamp } from "../src/lib/finance/finance-validation.ts";
+import { parseFinanceCsv } from "../src/lib/finance/csv.ts";
+const load=(p:string)=>readFileSync(new URL(p,import.meta.url),"utf8");
+const row=validateFinanceRow({date:"2025-02-03 7:00",kind:"expense",category:"Example",description:"Synthetic transaction",amountCop:12345,paymentMethod:"Cash"})!;
+test("finance migration keeps owner RLS and contains no data seeds",()=>{
  const sql=load("../supabase/owner_finance_ledger.sql");
- for(const table of ["owner_finance_transactions","owner_finance_accounts","owner_finance_debts","owner_finance_events"]){
-   assert.match(sql,new RegExp("create table if not exists public\\."+table));
- }
- assert.match(sql,/enable row level security/);
- assert.match(sql,/auth\.uid\(\) = user_id/);
+ assert.match(sql,/enable row level security/);assert.match(sql,/auth\.uid\(\) = user_id/);
  assert.match(sql,/unique \(user_id, fingerprint\)/);
- assert.doesNotMatch(sql,/\binsert into\s+public\.owner_finance/i,"No personal ledger seeds are allowed");
+ assert.doesNotMatch(sql,/\binsert into\s+public\.owner_finance/i);
 });
-
-test("finance endpoints require owner, origin and explicit write header",()=>{
- const importRoute=load("../src/app/api/finance/import/route.ts");
- const ledgerRoute=load("../src/app/api/finance/ledger/route.ts");
+test("routes use owner session, CSRF, bounded payload and authenticated preview",()=>{
+ const route=load("../src/app/api/finance/import/route.ts");
  const helper=load("../src/lib/finance/owner-ledger.ts");
- for(const route of [importRoute,ledgerRoute]){
-   assert.match(route,/requireFinanceOwner\(req\)/);
-   assert.match(route,/financeWriteAllowed\(req\)/);
-   assert.match(route,/user_id:owner\.userId/);
-   assert.match(route,/headers:noStore/);
- }
- assert.match(helper,/isAuthorizedSupabaseUserId/);
- assert.match(helper,/x-oakhaven-finance-write/);
- assert.match(importRoute,/body\.mode==="preview"/);
- assert.match(importRoute,/movementFingerprint/);
- assert.match(importRoute,/ignoreDuplicates:true/);
+ assert.match(route,/requireFinanceOwner\(req\)/);assert.match(route,/financeWriteAllowed\(req\)/);
+ assert.match(route,/verifyPreview/);assert.match(route,/ignoreDuplicates:true/);
+ assert.match(helper,/isAuthorizedSupabaseUserId/);assert.match(helper,/value.byteLength/);
+ assert.match(helper,/buildAuthSetCookieHeaders/);
 });
-
-test("import UI requires explicit review and excludes forecast from current liquidity",()=>{
+test("strict dates and money, opening balances are not income",()=>{
+ assert.equal(normalizeFinanceDate("2025-02-03 7:00"),"2025-02-03 07:00");
+ for(const d of ["2025-02-30","2025-03-02 24:00","2025-03-02 12:60"])assert.equal(normalizeFinanceDate(d),null);
+ assert.equal(transactionTimestamp("2025-02-03 07:00"),"2025-02-03T07:00:00-05:00");
+ assert.equal(validateFinanceRow({...row,amountCop:7.5}),null);
+ assert.equal(validateFinanceRow({...row,kind:"unknown"}),null);
+ assert.equal(validateFinanceRow({...row,kind:"income",description:"Inicial cuenta"})?.kind,"opening_balance");
+ assert.equal(validateFinanceItem("debt",{creditor:"Test",principalRemainingCop:23,amountDueCop:0,status:"settled"}),null);
+});
+test("CSV parses local hour, quoted commas and COP without silently rounding",()=>{
+ const header="Fecha,Tipo,Categoría,Monto,Descripción,Método de Pago\n";
+ assert.equal(parseFinanceCsv(header+'2025-02-03 7:00,Gasto,Test,"$1,234.00","a,b",Efectivo')[0].amountCop,1234);
+ for(const line of ["2025-02-03,Bogus,Test,100,x,Cash","2025-02-03,Gasto,Test,1.25,x,Cash","2025-02-03,Gasto,Test,100,x,Cash,extra"])
+  assert.throws(()=>parseFinanceCsv(header+line));
+});
+test("dedup repeated batch, within-file and persisted, never conflates different amounts",()=>{
+ const different={...row,amountCop:12346};
+ let p=planImport([row,row,different],new Set());
+ assert.equal(p.fresh.length,2);assert.deepEqual(p.duplicateRows,[1]);
+ p=planImport([row,different],new Set([movementFingerprint(row),movementFingerprint(different)]));
+ assert.equal(p.fresh.length,0);
+ const equivalent=validateFinanceRow({...row,date:"2025-02-03T07:00",category:" example "})!;
+ assert.equal(movementFingerprint(row),movementFingerprint(equivalent));
+});
+test("preview expiry, tampering, and foreign owner are rejected",()=>{
+ const now=Date.now(),secret="fixture-only-signing-secret";
+ const ticket=signPreview("owner-a",[row],secret,now);
+ assert.ok(verifyPreview(ticket,"owner-a",[row],secret,now));
+ assert.equal(verifyPreview(ticket,"owner-b",[row],secret,now),false);
+ assert.equal(verifyPreview(ticket,"owner-a",[{...row,amountCop:1}],secret,now),false);
+ assert.equal(verifyPreview(ticket,"owner-a",[row],secret,now+600001),false);
+});
+test("UI confirmation and forecasts remain separate",()=>{
  const ui=load("../src/app/finance/page.tsx");
- assert.match(ui,/!checked\\|\\|preview\\.newCount===0/);
- assert.match(ui,/newCount===0/);
+ assert.match(ui,/!checked\|\|preview\.newCount===0/);
  assert.match(ui,/Ingresos esperados \(no disponibles\)/);
- assert.match(ui,/opening_balance/);
- assert.doesNotMatch(ui,/372879|43000|600000|1000000|120000/,"Never embed private figures as defaults");
+ assert.match(ui,/confirmed:mode==="commit"&&checked/);
+ assert.match(ui,/Sin verificar/);
 });

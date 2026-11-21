@@ -28,3 +28,12 @@
 - CSV import currently does not support spreadsheets directly; convert to the private CSV file; it is **never stored in this repository**.
 - Persistence requires the SQL migration. Until then, API returns 503 (fail closed).
 - Changes have not been executed against user's financial data or deployed.
+
+## Audit follow-up
+- CI first run: TypeScript passed; six auth tests inherited private-mode environment; one legacy test required a workstation-only .env.local. Test fixtures are isolated and the versioned environment template is checked instead.
+- The preview is HMAC-bound to the authenticated owner, canonical rows and a ten-minute expiry; explicit confirmation is required server-side. The signing secret is never returned, and is not used to bypass RLS.
+- Actual streamed payload byte limits, strict amounts/dates and known types, no silent rounding; preview identifies exact-match omissions. Equal-looking legitimate transactions require manual reconciliation; edited descriptions/categories can still produce different fingerprints.
+- Tables use normalized case-insensitive label keys, prevent old account snapshots replacing newer ones, and enforce settled-debt consistency. Direct transaction update/delete is not granted to authenticated roles. Account snapshots are independent from transaction history; marking an event received does not credit or debit a balance.
+- Database migration tests use PGlite in memory, synthetic owners and 130 fake entries, not the production database. Run the complete CI and verify live Supabase RLS in a separate test project before release.
+- This migration is still a never-applied draft; if any older draft version was applied elsewhere, inspect schema differences instead of assuming CREATE TABLE IF NOT EXISTS changes existing columns.
+- Legacy bank fixtures/hardcoded personal history remain a release blocker. Do not deploy until retired from real UI and identity-scoped data paths. No real financial records are part of these changes.

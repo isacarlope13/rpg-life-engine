@@ -1,50 +1,40 @@
-import { NextResponse } from "next/server";
-import { requireFinanceOwner, financeWriteAllowed, validateFinanceRow, movementFingerprint, noStore } from "@/lib/finance/owner-ledger";
+import { requireFinanceOwner,financeWriteAllowed,financeResponse,readFinanceJson,validateFinanceRow,movementFingerprint,planImport,transactionTimestamp,signPreview,verifyPreview } from "@/lib/finance/owner-ledger";
 
-const maxBatch = 150;
-export async function POST(req: Request) {
-  const owner = await requireFinanceOwner(req);
-  if (!owner?.db) return NextResponse.json({error:"Unauthorized"}, {status:401,headers:noStore});
-  if (!financeWriteAllowed(req)) return NextResponse.json({error:"Invalid request origin"}, {status:403,headers:noStore});
-  if (Number(req.headers.get("content-length")||"0") > 300_000) return NextResponse.json({error:"Payload too large"},{status:413,headers:noStore});
-  const raw=await req.text().catch(()=>"");
-  if(raw.length>300_000)return NextResponse.json({error:"Payload too large"},{status:413,headers:noStore});
-  const body=(()=>{try{return JSON.parse(raw)}catch{return null}})() as { mode?:string; rows?:unknown[] }|null;
-  if (!body || !["preview","commit"].includes(body.mode||"") || !Array.isArray(body.rows) ||
-      body.rows.length===0 || body.rows.length>maxBatch)
-    return NextResponse.json({error:"Provide 1–150 rows and preview/commit mode"}, {status:400,headers:noStore});
+export async function POST(req:Request){
+  const owner=await requireFinanceOwner(req);
+  const reply=(body:unknown,status=200)=>financeResponse(owner,body,status);
+  if(!owner)return reply({error:"Unauthorized"},401);
+  if(!financeWriteAllowed(req))return reply({error:"Invalid request origin"},403);
+  const secret=process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if(!secret)return reply({error:"Preview signing unavailable"},503);
+  const payload=await readFinanceJson(req,300_000);
+  if(!payload.ok)return reply({error:"Invalid or oversized payload"},payload.status);
+  const body=payload.body as {mode?:string;rows?:unknown[];confirmed?:boolean;previewTicket?:unknown}|null;
+  if(!body||!["preview","commit"].includes(body.mode||"")||!Array.isArray(body.rows)||body.rows.length<1||body.rows.length>150)
+    return reply({error:"Provide 1–150 rows and preview/commit mode"},400);
   const parsed=body.rows.map(validateFinanceRow);
-  if(parsed.some(x=>x===null)) return NextResponse.json({error:"Invalid rows; nothing imported"},{status:400,headers:noStore});
+  if(parsed.some(v=>v===null))return reply({error:"Invalid rows; nothing imported"},400);
   const rows=parsed.filter((v):v is NonNullable<typeof v>=>v!==null);
-  const fingerprints=rows.map(movementFingerprint);
-  // Duplicate detection both within file and already persisted for the owner.
+  if(body.mode==="commit"&&(body.confirmed!==true||!verifyPreview(body.previewTicket,owner.userId,rows,secret)))
+    return reply({error:"Preview missing, altered or expired. Review again."},409);
+  const fingerprints=[...new Set(rows.map(movementFingerprint))];
   const {data:existing,error:queryError}=await owner.db.from("owner_finance_transactions")
-    .select("fingerprint").eq("user_id",owner.userId).in("fingerprint",[...new Set(fingerprints)]);
-  if(queryError) return NextResponse.json({error:"Ledger unavailable; run migration before importing"},{status:503,headers:noStore});
-  const existingSet=new Set((existing||[]).map(x=>x.fingerprint));
-  const seen=new Set<string>();
-  const duplicates: number[]=[];
-  const fresh=rows.flatMap((row,index)=>{
-    const fingerprint=fingerprints[index];
-    if(existingSet.has(fingerprint)||seen.has(fingerprint)){duplicates.push(index);return [];}
-    seen.add(fingerprint);
-    return [{user_id:owner.userId,fingerprint,
-      occurred_at:(row.date.length===10?row.date+"T12:00:00-05:00":row.date.replace(" ","T")+":00-05:00"),
-      kind:row.kind,category:row.category,description:row.description,
-      amount_cop:row.amountCop,payment_method:row.paymentMethod,origin:"csv"}];
+    .select("fingerprint").eq("user_id",owner.userId).in("fingerprint",fingerprints);
+  if(queryError)return reply({error:"Ledger unavailable"},503);
+  const {fresh,duplicateRows}=planImport(rows,new Set<string>((existing||[]).map(x=>x.fingerprint)));
+  if(body.mode==="preview")return reply({
+    ok:true,preview:true,received:rows.length,newCount:fresh.length,duplicateCount:duplicateRows.length,duplicateRows,
+    incomingCop:fresh.filter(x=>x.row.kind==="income").reduce((a,x)=>a+x.row.amountCop,0),
+    expenseCop:fresh.filter(x=>x.row.kind==="expense").reduce((a,x)=>a+x.row.amountCop,0),
+    previewTicket:signPreview(owner.userId,rows,secret)
   });
-  // Never touch the database on preview.
-  if(body.mode==="preview") return NextResponse.json({
-    ok:true,preview:true,received:rows.length,newCount:fresh.length,
-    duplicateCount:duplicates.length,duplicateRows:duplicates,
-    incomingCop:fresh.filter(r=>r.kind==="income").reduce((a,r)=>a+r.amount_cop,0),
-    expenseCop:fresh.filter(r=>r.kind==="expense").reduce((a,r)=>a+r.amount_cop,0)
-  },{headers:noStore});
-  if(fresh.length===0) return NextResponse.json({ok:true,inserted:0,skipped:duplicates.length},{headers:noStore});
+  if(!fresh.length)return reply({ok:true,inserted:0,skipped:rows.length});
+  const inserts=fresh.map(({row,fingerprint})=>({user_id:owner.userId,fingerprint,
+    occurred_at:transactionTimestamp(row.date),kind:row.kind,category:row.category,description:row.description,
+    amount_cop:row.amountCop,payment_method:row.paymentMethod,origin:"csv"}));
+  // The unique constraint and ON CONFLICT DO NOTHING are the concurrency-safe duplicate barrier.
   const {data,error}=await owner.db.from("owner_finance_transactions")
-    .upsert(fresh,{onConflict:"user_id,fingerprint",ignoreDuplicates:true})
-    .select("id");
-  if(error) return NextResponse.json({error:"Import failed; no success confirmed"},{status:503,headers:noStore});
-  return NextResponse.json({ok:true,inserted:data?.length||0,skipped:rows.length-(data?.length||0)},
-    {headers:noStore});
+    .upsert(inserts,{onConflict:"user_id,fingerprint",ignoreDuplicates:true}).select("id");
+  if(error)return reply({error:"Import failed; no success confirmed"},503);
+  return reply({ok:true,inserted:data?.length||0,skipped:rows.length-(data?.length||0)});
 }
