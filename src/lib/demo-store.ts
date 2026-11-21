@@ -3327,6 +3327,7 @@ export function createStarterUserMemoryStore(params?: {
   onboarding_completed?: boolean;
 }): RPGEngineMemoryStore {
   const store = new RPGEngineMemoryStore();
+  store.financialMovements = []; // Never seed a new identity with historical financial records.
   const uidPrefix = (params?.userId || crypto.randomUUID()).slice(0, 8);
   store.onboarding_completed = params?.onboarding_completed ?? false;
   store.billing_period = new Date().toISOString().slice(0, 7);

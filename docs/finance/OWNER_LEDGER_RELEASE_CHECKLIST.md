@@ -37,3 +37,8 @@
 - Database migration tests use PGlite in memory, synthetic owners and 130 fake entries, not the production database. Run the complete CI and verify live Supabase RLS in a separate test project before release.
 - This migration is still a never-applied draft; if any older draft version was applied elsewhere, inspect schema differences instead of assuming CREATE TABLE IF NOT EXISTS changes existing columns.
 - Legacy bank fixtures/hardcoded personal history remain a release blocker. Do not deploy until retired from real UI and identity-scoped data paths. No real financial records are part of these changes.
+
+## Subsequent integration and migration fix
+- CI run 2: 357/358 passed; the remaining in-memory migration failed with SQLSTATE 42601. Removed the accidentally duplicated SQL fragment and restored the fingerprint check.
+- The village Bank, classic finance tab and standalone finance page now share PrivateFinancePanel. No legacy on-screen financial case study is used in these entry points; state payloads no longer inject the historical movement fixture. Existing databases are untouched. Legacy GP/debt-boss operations are not integrated with the private ledger; the old financial tab actions were withheld pending reconciliation. A conservative reserve simulator excludes forecasts and warns about overlapping obligations.
+- The old historical dataset still exists in git history and demo/test modules, and other legacy routes may still expose old financial assumptions. Before release, review all remaining consumers, retire private historical fixtures safely, and verify real Supabase in a separate test project. Do not deploy from this PR without explicit authorization.

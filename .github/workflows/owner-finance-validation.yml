@@ -4,6 +4,10 @@ on:
     branches: [main]
     paths:
       - 'src/app/finance/**'
+      - 'src/components/finance/**'
+      - 'src/components/rpg-dashboard.tsx'
+      - 'src/lib/state-builder.ts'
+      - 'src/lib/demo-store.ts'
       - 'src/app/api/finance/**'
       - 'src/lib/finance/**'
       - 'src/components/sanctuary/bank-building.tsx'

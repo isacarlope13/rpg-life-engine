@@ -52,9 +52,17 @@ test("preview expiry, tampering, and foreign owner are rejected",()=>{
  assert.equal(verifyPreview(ticket,"owner-a",[row],secret,now+600001),false);
 });
 test("UI confirmation and forecasts remain separate",()=>{
- const ui=load("../src/app/finance/page.tsx");
+ const ui=load("../src/components/finance/private-finance-panel.tsx");
  assert.match(ui,/!checked\|\|preview\.newCount===0/);
  assert.match(ui,/Ingresos esperados \(no disponibles\)/);
  assert.match(ui,/confirmed:mode==="commit"&&checked/);
  assert.match(ui,/Sin verificar/);
+});
+
+test("bank, private route and classic finance tab use one ledger; state does not inject history",()=>{
+ const panel=load("../src/components/finance/private-finance-panel.tsx");
+ for(const file of ["../src/app/finance/page.tsx","../src/components/sanctuary/bank-building.tsx","../src/components/rpg-dashboard.tsx"]){const src=load(file);assert.match(src, /<PrivateFinancePanel/);assert.doesNotMatch(src, /INITIAL_FINANCIAL_MOVEMENTS/);}
+ assert.match(panel,/fetch\("\/api\/finance\/ledger"/);
+ const state=load("../src/lib/state-builder.ts");assert.doesNotMatch(state,/financial_movements:\s*INITIAL_FINANCIAL_MOVEMENTS/);
+ assert.match(load("../src/lib/demo-store.ts"),/store\.financialMovements = \[\]/);
 });
