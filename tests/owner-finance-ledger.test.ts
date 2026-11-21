@@ -34,7 +34,7 @@ test("finance endpoints require owner, origin and explicit write header",()=>{
 
 test("import UI requires explicit review and excludes forecast from current liquidity",()=>{
  const ui=load("../src/app/finance/page.tsx");
- assert.match(ui,/checked&&/);
+ assert.match(ui,/!checked\\|\\|preview\\.newCount===0/);
  assert.match(ui,/newCount===0/);
  assert.match(ui,/Ingresos esperados \(no disponibles\)/);
  assert.match(ui,/opening_balance/);
