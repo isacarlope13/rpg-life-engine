@@ -1,6 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import {
   getSingleUserAccessConfig,
   isAuthorizedSupabaseUserId,
@@ -11,6 +12,10 @@ import {
   createInMemoryAuthRateLimiter,
   type AuthLoginDependencies,
 } from "../src/lib/auth-login.ts";
+import {
+  buildSafeWidgetSummaryPayload,
+  PENDING_AUTHENTICATED_WIDGET_NOTICE,
+} from "../src/lib/widget-summary.ts";
 
 const OWNER_UUID = "11111111-1111-4111-8111-111111111111";
 const INTRUDER_UUID = "22222222-2222-4222-8222-222222222222";
@@ -272,5 +277,63 @@ describe("OAKHAVEN RELEASE 3.3 — PRIVATE SINGLE-USER MODE", () => {
     assert.equal(res.status, 403);
     assert.equal(body.code, "OWNER_ONLY_ACCESS");
     assert.equal(res.headers.get("set-cookie"), null);
+  });
+
+  test("8. Widget iOS (Hallazgo B): exige autenticación (401/403), sin snippet anónimo ejecutable ni exposición financiera o secretos", () => {
+    const widgetRouteSrc = fs.readFileSync("src/app/api/shortcuts/widget-summary/route.ts", "utf8");
+    assert.match(widgetRouteSrc, /requireShortcutUser\(req\)/);
+    assert.match(widgetRouteSrc, /if \(!authCtx\.ok\)\s*\{\s*return authCtx\.response;/);
+    assert.match(widgetRouteSrc, /Cache-Control":\s*"no-store"/);
+    assert.ok(!widgetRouteSrc.includes("demoStore"));
+    assert.ok(!widgetRouteSrc.includes("new Request("));
+    assert.ok(!widgetRouteSrc.includes("loadJSON("));
+
+    const payload = buildSafeWidgetSummaryPayload({
+      player_level: 7,
+      current_streak_days: 12,
+      streak_multiplier: 1.5,
+      aegis_shields: 2,
+      readingBooks: [{ id: "b1" }],
+      knittingProjects: [],
+      skillSessions: [{ id: "s1" }, { id: "s2" }],
+    });
+
+    assert.equal(payload.widget_integration.status, "pending_authenticated_integration");
+    assert.equal(payload.widget_integration.auth_required, true);
+    assert.equal(payload.widget_integration.financial_data_exposed, false);
+    assert.equal(payload.ios_scriptable_widget_code, PENDING_AUTHENTICATED_WIDGET_NOTICE);
+
+    // No debe exponer campos financieros ni secretos/UUIDs ni llamadas anónimas ejecutables
+    const serialized = JSON.stringify(payload);
+    assert.ok(!("wallet_gp" in payload));
+    assert.ok(!("vault_remaining_gp" in payload));
+    assert.ok(!("active_boss" in payload));
+    for (const forbidden of ["new Request(", "loadJSON(", "TU-DOMINIO", "wallet_gp", "vault_remaining", "active_boss", "rpg_usr_1", OWNER_UUID]) {
+      assert.ok(!serialized.includes(forbidden), `widget-summary no debe contener ${forbidden}`);
+    }
+    // Solo comentarios explicativos (ninguna sentencia JS ejecutable fuera de comentarios)
+    const nonCommentLines = payload.ios_scriptable_widget_code
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("//"));
+    assert.deepEqual(nonCommentLines, []);
+  });
+
+  test("9. Ninguna ruta en src/app/api/** reintroduce fallback a demoStore", () => {
+    const apiRoot = path.join("src", "app", "api");
+    const routeFiles: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) routeFiles.push(full);
+      }
+    };
+    walk(apiRoot);
+    assert.ok(routeFiles.length > 10, "Debe auditar todas las rutas de src/app/api");
+    for (const file of routeFiles) {
+      const content = fs.readFileSync(file, "utf8");
+      assert.ok(!content.includes("demoStore"), `${file} no debe importar ni hacer fallback a demoStore`);
+    }
   });
 });
