@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     if(existingSet.has(fingerprint)||seen.has(fingerprint)){duplicates.push(index);return [];}
     seen.add(fingerprint);
     return [{user_id:owner.userId,fingerprint,
-      occurred_at:row.date.replace(" ","T")+(row.date.length===10?"T12:00:00":"")+":00-05:00",
+      occurred_at:(row.date.length===10?row.date+"T12:00:00-05:00":row.date.replace(" ","T")+":00-05:00"),
       kind:row.kind,category:row.category,description:row.description,
       amount_cop:row.amountCop,payment_method:row.paymentMethod,origin:"csv"}];
   });
