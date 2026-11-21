@@ -66,3 +66,26 @@ test("bank, private route and classic finance tab use one ledger; state does not
  const state=load("../src/lib/state-builder.ts");assert.doesNotMatch(state,/financial_movements:\s*INITIAL_FINANCIAL_MOVEMENTS/);
  assert.match(load("../src/lib/demo-store.ts"),/store\.financialMovements = \[\]/);
 });
+
+import { projectCashflow } from "../src/lib/finance/cashflow.ts";
+test("cashflow protects reserve; overdue debts are due today and same-day debit precedes expected salary",()=>{
+ const p=projectCashflow({today:"2025-01-08",until:"2025-01-20",accounts:[{balance_cop:1000,as_of_date:"2025-01-08"}],reserveCop:400,
+ debts:[{id:"one",creditor:"Test A",amount_due_cop:200,due_date:"2025-01-02",status:"overdue"},{id:"two",creditor:"Test B",amount_due_cop:500,due_date:"2025-01-20",status:"active"}],
+ events:[{id:"one",label:"Possible salary",expected_on:"2025-01-20",amount_cop:800,kind:"income",status:"expected"},{id:"two",label:"Possible duplicate installment",expected_on:"2025-01-20",amount_cop:500,kind:"expense",status:"expected"}],additionalExpenseIds:[]});
+ assert.equal(p.startingAfterReserve,600);assert.equal(p.timeline[0].date,"2025-01-08");
+ assert.equal(p.timeline[1].kind,"debt");assert.equal(p.timeline[2].kind,"income");
+ assert.equal(p.finalWithoutExpected,-100);assert.equal(p.finalWithExpected,700);
+ assert.equal(p.maximumShortfallWithExpected,100);assert.deepEqual(p.unreviewedExpenseIds,["two"]);
+});
+test("cashflow excludes received or stale expected income, settled debts and items outside horizon",()=>{
+ const p=projectCashflow({today:"2025-01-08",until:"2025-01-20",accounts:[{balance_cop:"1000",as_of_date:"2025-01-07"}],reserveCop:500,
+ debts:[{id:"one",creditor:"Test",amount_due_cop:100,due_date:null,status:"active"},{id:"two",creditor:"Settled",amount_due_cop:0,due_date:null,status:"settled"}],
+ events:[{id:"past",label:"Unconfirmed past",expected_on:"2025-01-01",amount_cop:400,kind:"income",status:"expected"},{id:"received",label:"Already reconciled",expected_on:"2025-01-10",amount_cop:600,kind:"income",status:"received"},{id:"later",label:"Outside horizon",expected_on:"2025-02-01",amount_cop:100,kind:"expense",status:"expected"},{id:"expense",label:"Extra expense",expected_on:"2025-01-15",amount_cop:75,kind:"expense",status:"expected"}],additionalExpenseIds:["expense","later"]});
+ assert.equal(p.timeline.length,2);assert.equal(p.finalWithExpected,325);assert.equal(p.finalWithoutExpected,325);
+ assert.ok(p.timeline[0].undated);assert.ok(p.issues.some(i=>i.includes("fecha distinta")));
+ assert.throws(()=>projectCashflow({today:"2025-02-30",until:"2025-03-20",accounts:[],debts:[],events:[],reserveCop:0,additionalExpenseIds:[]}));
+});
+test("bank preserves LivingInteriorRoom and suppresses unverified specialist panels",()=>{
+ const bank=load("../src/components/sanctuary/bank-building.tsx");
+ assert.match(bank,/<LivingInteriorRoom/);assert.match(bank,/hideSpecialistAndLibrary/);
+});

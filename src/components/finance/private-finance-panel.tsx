@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { parseFinanceCsv } from "@/lib/finance/csv";
+import { projectCashflow, isCalendarDate } from "@/lib/finance/cashflow";
 
 type FinanceRow = {date:string;kind:"income"|"expense"|"opening_balance"|"transfer";category:string;description:string;amountCop:number;paymentMethod:string};
 type Preview = {received:number;newCount:number;duplicateCount:number;duplicateRows:number[];incomingCop:number;expenseCop:number;previewTicket:string;preview?:boolean;inserted?:number;skipped?:number};
@@ -12,7 +13,8 @@ type Ledger = {
 };
 const money = (value:number) => new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(value);
 const writeHeaders = {"Content-Type":"application/json","x-oakhaven-finance-write":"1"};
-const today = () => new Date().toLocaleDateString("en-CA",{timeZone:"America/Bogota"});
+const today = () => {const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Bogota",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());return ["year","month","day"].map(k=>parts.find(p=>p.type===k)?.value).join("-");};
+const horizonDefault=()=>{const d=new Date(today()+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+60);return d.toISOString().slice(0,10);};
 export function PrivateFinancePanel(){
  const [rows,setRows]=useState<FinanceRow[]>([]);
  const [preview,setPreview]=useState<Preview|null>(null);
@@ -23,18 +25,26 @@ export function PrivateFinancePanel(){
  const [reading,setReading]=useState(false);
  const [checked,setChecked]=useState(false);
  const [reserve,setReserve]=useState("");
+ const [horizon,setHorizon]=useState(horizonDefault);
+ const [additionalExpenses,setAdditionalExpenses]=useState<string[]>([]);
  const [account,setAccount]=useState({label:"",balanceCop:"",asOfDate:today()});
  const [debt,setDebt]=useState({creditor:"",principalRemainingCop:"",amountDueCop:"",dueDate:"",status:"active"});
  const [event,setEvent]=useState({label:"",expectedOn:today(),amountCop:"",kind:"income",status:"expected"});
  const totalBalance=useMemo(()=>ledger?.accounts.reduce((s,a)=>s+Number(a.balance_cop),0)||0,[ledger]);
  const committed=useMemo(()=>ledger?.debts.filter(d=>d.status!=="settled").reduce((s,d)=>s+Number(d.amount_due_cop),0)||0,[ledger]);
  const reserveAmount=reserve.trim()!==""&&Number.isSafeInteger(Number(reserve))&&Number(reserve)>=0?Number(reserve):null;
+ const projection=useMemo(()=>{
+   if(!ledger||!ledger.accounts.length||reserveAmount===null||!isCalendarDate(horizon)||horizon<today())return null;
+   try{return projectCashflow({today:today(),until:horizon,accounts:ledger.accounts,debts:ledger.debts,events:ledger.events,reserveCop:reserveAmount,additionalExpenseIds:additionalExpenses});}
+   catch{return null;}
+ },[ledger,reserveAmount,horizon,additionalExpenses]);
  const forecasts=useMemo(()=>ledger?.events.filter(e=>e.status==="expected"&&e.kind==="income").reduce((s,e)=>s+Number(e.amount_cop),0)||0,[ledger]);
  async function refresh(){
    const res=await fetch("/api/finance/ledger",{cache:"no-store"});
    const json=await res.json();
    if(!res.ok){setLedger(null);throw new Error(json.error||"No se pudo abrir la tesorería");}
    setLedger(json as Ledger);
+   setAdditionalExpenses([]); // Reconfirm overlap exclusions after each server refresh.
  }
  useEffect(()=>{refresh().catch(e=>setError(String(e.message||e)))},[]);
  async function onCsv(file:File|undefined){
@@ -91,6 +101,22 @@ export function PrivateFinancePanel(){
       <p>Faltante para cubrir lo anterior: <strong>{money(Math.max(0,reserveAmount+committed-totalBalance))}</strong></p>
     </div>:<p className="text-sm">Conciliar cuentas, revisar obligaciones y definir la reserva antes de estimar el margen.</p>}
     <p className="text-xs">No constituye dinero libre autorizado: puede haber otras obligaciones, saldos desactualizados o pagos pendientes de registrar.</p>
+   </section>
+   <section className={section}>
+    <h2 className="text-xl font-bold">Calendario de caja · dos escenarios</h2>
+    <p className="text-sm">Usa la reserva anterior para todo este horizonte, añade el presupuesto de gastos imprescindibles que falte y revisa que no se duplique con los pagos del calendario. Los ingresos esperados siguen siendo estimaciones; no autorizan gastos ni canjes de GP.</p>
+    <label className="block text-sm">Proyectar hasta<input type="date" min={today()} value={horizon} onChange={e=>setHorizon(e.target.value)} className={input}/></label>
+    {ledger?.events.filter(e=>e.kind==="expense"&&e.status==="expected"&&e.expected_on<=horizon).map(e=><label key={e.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={additionalExpenses.includes(e.id)} onChange={ev=>setAdditionalExpenses(prev=>ev.target.checked?[...prev,e.id]:prev.filter(id=>id!==e.id))}/> Añadir {e.label} · {money(Number(e.amount_cop))} ({e.expected_on}) únicamente si no está incluida en deudas o reserva.</label>)}
+    {projection?<>
+      {projection.issues.map((issue,i)=><p key={i} role="status" className="text-sm text-amber-900">{issue}</p>)}
+      <div className="grid sm:grid-cols-2 gap-2">
+        <div className="rounded-xl border border-stone-300 p-3"><p className="text-sm">Sin ingresos previstos</p><strong>{money(projection.finalWithoutExpected)}</strong><p className="text-xs">Mayor faltante: {money(projection.maximumShortfallWithoutExpected)}</p></div>
+        <div className="rounded-xl border border-stone-300 p-3"><p className="text-sm">Si llegan los ingresos previstos</p><strong>{money(projection.finalWithExpected)}</strong><p className="text-xs">Mayor faltante: {money(projection.maximumShortfallWithExpected)}</p></div>
+      </div>
+      <p className="text-xs">Saldo inicial menos reserva: {money(projection.startingAfterReserve)}. En una misma fecha se consideran primero las salidas. Una deuda sin vencimiento se reserva desde hoy. Los ingresos con fecha pasada requieren conciliación antes de contarse.</p>
+      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Fecha</th><th>Concepto</th><th>Movimiento</th><th>Sin ingresos futuros</th><th>Con ingresos futuros</th></tr></thead><tbody>{projection.timeline.map(item=><tr key={item.id} className="border-t"><td>{item.date}</td><td>{item.label}{item.overdue?" (vencido)":item.undated?" (sin fecha)":""}</td><td>{item.kind==="income"?"+":"−"}{money(item.amount)}</td><td>{money(item.withoutExpected)}</td><td>{money(item.withExpected)}</td></tr>)}</tbody></table></div>
+    </>:<p className="text-sm">Define un horizonte válido, concilia tus cuentas y completa la reserva para calcular.</p>}
+    <p className="text-xs font-bold">Simulación orientativa. No habilita recompensas ni modifica datos reales. No uses estos importes como dinero libre confirmado.</p>
    </section>
    <section className={section}>
     <h2 className="text-xl font-bold">1. Importar movimientos con vista previa</h2>

@@ -1,4 +1,5 @@
 "use client";
+import { LivingInteriorRoom, type InteriorStationDefinition } from "@/components/sanctuary/living-interior-room";
 import { PrivateFinancePanel } from "@/components/finance/private-finance-panel";
 
 interface BankBuildingProps {
@@ -9,5 +10,10 @@ interface BankBuildingProps {
 }
 /** The bank no longer initializes local demo balances or historical personal fixtures. */
 export function BankBuilding({onClose}:BankBuildingProps){
- return <section className="fixed inset-0 z-50 overflow-y-auto bg-[#f4eedc] text-[#3a2e2b] p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Banco privado de OakHaven"><div className="max-w-5xl mx-auto"><button type="button" onClick={onClose} className="rounded-lg border border-stone-400 px-4 py-2 font-semibold">← Volver al pueblo</button><PrivateFinancePanel/></div></section>;
+ const stations:InteriorStationDefinition[]=[{id:"ledger",name:"Tesorería privada",icon:"📒",description:"Cuentas conciliadas, calendario y obligaciones",stationType:"vault"}];
+ return <LivingInteriorRoom buildingId="banco_oakhaven" buildingName="Banco de OakHaven" domain="work" districtName="Plaza Central" icon="🏦"
+  tagline="Tesorería privada · datos conciliados" stations={stations} activeStationId="ledger" onSelectStation={()=>{}} onClose={onClose}
+  hideSpecialistAndLibrary roomTheme={{wallColor:"#3D2B1F",floorPattern:"stone",ambientWarmth:"candlelight"}}>
+  <PrivateFinancePanel/>
+ </LivingInteriorRoom>;
 }
