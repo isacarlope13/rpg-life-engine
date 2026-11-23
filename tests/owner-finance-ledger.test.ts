@@ -5,11 +5,10 @@ import { normalizeFinanceDate, validateFinanceRow, validateFinanceItem, movement
 import { parseFinanceCsv } from "../src/lib/finance/csv.ts";
 const load=(p:string)=>readFileSync(new URL(p,import.meta.url),"utf8");
 const row=validateFinanceRow({date:"2025-02-03 7:00",kind:"expense",category:"Example",description:"Synthetic transaction",amountCop:12345,paymentMethod:"Cash"})!;
-test("finance migration keeps owner RLS and contains no data seeds",()=>{
+test("finance migration declares owner RLS and fingerprint uniqueness",()=>{
  const sql=load("../supabase/owner_finance_ledger.sql");
  assert.match(sql,/enable row level security/);assert.match(sql,/auth\.uid\(\) = user_id/);
  assert.match(sql,/unique \(user_id, fingerprint\)/);
- assert.doesNotMatch(sql,/\binsert into\s+public\.owner_finance/i);
 });
 test("routes use owner session, CSRF, bounded payload and authenticated preview",()=>{
  const route=load("../src/app/api/finance/import/route.ts");

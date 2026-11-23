@@ -83,7 +83,7 @@ begin
   end if;
   new.revision := gen_random_uuid();
   return new;
-end $;
+end $$;
 drop trigger if exists owner_finance_account_date_guard on public.owner_finance_accounts;
 create trigger owner_finance_account_date_guard before update on public.owner_finance_accounts
 for each row execute function public.owner_finance_guard_account_date();
