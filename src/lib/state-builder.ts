@@ -38,7 +38,6 @@ import {
   applyPersistedCollectionsToStore,
   type PersistedCollectionsPayload,
 } from "./persistence-sync.ts";
-import { INITIAL_FINANCIAL_MOVEMENTS } from "./initial-financial-movements.ts";
 
 /**
  * Construye el estado del dashboard EXCLUSIVAMENTE a partir de los datos del usuario
@@ -99,7 +98,7 @@ export function buildLocalFallbackState(
     spaced_cards: userStore.spacedCards,
     unlocked_perks: userStore.unlockedPerks,
     talent_perks: userStore.getTalentPerks(),
-    financial_movements: INITIAL_FINANCIAL_MOVEMENTS,
+    financial_movements: [], // Real history is read only through the authenticated owner ledger.
   };
 }
 
@@ -700,6 +699,6 @@ export async function buildSupabaseEngineState(params: {
       spaced_cards: userStore.spacedCards,
       unlocked_perks: userStore.unlockedPerks,
       talent_perks: userStore.getTalentPerks(),
-      financial_movements: INITIAL_FINANCIAL_MOVEMENTS,
+      financial_movements: [], // Real history is read only through the authenticated owner ledger.
     };
 }
