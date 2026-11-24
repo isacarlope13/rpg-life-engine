@@ -649,6 +649,9 @@ export function buildSkillSessionPayload(
     action: basePayload.action,
     domain: basePayload.domain,
     idempotency_key: basePayload.idempotency_key,
+    ...(typeof customOverrides?.filet_pattern_version_id === "string" && {
+      filet_session_id: session.sessionId,
+    }),
     duration_minutes: customOverrides?.duration_minutes ?? durationMinutes,
   };
 }

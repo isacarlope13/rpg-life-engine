@@ -22,11 +22,14 @@ import { requireShortcutUser, scopeIdempotencyKey } from "@/lib/request-auth";
 import { persistUserCollectionsState } from "@/lib/persistence-sync";
 import { isPositiveSessionDuration } from "@/lib/skill-session-validation";
 import { recoverSkillSessionStateFromProfile } from "@/lib/skill-session-recovery";
+import { finalizeFiletSession } from "@/lib/filet-session-finalization";
 import { validateLinkedFiletPatternSnapshot } from "@/lib/sanctuary/filet-guided-engine";
 import type { LinkedFiletPatternSnapshot } from "@/types/rpg";
 
 export interface SkillSessionEndpointRequest {
   idempotency_key?: string;
+  filet_session_id?: string;
+  filet_pattern_version_id?: string;
   action?:
     | "log_session"
     | "set_debt_strategy"
@@ -547,7 +550,7 @@ export async function POST(req: Request) {
       });
 
       if (isSupabaseConfigured && db) {
-        const { data: inserted } = await db
+        const { data: inserted, error } = await db
           .from("knitting_projects")
           .insert({
             user_id: userId,
@@ -557,11 +560,22 @@ export async function POST(req: Request) {
             completed_rows: 0,
             yarn_details: project.yarn_details,
             status: "in_progress",
+            ...(validatedLinkedPattern && {
+              linked_pattern_id: validatedLinkedPattern.pattern_id,
+              linked_pattern_version_id: validatedLinkedPattern.version_id,
+              linked_pattern_snapshot: validatedLinkedPattern,
+            }),
           })
           .select("id")
           .maybeSingle();
         if (inserted?.id) {
           project.id = String(inserted.id);
+        } else if (validatedLinkedPattern) {
+          store.knittingProjects = store.knittingProjects.filter(item => item !== project);
+          return NextResponse.json({
+            success: false, code: "FILET_PROJECT_PENDING",
+            error: error ? "No se pudo guardar el vínculo Filet" : "El servidor no confirmó el proyecto Filet",
+          }, { status: 503 });
         }
       }
       await persistUserCollectionsState({ userId, store, db });
@@ -1063,6 +1077,44 @@ export async function POST(req: Request) {
     if (body.duration_minutes !== undefined && !isPositiveSessionDuration(body.duration_minutes)) {
       return NextResponse.json({ success: false, error: "La duración registrada debe ser un número positivo" }, { status: 400 });
     }
+    const filetCommand = body.filet_session_id !== undefined || body.filet_pattern_version_id !== undefined;
+    if (domain === "knitting" && isSupabaseConfigured && db) {
+      if (body.project_id !== undefined && typeof body.project_id !== "string") {
+        return NextResponse.json({ success: false, error: "Proyecto inválido" }, { status: 400 });
+      }
+      let projectQuery = db.from("knitting_projects").select("*").eq("user_id", userId);
+      if (body.project_id && !body.project_id.startsWith("knit-")) {
+        projectQuery = projectQuery.eq("id", body.project_id);
+      } else {
+        projectQuery = projectQuery.order("created_at", { ascending: true }).limit(1);
+      }
+      const { data: project, error } = await projectQuery.maybeSingle();
+      if (error) {
+        return NextResponse.json({ success: false, error: "No se pudo verificar el proyecto de tejido" }, { status: 503 });
+      }
+      if (project?.linked_pattern_version_id || project?.linked_pattern_snapshot) {
+        if (authCtx.authMethod !== "session") {
+          return NextResponse.json({ success: false, error: "Sesión autenticada requerida" }, { status: 401 });
+        }
+        const snapshot = validateLinkedFiletPatternSnapshot(project.linked_pattern_snapshot);
+        if (!snapshot.valid || snapshot.snapshot.version_id !== project.linked_pattern_version_id ||
+            body.project_id !== project.id) {
+          return NextResponse.json({ success: false, error: "Proyecto Filet o versión incompatible" }, { status: 409 });
+        }
+        const result = await finalizeFiletSession(db, userId, {
+          id: project.id, name: project.name, technique: project.technique,
+          total_rows_target: project.total_rows_target, completed_rows: project.completed_rows,
+          yarn_details: project.yarn_details ?? "", status: project.status,
+          linked_filet_pattern: snapshot.snapshot,
+        }, body);
+        return NextResponse.json(result.body, { status: result.status });
+      }
+      if (filetCommand) {
+        return NextResponse.json({ success: false, error: "Proyecto Filet no encontrado" }, { status: 404 });
+      }
+    } else if (filetCommand) {
+      return NextResponse.json({ success: false, code: "FILET_SESSION_PENDING", error: "Finalización Filet no disponible" }, { status: 503 });
+    }
     if (isSupabaseConfigured && db) {
       try {
         await recoverSkillSessionStateFromProfile(db, userId, store);
@@ -1201,7 +1253,7 @@ export async function POST(req: Request) {
         }
 
         const { data: sbProj } = await targetProjQuery.maybeSingle();
-        if (sbProj) {
+        if (sbProj && !sbProj.linked_pattern_version_id && !sbProj.linked_pattern_snapshot) {
           const newCompletedRows = Math.min(
             Number(sbProj.total_rows_target),
             Number(sbProj.completed_rows) + rowsDelta

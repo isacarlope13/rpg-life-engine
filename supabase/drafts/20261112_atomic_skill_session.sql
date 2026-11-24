@@ -1,4 +1,4 @@
--- DRAFT: not used by the application and never applied automatically.
+-- DRAFT: apply explicitly before enabling Filet finalization.
 -- Server-only kernel. The caller must derive p_owner_id from verified authentication.
 -- Reuses fn_process_activity_reward unchanged; it does not introduce reward formulas.
 BEGIN;
@@ -16,6 +16,19 @@ ALTER TABLE public.skill_session_operation_receipts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.skill_session_operation_receipts FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT ON public.skill_session_operation_receipts TO service_role;
 
+CREATE TABLE IF NOT EXISTS public.filet_session_operation_aliases (
+  user_id uuid NOT NULL REFERENCES auth.users(id),
+  operation_key text NOT NULL CHECK (length(operation_key) BETWEEN 1 AND 200),
+  canonical_key text NOT NULL,
+  PRIMARY KEY (user_id, operation_key),
+  FOREIGN KEY (user_id, canonical_key)
+    REFERENCES public.skill_session_operation_receipts(user_id, operation_key)
+    DEFERRABLE INITIALLY DEFERRED
+);
+ALTER TABLE public.filet_session_operation_aliases ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.filet_session_operation_aliases FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT, INSERT ON public.filet_session_operation_aliases TO service_role;
+
 CREATE OR REPLACE FUNCTION public.record_skill_session_atomic_v1(
   p_owner_id uuid,
   p_operation_key text,
@@ -32,6 +45,11 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   v_key text := btrim(p_operation_key);
+  v_alias text := v_key;
+  v_filet_session text := p_request->>'filet_session_id';
+  v_filet_version text := p_request->>'filet_pattern_version_id';
+  v_bound_key text;
+  v_project jsonb;
   v_hash text;
   v_activity_key text;
   v_receipt public.skill_session_operation_receipts%ROWTYPE;
@@ -52,6 +70,31 @@ BEGIN
   IF coalesce(auth.role(), '') <> 'service_role' THEN
     RAISE EXCEPTION 'Server role required' USING ERRCODE = '42501';
   END IF;
+  IF v_filet_session IS NOT NULL OR v_filet_version IS NOT NULL THEN
+    IF v_filet_session IS NULL OR v_filet_session !~ '^ses_[0-9]{1,16}_[a-z0-9]{1,6}$'
+       OR nullif(v_filet_version, '') IS NULL OR v_kind <> 'none'
+       OR p_request->>'domain' IS DISTINCT FROM 'knitting'
+       OR p_request ? 'rows_completed' THEN
+      RAISE EXCEPTION 'Invalid Filet session identity' USING ERRCODE = '22023';
+    END IF;
+    SELECT to_jsonb(project) INTO v_project FROM public.knitting_projects project
+      WHERE project.id = (p_request->>'project_id')::uuid AND project.user_id = p_owner_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Owned Filet project required' USING ERRCODE = '42501'; END IF;
+    IF v_project->>'linked_pattern_version_id' IS DISTINCT FROM v_filet_version THEN
+      RAISE EXCEPTION 'Filet pattern version changed' USING ERRCODE = '22023';
+    END IF;
+    -- This is also the legacy universal-session key, so a legacy activity can never be paid again.
+    v_key := 'ses_univ_' || p_owner_id::text || '_' || v_filet_session;
+    PERFORM pg_advisory_xact_lock(hashtextextended('filet-alias:' || p_owner_id::text || ':' || v_alias, 0));
+    SELECT canonical_key INTO v_bound_key FROM public.filet_session_operation_aliases
+      WHERE user_id = p_owner_id AND operation_key = v_alias;
+    IF FOUND AND v_bound_key <> v_key THEN
+      RAISE EXCEPTION 'Filet operation already belongs to another session' USING ERRCODE = '22023';
+    END IF;
+    IF v_alias <> v_key AND left(v_alias, 9) = 'ses_univ_' THEN
+      RAISE EXCEPTION 'Reserved universal session key' USING ERRCODE = '22023';
+    END IF;
+  END IF;
   IF p_owner_id IS NULL OR p_session_id IS NULL OR v_key IS NULL OR length(v_key) NOT BETWEEN 1 AND 200
      OR p_request IS NULL OR jsonb_typeof(p_request) <> 'object'
      OR p_activity IS NULL OR jsonb_typeof(p_activity) <> 'object'
@@ -62,6 +105,10 @@ BEGIN
   -- Match scopeIdempotencyKey in request-auth.ts, including its binary separator.
   v_activity_key := 'u' || left(encode(sha256(convert_to(p_owner_id::text, 'UTF8') || decode('00','hex') || convert_to(v_key, 'UTF8')), 'hex'), 48);
   PERFORM pg_advisory_xact_lock(hashtextextended(p_owner_id::text || ':' || v_key, 0));
+  IF v_filet_session IS NOT NULL THEN
+    INSERT INTO public.filet_session_operation_aliases(user_id, operation_key, canonical_key)
+      VALUES (p_owner_id, v_alias, v_key) ON CONFLICT (user_id, operation_key) DO NOTHING;
+  END IF;
   SELECT * INTO v_receipt FROM public.skill_session_operation_receipts
     WHERE user_id = p_owner_id AND operation_key = v_key;
   IF FOUND THEN
@@ -161,7 +208,8 @@ BEGIN
   IF p_collections_state IS NOT NULL THEN
     SELECT coalesce(jsonb_object_agg(key, value), '{}'::jsonb) INTO v_patch
     FROM jsonb_each(p_collections_state)
-    WHERE key IN ('skillSessionState','readingBooks','knittingProjects','rubikCubes','workProjects');
+    WHERE key = 'skillSessionState'
+       OR (v_filet_session IS NULL AND key IN ('readingBooks','knittingProjects','rubikCubes','workProjects'));
     v_snapshot := v_snapshot || v_patch;
   END IF;
   -- Keep an existing visual resource projection aligned with the actual row result.

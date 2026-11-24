@@ -152,6 +152,33 @@ test("changed immutable request conflicts without advancing anything", async () 
   assert.deepEqual(await audit(), before);
 });
 
+test("Filet aliases share one canonical receipt and bind to one session and version", async () => {
+  await db.exec("alter table public.knitting_projects add column if not exists linked_pattern_version_id text");
+  await db.query("update public.knitting_projects set linked_pattern_version_id='fixture-v1', completed_rows=1 where id=$1", [knitA]);
+  const request = {
+    domain: "knitting", duration_minutes: 7, project_id: knitA,
+    filet_session_id: "ses_1000000000000_abc", filet_pattern_version_id: "fixture-v1",
+  };
+  const options = {
+    request, resource: { kind: "none" },
+    activity: { domain: "knitting", duration_minutes: 7, title: "Filet", requested_gp: 100, earned_xp: 10 },
+  };
+  const first = await call({ ...options, key: "filet-one" });
+  const otherSession = "50000000-0000-4000-8000-000000000020";
+  const replay = await call({ ...options, key: "filet-two", session: otherSession });
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.session_logged.id, first.session_logged.id);
+  const distinct = { ...request, filet_session_id: "ses_1000000000000_def" };
+  await assert.rejects(call({ ...options, key: "filet-two", request: distinct }), /already belongs/);
+  await assert.rejects(call({ ...options, key: "filet-two", request: { ...request, notes: "changed" } }), /payload changed/);
+  await assert.rejects(call({ ...options, key: "filet-three", request: { ...request, filet_pattern_version_id: "wrong" } }), /version changed/);
+  await call({ ...options, key: "filet-three", request: distinct, session: otherSession });
+  const state = await audit();
+  assert.deepEqual([state.activities, state.receipts, state.wallet, state.xp], [2, 2, 200, 20]);
+  const counters = await db.query<{ completed_rows: number }>("select completed_rows from public.knitting_projects where id=$1", [knitA]);
+  assert.equal(counters.rows[0].completed_rows, 1);
+});
+
 test("foreign resource failure rolls back the already-run treasury trigger and activity insert", async () => {
   const before = await audit();
   await assert.rejects(call({ resource: { kind: "book", id: bookB, delta: 3 } }), /Owned book required/);

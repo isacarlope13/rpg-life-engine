@@ -22,7 +22,7 @@ export interface AtomicSessionPlan {
   p_request: Command;
   p_activity: { domain: Command["domain"]; title: string; duration_minutes: number; requested_gp: number; earned_xp: number; notes: string; metadata: SkillSessionRecord["metadata"] };
   p_resource: Resource;
-  p_collections_state: ReturnType<typeof serializeStoreCollections>;
+  p_collections_state: Partial<ReturnType<typeof serializeStoreCollections>>;
   p_expected_profile_updated_at: string;
 }
 
@@ -42,7 +42,7 @@ export function prepareAtomicSkillSession(context: {
   // No callbacks, references or reward effects escape back into the live store.
   const draft = Object.assign(Object.create(RPGEngineMemoryStore.prototype) as RPGEngineMemoryStore,
     structuredClone(context.store));
-  draft.processedIdempotencyKeys.clear();
+  draft.processedIdempotencyKeys.delete(`skill_session:${key}`);
   const allowed = ["domain", "duration_minutes", "title", "notes", "idempotency_key", "cube_type", "cube_id", "cube_model", "solve_time_seconds", "penalty", "scramble", "solves_count", "algorithm_learned", "book_id", "pages_read", "quote_text", "quote_page", "quotes_list", "project_id", "rows_completed", "stitches_notes", "subject", "study_method", "deliverable", "impact_level", "work_mode", "agile_methodology", "agile_stage"];
   const command = structuredClone(Object.fromEntries(Object.entries(input).filter(([key, value]) => allowed.includes(key) && value !== undefined))) as Command;
   let resource: Resource = { kind: "none" };
@@ -52,10 +52,15 @@ export function prepareAtomicSkillSession(context: {
     const collection = reading ? draft.readingBooks : draft.knittingProjects;
     if (!id || !collection.some(item => item.id === id)) throw new Error("Explicit owned resource required");
     requireUuid(id);
-    const delta = reading ? command.pages_read ?? 15 : command.rows_completed ?? 6;
-    if (!Number.isSafeInteger(delta) || delta <= 0) throw new Error("Positive integer resource delta required");
-    resource = { kind: reading ? "book" : "knitting", id, delta };
-    if (reading) command.pages_read = delta; else command.rows_completed = delta;
+    const guided = !reading && draft.knittingProjects.some(project => project.id === id && project.linked_filet_pattern);
+    if (guided) {
+      delete command.rows_completed;
+    } else {
+      const delta = reading ? command.pages_read ?? 15 : command.rows_completed ?? 6;
+      if (!Number.isSafeInteger(delta) || delta <= 0) throw new Error("Positive integer resource delta required");
+      resource = { kind: reading ? "book" : "knitting", id, delta };
+      if (reading) command.pages_read = delta; else command.rows_completed = delta;
+    }
   }
   let proposal: Activity | undefined;
   draft.completeActivity = function (activity: Activity) {
@@ -97,12 +102,18 @@ export interface AtomicSessionTransport {
   rpc(name: "record_skill_session_atomic_v1", args: AtomicSessionPlan): PromiseLike<{ data: unknown; error: unknown }>;
 }
 
+export class AtomicSessionConflict extends Error {}
+
 /** Staging transport only. No legacy fallback and no application-store mutation.
  * A timeout is ambiguous: caller must retain the same command/key for retry. */
 export async function commitAtomicSkillSession(db: AtomicSessionTransport, plan: AtomicSessionPlan): Promise<AtomicSessionResponse> {
   if (typeof window !== "undefined") throw new Error("Server-only session adapter");
   const { data, error } = await db.rpc("record_skill_session_atomic_v1", structuredClone(plan));
-  if (error) throw new Error("Atomic session pending; retry the same operation");
+  if (error) {
+    const code = (error as { code?: unknown }).code;
+    if (code === "22023" || code === "55000") throw new AtomicSessionConflict("Atomic session conflict");
+    throw new Error("Atomic session pending; retry the same operation");
+  }
   const value = data as Partial<AtomicSessionResponse> | null;
   if (!value || value.success !== true || typeof value.replayed !== "boolean"
     || !value.session_logged || !uuid.test(value.session_logged.id)

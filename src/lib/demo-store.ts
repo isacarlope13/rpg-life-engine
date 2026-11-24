@@ -1801,6 +1801,10 @@ export class RPGEngineMemoryStore {
     }
     const target = this.knittingProjects.find((p) => p.id === projectId);
     if (!target) return undefined;
+    if (target.linked_filet_pattern && status !== "archived" &&
+        (status === "completed") !== (target.completed_rows >= target.total_rows_target)) {
+      throw new Error("El estado del proyecto Filet depende del progreso guiado.");
+    }
     target.status = status;
     return target;
   }
@@ -2326,6 +2330,7 @@ export class RPGEngineMemoryStore {
     project_id?: string;
     rows_completed?: number;
     stitches_notes?: string;
+    guided_time_only?: boolean;
     // Study
     subject?: string;
     study_method?:
@@ -2516,14 +2521,19 @@ export class RPGEngineMemoryStore {
         detailsSummary = `+${pages} páginas leídas en ${duration} min`;
       }
     } else if (params.domain === "knitting") {
-      const rows = Math.max(1, params.rows_completed || 6);
-      baseGp = Math.min(8500, 2800 + rows * 200);
-      baseXp = 65 + rows * 4;
-
       const project =
         this.knittingProjects.find((p) => p.id === params.project_id) ||
         this.knittingProjects[0];
-      if (project) {
+      const guided = params.guided_time_only || !!project?.linked_filet_pattern;
+      const rows = guided ? 0 : Math.max(1, params.rows_completed || 6);
+      baseGp = Math.min(8500, 2800 + rows * 200);
+      baseXp = 65 + rows * 4;
+      if (guided) {
+        resolvedProjectName = project?.name;
+        params = { ...params, rows_completed: undefined };
+        sessionTitle = params.title || `Tejido guiado${project ? `: ${project.name}` : ""}`;
+        detailsSummary = `${duration} min de tejido guiado`;
+      } else if (project) {
         resolvedProjectName = project.name;
         const wasDone = project.status === "completed";
         project.completed_rows = Math.min(

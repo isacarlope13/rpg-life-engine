@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { useFiletWorkspaceSync } from "@/lib/sanctuary/use-filet-workspace-sync";
 import {
   CloudUpload,
   Crop,
@@ -106,7 +107,6 @@ interface FiletCrochetStudioProps {
     name: string;
     linkedPattern: LinkedFiletPatternSnapshot;
   }) => Promise<void>;
-  onSubmitDirectSkillSession?: (payload: Record<string, unknown>) => Promise<unknown>;
   onRefreshState?: () => Promise<void>;
   sessionBridge?: GuidedUniversalSessionBridge;
 }
@@ -165,7 +165,6 @@ export function FiletCrochetStudio({
   initialStudioMode = "alphabet",
   onSelectProject,
   onCreateProjectFromPattern,
-  onSubmitDirectSkillSession,
   onRefreshState,
   sessionBridge,
 }: FiletCrochetStudioProps) {
@@ -179,6 +178,7 @@ export function FiletCrochetStudio({
   const [workspace, setWorkspace] = useState<FiletStudioWorkspace>(() =>
     readFiletStudioWorkspaceSafe(sessionOwner)
   );
+  const workspaceSync = useFiletWorkspaceSync(sessionOwner, workspace, setWorkspace);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>(
     () => workspace.collections[0]?.id || ""
   );
@@ -688,6 +688,32 @@ export function FiletCrochetStudio({
           </div>
         </div>
 
+        <div className="space-y-2 text-xs text-[#3A2E2B]" aria-live="polite">
+          <p>{{
+            local: "Guardado localmente",
+            syncing: "Sincronizando",
+            confirmed: "Confirmado por el servidor",
+            offline: "Sin conexión. Se conserva la copia local.",
+            conflict: "Conflicto de sincronización",
+            error: "Error recuperable. Se conserva la copia local.",
+          }[workspaceSync.status]}</p>
+          {workspaceSync.remote && (
+            <div className="space-y-1 rounded-xl border border-[#8C6239] p-2">
+              <p>Local: {workspace.collections.length} colecciones y {workspace.patterns.length} patrones.</p>
+              <p>Servidor (rev. {workspaceSync.remote.revision}): {workspaceSync.remote.workspace?.collections.length ?? 0} colecciones y {workspaceSync.remote.workspace?.patterns.length ?? 0} patrones.</p>
+              <div className="flex flex-wrap gap-2">
+                <CozyButton type="button" size="sm" onClick={() => void workspaceSync.resolveConflict("local")}>Enviar copia local</CozyButton>
+                {workspaceSync.remote.workspace && (
+                  <CozyButton type="button" size="sm" onClick={() => void workspaceSync.resolveConflict("remote")}>Usar copia remota y respaldar la local</CozyButton>
+                )}
+              </div>
+            </div>
+          )}
+          {workspaceSync.status === "error" && (
+            <CozyButton type="button" size="sm" onClick={workspaceSync.retry}>Reintentar sincronización</CozyButton>
+          )}
+        </div>
+
         {/* Sub-navegación del Filet Crochet Studio */}
         <div className="flex flex-wrap gap-1.5 pt-1">
           {(
@@ -930,7 +956,6 @@ export function FiletCrochetStudio({
           selectedProjectId={activeProject?.id}
           sessions={sessions}
           onSelectProject={onSelectProject}
-          onSubmitDirectSkillSession={onSubmitDirectSkillSession}
           onRefreshState={onRefreshState}
           sessionBridge={sessionBridge}
         />

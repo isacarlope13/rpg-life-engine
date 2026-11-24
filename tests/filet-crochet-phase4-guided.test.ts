@@ -30,7 +30,6 @@ import {
 import {
   readGuidedProgressForProject,
   saveGuidedProgressForProject,
-  syncPendingGuidedRows,
   type GuidedStorageLike,
 } from "../src/lib/sanctuary/filet-guided-store.ts";
 import {
@@ -93,6 +92,30 @@ function buildAcceptancePattern80x3(): BinaryMatrix {
 }
 
 describe("OAKHAVEN — FILET CROCHET STUDIO FASE 4 (PROYECTOS Y SESIONES GUIADAS)", () => {
+  test("generic knitting completion records guided time without incrementing rows", () => {
+    const store = createStarterUserMemoryStore({ userId: "10000000-0000-4000-8000-000000000001" });
+    const pattern = createVersionedPattern({ title: "Sintético", matrix: [[1], [0]], note: "v1" });
+    const snapshot = buildLinkedFiletPatternSnapshot({
+      patternId: pattern.id, patternName: pattern.title, version: pattern.versions[0],
+      convention: createFiletTechnicalConvention(3, "ltr"), orientation: "bottom_to_top",
+    });
+    const project = store.addKnittingProject({
+      name: "Guiado", technique: "Crochet", total_rows_target: 2, linked_filet_pattern: snapshot,
+    });
+    const command = {
+      domain: "knitting" as const, project_id: project.id, rows_completed: 2,
+      duration_minutes: 7, idempotency_key: "synthetic-guided-finish",
+    };
+    const first = store.logSkillSession(command);
+    const replay = store.logSkillSession(command);
+    assert.equal(project.completed_rows, 0);
+    assert.equal(project.status, "in_progress");
+    assert.equal(first.session.duration_minutes, 7);
+    assert.equal(first.session.metadata?.rows_completed, undefined);
+    assert.equal(replay.reward_impact.idempotent_replay, true);
+    assert.equal(replay.session.id, first.session.id);
+  });
+
   test("1. Prueba de aceptación principal (80 cuadros): crear proyecto, completar segmentos, confirmar fila, cerrar/reabrir y bloquear confirmación repetida", () => {
     const userId = "10000000-0000-4000-8000-000000000001";
     const storage = createMemoryStorage();
@@ -305,64 +328,23 @@ describe("OAKHAVEN — FILET CROCHET STUDIO FASE 4 (PROYECTOS Y SESIONES GUIADAS
     assert.deepEqual(merged.confirmedRows, [1]); // Nunca [1, 1]
     assert.equal(dupRow.deltaCompletedRows, 0);
 
-    // Fallo de red: progreso local sigue a salvo y estado = "error"
-    const failedSync = await syncPendingGuidedRows({
-      state: merged,
-      storage,
-      ownerId: userA,
-      submitter: async () => {
-        throw new Error("Network offline");
-      },
-    });
-    assert.equal(failedSync.ok, false);
-    assert.equal(failedSync.state.syncState, "error");
-    assert.deepEqual(computePendingUnsyncedRows(failedSync.state), [1]);
-
-    // Reintento exitoso cuando vuelve la red -> acredita exactamente +1 fila en storeA (con idempotencia)
-    const gpBefore = storeA.wallet_gp;
-    const xpBefore = storeA.current_xp;
-    const okSync = await syncPendingGuidedRows({
-      state: failedSync.state,
-      storage,
-      ownerId: userA,
-      submitter: async (payload) => {
-        return storeA.logSkillSession({
-          domain: "knitting",
-          duration_minutes: Number(payload.duration_minutes || 5),
-          project_id: String(payload.project_id),
-          rows_completed: Number(payload.rows_completed),
-          idempotency_key: String(payload.idempotency_key),
-        });
-      },
-    });
-    assert.equal(okSync.ok, true);
-    assert.equal(okSync.state.syncState, "synced_server");
-    assert.equal(computePendingUnsyncedRows(okSync.state).length, 0);
-    assert.equal(storeA.knittingProjects.find((p) => p.id === proj.id)?.completed_rows, 1);
-
-    const gpAfterFirst = storeA.wallet_gp;
-    const xpAfterFirst = storeA.current_xp;
-    assert.ok(gpAfterFirst > gpBefore && xpAfterFirst > xpBefore);
-
-    // Regla 8: Reintentar sync después de confirmado -> 0 filas pendientes, 0 XP/GP duplicados
-    const secondSync = await syncPendingGuidedRows({
-      state: okSync.state,
-      storage,
-      ownerId: userA,
-      submitter: async () => {
-        throw new Error("No debería invocarse si no hay filas pendientes");
-      },
-    });
-    assert.equal(secondSync.ok, true);
-    assert.equal(secondSync.syncedRowsCount, 0);
-    assert.equal(storeA.wallet_gp, gpAfterFirst);
-    assert.equal(storeA.current_xp, xpAfterFirst);
+    // A failed guided operation stays in the owner-scoped queue across reload.
+    const queued = {
+      ...merged,
+      syncState: "error" as const,
+      pendingServerOperation: { id: "50000000-0000-4000-8000-000000000011", action: "confirm" as const, row: 1, revision: 0 },
+    };
+    assert.equal(saveGuidedProgressForProject(storage, userA, queued).ok, true);
+    const recovered = readGuidedProgressForProject(storage, userA, proj.id);
+    assert.deepEqual(recovered?.pendingServerOperation, queued.pendingServerOperation);
+    assert.deepEqual(computePendingUnsyncedRows(queued), [1]);
+    assert.equal(proj.completed_rows, 0);
 
     // Aislamiento entre usuarios
     assert.equal(readGuidedProgressForProject(storage, userB, proj.id), null);
 
     // Regla 10: Retroceder vuelta confirmada respeta invariantes (no negativo)
-    const back1 = stepBackGuidedProgress(okSync.state, {
+    const back1 = stepBackGuidedProgress(merged, {
       allowUndoConfirmedRow: true,
       operationId: "undo-r1",
     });

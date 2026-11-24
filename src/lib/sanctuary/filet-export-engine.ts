@@ -208,17 +208,15 @@ function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
-/** Convierte texto UTF-8 a ASCII seguro para PDF Helvetica Type1 estándar (WinAnsi básico). */
+/** Encode printable WinAnsi characters as ASCII PDF string syntax. */
 function sanitizePdfText(text: string): string {
-  const ascii = String(text)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+  return String(text)
+    .normalize("NFC")
     .replace(/→/g, "->")
     .replace(/←/g, "<-")
-    .replace(/×/g, "x")
-    .replace(/·/g, "-")
-    .replace(/[^\x20-\x7E]/g, " ");
-  return ascii.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+    .replace(/[^ -~\u00A0-\u00FF]/gu, " ")
+    .replace(/[\\()]/g, "\\$&")
+    .replace(/[\u00A0-\u00FF]/g, (character) => "\\" + character.charCodeAt(0).toString(8));
 }
 
 // ============================================================================
@@ -711,10 +709,10 @@ function assembleVectorPdfDocument(
       .join(" ")}] /Count ${pageObjNums.length} >>\nendobj\n`
   );
   objects.push(
-    `3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`
+    `3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n`
   );
   objects.push(
-    `4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n`
+    `4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj\n`
   );
 
   for (let i = 0; i < pageStreams.length; i++) {

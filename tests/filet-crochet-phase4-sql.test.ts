@@ -66,6 +66,63 @@ after(async () => {
   await db?.close();
 });
 
+test("only guided progress can change the linked project counter and version", async () => {
+  await assert.rejects(
+    db.query("update public.knitting_projects set completed_rows = 1 where id = $1", [PROJ_A]),
+    { code: "23514" },
+  );
+  await assert.rejects(
+    db.query("update public.knitting_projects set linked_pattern_version_id = null where id = $1", [PROJ_A]),
+    { code: "23514" },
+  );
+  await db.query("update public.knitting_projects set completed_rows = 5 where id = $1", [PROJ_LEGACY]);
+  const { rows } = await db.query<{ completed_rows: number }>(
+    "select completed_rows from public.knitting_projects where id = $1", [PROJ_LEGACY],
+  );
+  assert.equal(rows[0].completed_rows, 5);
+});
+
+test("workspace draft authenticates direct reads and serializes revision receipts", async () => {
+  const sql = fs.readFileSync(
+    new URL("../supabase/drafts/20261124_filet_workspace_sync.sql", import.meta.url),
+    "utf8",
+  );
+  await db.exec("grant usage on schema auth to authenticated");
+  await db.exec(sql);
+  await db.exec(sql);
+
+  const operation = "50000000-0000-4000-8000-000000000011";
+  const otherOperation = "50000000-0000-4000-8000-000000000022";
+  async function save(id: string, revision: number, workspace: string) {
+    const result = await db.query<{ receipt: { status: string; revision: number } }>(
+      "select public.save_filet_workspace_v1($1,$2,$3,$4) as receipt",
+      [USER_A, id, revision, workspace],
+    );
+    return result.rows[0].receipt;
+  }
+
+  try {
+    await db.exec("set role service_role");
+    assert.deepEqual(await save(operation, 0, '{"drafts":[]}'), { status: "applied", revision: 1 });
+    assert.deepEqual(await save(otherOperation, 0, '{"drafts":[{}]}'), { status: "conflict", revision: 1 });
+    assert.deepEqual(await save(otherOperation, 1, '{"drafts":[{}]}'), { status: "applied", revision: 2 });
+    assert.deepEqual(await save(operation, 0, '{"drafts":[]}'), { status: "replayed", revision: 1 });
+    await assert.rejects(save(operation, 0, '{"drafts":[{}]}'), { code: "22023" });
+
+    await db.exec("reset role; set role authenticated");
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [USER_A]);
+    assert.equal((await db.query("select revision from public.filet_workspace_sync")).rows.length, 1);
+    await assert.rejects(save(operation, 0, '{"drafts":[]}'), { code: "42501" });
+    await assert.rejects(db.query("update public.filet_workspace_sync set revision=9"), { code: "42501" });
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [USER_B]);
+    assert.equal((await db.query("select revision from public.filet_workspace_sync")).rows.length, 0);
+    await db.exec("reset role; set role anon");
+    await assert.rejects(db.query("select revision from public.filet_workspace_sync"), { code: "42501" });
+  } finally {
+    await db.exec("reset role");
+  }
+});
+
 test("confirm_filet_row_atomic_v1 actualiza progreso y completed_rows atómicamente y bloquea replays/duplicados entre 2 dispositivos", async () => {
   // Confirmación 1 desde dispositivo A -> +1 exacto
   const r1 = await db.query<{ res: Record<string, unknown> }>(

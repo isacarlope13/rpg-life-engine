@@ -76,6 +76,13 @@ export interface FiletGuidedProgressState {
   confirmedRows: number[];
   /** Filas ya confirmadas/acreditadas en servidor para evitar doble conteo al finalizar sesión. */
   syncedConfirmedRows: number[];
+  serverRevision?: number;
+  pendingServerOperation?: {
+    id: string;
+    action: "confirm" | "undo";
+    row: number;
+    revision: number;
+  };
   sessionStatus: FiletGuidedSessionStatus;
   /** Registro de claves de operación aplicadas para idempotencia estricta. */
   operationIds: string[];

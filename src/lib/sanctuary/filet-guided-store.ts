@@ -14,18 +14,13 @@ import { isOfflineOwner } from "../offline-owner.ts";
 import { safeLocalStorage } from "../storage-safe.ts";
 import {
   cloneGuidedProgressState,
-  computePendingUnsyncedRows,
-  detectGuidedProgressConflict,
-  markGuidedRowsSyncedToServer,
-  markGuidedSyncError,
   validateLinkedFiletPatternSnapshot,
   type FiletGuidedProgressState,
-  type GuidedConflictReport,
 } from "./filet-guided-engine.ts";
 
 export interface GuidedStorageLike {
   getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
+  setItem(key: string, value: string): boolean | void;
   removeItem(key: string): void;
 }
 
@@ -117,7 +112,9 @@ export function saveGuidedProgressForProject(
   try {
     const all = readAllGuidedProgress(storage, ownerId);
     all[state.projectId] = cloneGuidedProgressState(state);
-    storage.setItem(key, JSON.stringify(all));
+    if (storage.setItem(key, JSON.stringify(all)) === false) {
+      return { ok: false, error: "No se pudo guardar localmente (cuota o almacenamiento bloqueado)." };
+    }
     return { ok: true };
   } catch {
     return { ok: false, error: "No se pudo guardar localmente (cuota o almacenamiento bloqueado)." };
@@ -140,118 +137,4 @@ export function saveGuidedProgressSafe(
 
 export function readAllGuidedProgressSafe(ownerId?: string): GuidedProgressStoreMap {
   return readAllGuidedProgress(safeLocalStorage, ownerId);
-}
-
-/**
- * Construye el payload canónico idempotente para sincronizar vueltas confirmadas
- * pendientes hacia `/api/shortcuts/skill-session` sin duplicar recompensas ni vueltas.
- */
-export function buildGuidedRowsSyncPayload(params: {
-  state: FiletGuidedProgressState;
-  durationMinutes?: number;
-  notes?: string;
-}): {
-  hasPendingRows: boolean;
-  pendingRows: number[];
-  idempotencyKey: string;
-  payload: Record<string, unknown> | null;
-} {
-  const pendingRows = computePendingUnsyncedRows(params.state);
-  if (pendingRows.length === 0) {
-    return {
-      hasPendingRows: false,
-      pendingRows: [],
-      idempotencyKey: "",
-      payload: null,
-    };
-  }
-
-  // Clave idempotente determinista basada en proyecto + versión + filas exactas
-  const rowsSig = pendingRows.join("-");
-  const idempotencyKey = `filet-guided-${params.state.projectId}-${params.state.patternVersionId}-rows-${rowsSig}`;
-
-  return {
-    hasPendingRows: true,
-    pendingRows,
-    idempotencyKey,
-    payload: {
-      domain: "knitting",
-      project_id: params.state.projectId,
-      title: `Tejido guiado (${params.state.snapshot.pattern_name} v${params.state.patternVersionNumber})`,
-      duration_minutes: Math.max(1, Math.round(params.durationMinutes ?? pendingRows.length)),
-      rows_completed: pendingRows.length,
-      stitches_notes:
-        params.notes?.trim() ||
-        `Vueltas confirmadas (${pendingRows.join(", ")}) en patrón Filet v${params.state.patternVersionNumber}`,
-      idempotency_key: idempotencyKey,
-    },
-  };
-}
-
-/**
- * Ejecuta la sincronización de vueltas pendientes usando un transporte inyectable
- * (compatible con fetch en navegador y dobles de prueba de red/fallo).
- */
-export async function syncPendingGuidedRows(params: {
-  state: FiletGuidedProgressState;
-  storage: GuidedStorageLike;
-  ownerId?: string;
-  durationMinutes?: number;
-  notes?: string;
-  submitter: (payload: Record<string, unknown>) => Promise<unknown>;
-  nowIso?: string;
-}): Promise<{
-  ok: boolean;
-  state: FiletGuidedProgressState;
-  syncedRowsCount: number;
-  error?: string;
-}> {
-  const built = buildGuidedRowsSyncPayload({
-    state: params.state,
-    durationMinutes: params.durationMinutes,
-    notes: params.notes,
-  });
-
-  if (!built.hasPendingRows || !built.payload) {
-    return {
-      ok: true,
-      state: params.state,
-      syncedRowsCount: 0,
-    };
-  }
-
-  try {
-    await params.submitter(built.payload);
-    const syncedState = markGuidedRowsSyncedToServer(
-      params.state,
-      built.pendingRows,
-      params.nowIso
-    );
-    saveGuidedProgressForProject(params.storage, params.ownerId, syncedState);
-    return {
-      ok: true,
-      state: syncedState,
-      syncedRowsCount: built.pendingRows.length,
-    };
-  } catch (err) {
-    const message =
-      err instanceof Error
-        ? err.message
-        : "Error de red al sincronizar; el progreso local permanece intacto.";
-    const errorState = markGuidedSyncError(params.state, message, params.nowIso);
-    saveGuidedProgressForProject(params.storage, params.ownerId, errorState);
-    return {
-      ok: false,
-      state: errorState,
-      syncedRowsCount: 0,
-      error: message,
-    };
-  }
-}
-
-export function evaluateGuidedSyncConflict(
-  localState: FiletGuidedProgressState,
-  remoteState: FiletGuidedProgressState
-): GuidedConflictReport {
-  return detectGuidedProgressConflict(localState, remoteState);
 }

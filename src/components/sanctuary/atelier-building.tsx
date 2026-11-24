@@ -1588,7 +1588,6 @@ export function AtelierBuilding({
               message: `🧶 Proyecto "${data.project.name}" creado desde versión inmutable v${linkedPattern.version_number} y listo en la Mesa Guiada.`,
             });
           }}
-          onSubmitDirectSkillSession={onSubmitDirectSkillSession}
           onRefreshState={onRefreshState}
           sessionBridge={{
             isActive,
@@ -1611,10 +1610,10 @@ export function AtelierBuilding({
             },
             onPauseSession: () => pauseSession(),
             onResumeSession: () => resumeSession(),
-            onFinishSession: async ({ project, pendingRowsToCredit, notes }) => {
+            onFinishSession: async ({ project, notes }) => {
               const result = await finishSession({
                 project_id: project.id,
-                rows_completed: pendingRowsToCredit,
+                filet_pattern_version_id: project.linked_filet_pattern?.version_id,
                 stitches_notes: notes,
               });
               if (result) {

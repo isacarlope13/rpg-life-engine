@@ -43,7 +43,6 @@ import {
   buildGuidedActiveRowView,
   buildGuidedProgressSummary,
   completeActiveSegment,
-  computePendingUnsyncedRows,
   confirmActiveRow,
   createInitialGuidedProgressState,
   formatGuidedSegmentSpeech,
@@ -56,7 +55,6 @@ import {
   getOrCreateLocalDeviceId,
   readGuidedProgressSafe,
   saveGuidedProgressSafe,
-  syncPendingGuidedRows,
 } from "@/lib/sanctuary/filet-guided-store";
 import { getGuidedFiletProjectStatus } from "@/lib/ai/clara-lyra-tools";
 import { safeLocalStorage } from "@/lib/storage-safe";
@@ -74,7 +72,6 @@ export interface GuidedUniversalSessionBridge {
   onResumeSession: () => void;
   onFinishSession: (params: {
     project: KnittingProject;
-    pendingRowsToCredit: number;
     notes: string;
   }) => Promise<boolean>;
 }
@@ -85,7 +82,6 @@ interface FiletGuidedSessionProps {
   selectedProjectId?: string;
   sessions?: SkillSessionRecord[];
   onSelectProject?: (projectId: string) => void;
-  onSubmitDirectSkillSession?: (payload: Record<string, unknown>) => Promise<unknown>;
   onRefreshState?: () => Promise<void>;
   sessionBridge?: GuidedUniversalSessionBridge;
 }
@@ -126,7 +122,6 @@ export function FiletGuidedSession({
   selectedProjectId,
   sessions = [],
   onSelectProject,
-  onSubmitDirectSkillSession,
   onRefreshState,
   sessionBridge,
 }: FiletGuidedSessionProps) {
@@ -219,6 +214,40 @@ export function FiletGuidedSession({
     [sessionOwner]
   );
 
+  useEffect(() => {
+    if (!sessionOwner || !activeProject?.linked_filet_pattern) return;
+    const projectId = activeProject.id;
+    const controller = new AbortController();
+    void fetch(`/api/filet/progress?projectId=${encodeURIComponent(projectId)}`, { signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) return;
+        const remote = await response.json();
+        if (!remote || controller.signal.aborted) return;
+        const local = readGuidedProgressSafe(sessionOwner, projectId);
+        if (!local || local.pendingServerOperation || remote.pattern_version_id !== local.patternVersionId ||
+            !Number.isInteger(remote.revision) || remote.revision <= (local.serverRevision ?? 0) ||
+            !Array.isArray(remote.confirmed_rows)) return;
+        const rows: number[] = remote.confirmed_rows;
+        if (new Set(rows).size !== rows.length ||
+            rows.some(row => !Number.isInteger(row) || row < 1 || row > local.totalRows)) return;
+        if (local.confirmedRows.some(row => !local.syncedConfirmedRows.includes(row))) {
+          persistProgress({ ...local, syncState: "conflict" });
+          return;
+        }
+        const nextRow = Array.from({ length: local.totalRows }, (_, index) => index + 1)
+          .find(row => !rows.includes(row)) ?? local.totalRows;
+        const keepSegments = nextRow === local.activeRowNumber && !rows.includes(nextRow);
+        persistProgress({
+          ...local, activeRowNumber: nextRow,
+          activeSegmentIndex: keepSegments ? local.activeSegmentIndex : 0,
+          completedSegmentIndices: keepSegments ? local.completedSegmentIndices : [],
+          confirmedRows: rows, syncedConfirmedRows: [...rows],
+          serverRevision: remote.revision, syncState: "synced_server",
+        });
+      }).catch(() => {});
+    return () => controller.abort();
+  }, [activeProject?.id, activeProject?.linked_filet_pattern, sessionOwner, persistProgress]);
+
   const speakText = useCallback(
     (text: string) => {
       if (!speechEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -263,7 +292,7 @@ export function FiletGuidedSession({
   }, [progress, recordedMinutes]);
 
   const handleCompleteSegment = useCallback(() => {
-    if (!progress) return;
+    if (!progress || progress.pendingServerOperation) return;
     const res = completeActiveSegment(progress, {
       expectedVersionId: progress.patternVersionId,
     });
@@ -284,146 +313,120 @@ export function FiletGuidedSession({
     }
   }, [progress, persistProgress, speechEnabled, speakText]);
 
-  const handleStepBack = useCallback(
-    (allowUndoConfirmedRow = false) => {
-      if (!progress) return;
-      const res = stepBackGuidedProgress(progress, {
-        allowUndoConfirmedRow,
-        deviceId: deviceIdRef.current,
-        expectedVersionId: progress.patternVersionId,
+  const syncLock = useRef(false);
+  const syncContext = useRef({ owner: sessionOwner, project: activeProject?.id });
+  syncContext.current = { owner: sessionOwner, project: activeProject?.id };
+  const submitGuidedRow = useCallback(async (action: "confirm" | "undo") => {
+    if (!progress || syncLock.current || !sessionOwner) return;
+    const pending = progress.pendingServerOperation;
+    if (pending && pending.action !== action) return;
+    const id = pending?.id ?? crypto.randomUUID();
+    const mutation = action === "confirm"
+      ? confirmActiveRow(progress, { operationId: id, deviceId: deviceIdRef.current, expectedVersionId: progress.patternVersionId })
+      : stepBackGuidedProgress(progress, {
+          allowUndoConfirmedRow: true, operationId: id, deviceId: deviceIdRef.current,
+          expectedVersionId: progress.patternVersionId,
+        });
+    if (!mutation.ok) {
+      setNotice({ type: "warning", message: "Completa los segmentos antes de confirmar o selecciona una vuelta que puedas deshacer." });
+      return;
+    }
+    if (action === "undo" && mutation.deltaCompletedRows === 0) {
+      persistProgress(mutation.state);
+      return;
+    }
+    const row = pending?.row ?? (action === "confirm" ? progress.activeRowNumber : mutation.state.activeRowNumber);
+    const revision = pending?.revision ?? progress.serverRevision ?? 0;
+    const queued: FiletGuidedProgressState = {
+      ...progress,
+      syncState: "pending_sync",
+      pendingServerOperation: { id, action, row, revision },
+    };
+    const saved = saveGuidedProgressSafe(sessionOwner, queued);
+    if (!saved.ok) {
+      setNotice({ type: "warning", message: saved.error || "No se pudo guardar el pendiente." });
+      return;
+    }
+    setProgress(queued);
+    syncLock.current = true;
+    setSyncingNow(true);
+    try {
+      const response = await fetch("/api/filet/progress", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-oakhaven-filet-write": "1" },
+        body: JSON.stringify({
+          projectId: progress.projectId, versionId: progress.patternVersionId,
+          operationId: id, revision, action, row,
+          ...(action === "confirm" ? { segments: progress.completedSegmentIndices } : {}),
+        }),
       });
-      if (!res.ok) {
+      const receipt = await response.json();
+      if (syncContext.current.owner !== sessionOwner || syncContext.current.project !== progress.projectId) return;
+      if (!response.ok || receipt.success !== true ||
+          receipt.revision !== revision + 1 ||
+          receipt.completed_rows !== mutation.state.confirmedRows.length) {
+        const conflict = response.status === 409 || response.ok;
+        persistProgress({ ...queued, syncState: conflict ? "conflict" : "error" });
         setNotice({
           type: "warning",
-          message: "No hay pasos anteriores para deshacer en este punto.",
+          message: conflict
+            ? "El servidor tiene otra revisión. El pendiente se conserva para reconciliación."
+            : receipt.error || "Progreso remoto no disponible. El pendiente queda guardado.",
         });
         return;
       }
-      persistProgress(res.state);
-      setNotice({
-        type: "success",
-        message:
-          res.deltaCompletedRows === -1
-            ? `Retrocediste a la vuelta ${res.state.activeRowNumber}.`
-            : "Retrocediste un segmento en la vuelta actual.",
+      persistProgress({
+        ...mutation.state,
+        syncedConfirmedRows: [...mutation.state.confirmedRows],
+        serverRevision: receipt.revision,
+        pendingServerOperation: undefined,
+        syncState: "synced_server",
       });
-    },
-    [progress, persistProgress]
-  );
+      const message = action === "confirm" ? "Vuelta confirmada en el servidor." : "Vuelta deshecha en el servidor.";
+      setNotice({ type: "success", message });
+      if (speechEnabled) speakText(message);
+      if (onRefreshState) void onRefreshState().catch(() => {});
+    } catch {
+      if (syncContext.current.owner !== sessionOwner || syncContext.current.project !== progress.projectId) return;
+      persistProgress({ ...queued, syncState: "error" });
+      setNotice({ type: "warning", message: "Sin confirmación del servidor. Puedes reintentar la misma operación." });
+    } finally {
+      syncLock.current = false;
+      setSyncingNow(false);
+    }
+  }, [progress, sessionOwner, persistProgress, onRefreshState, speechEnabled, speakText]);
 
-  const handleSyncPendingRows = useCallback(
-    async (targetState?: FiletGuidedProgressState) => {
-      const current = targetState || progress;
-      if (!current || !onSubmitDirectSkillSession || syncingNow) return;
-      const pending = computePendingUnsyncedRows(current);
-      if (pending.length === 0) return;
-
-      setSyncingNow(true);
-      try {
-        const res = await syncPendingGuidedRows({
-          state: current,
-          storage: safeLocalStorage,
-          ownerId: sessionOwner,
-          durationMinutes: Math.max(1, pending.length),
-          submitter: onSubmitDirectSkillSession,
-        });
-        setProgress(res.state);
-        if (res.ok) {
-          setNotice({
-            type: "success",
-            message: `Vuelta(s) ${pending.join(", ")} confirmadas en el servidor sin duplicados.`,
-          });
-          if (onRefreshState) await onRefreshState();
-        } else {
-          setNotice({
-            type: "warning",
-            message:
-              res.error ||
-              "Sin conexión con el servidor: tu avance quedó guardado localmente y pendiente de sincronización.",
-          });
-        }
-      } finally {
-        setSyncingNow(false);
-      }
-    },
-    [progress, onSubmitDirectSkillSession, syncingNow, sessionOwner, onRefreshState]
-  );
-
-  const handleConfirmRow = useCallback(async () => {
-    if (!progress) return;
-    const rowNum = progress.activeRowNumber;
-    const opKey = `confirm-${progress.projectId}-${progress.patternVersionId}-r${rowNum}`;
-    const res = confirmActiveRow(progress, {
-      operationId: opKey,
+  const handleStepBack = useCallback((allowUndoConfirmedRow = false) => {
+    if (!progress || progress.pendingServerOperation) return;
+    if (allowUndoConfirmedRow) {
+      void submitGuidedRow("undo");
+      return;
+    }
+    const result = stepBackGuidedProgress(progress, {
       deviceId: deviceIdRef.current,
       expectedVersionId: progress.patternVersionId,
     });
-    if (!res.ok) {
-      setNotice({
-        type: "warning",
-        message:
-          res.reason === "INCOMPLETE_SEGMENTS"
-            ? "Completa todos los segmentos de la vuelta antes de confirmarla."
-            : "No se pudo confirmar la vuelta actual.",
-      });
-      return;
-    }
-    persistProgress(res.state);
-    if (res.idempotentReplay) {
-      setNotice({
-        type: "warning",
-        message: `La vuelta ${rowNum} ya había sido confirmada; no se duplicó el contador.`,
-      });
-      return;
-    }
+    if (result.ok) persistProgress(result.state);
+  }, [progress, persistProgress, submitGuidedRow]);
 
-    const msg =
-      res.state.confirmedRows.length >= res.state.totalRows
-        ? `¡Vuelta ${rowNum} confirmada! Proyecto completado (${res.state.totalRows}/${res.state.totalRows}).`
-        : `Vuelta ${rowNum} confirmada (${res.state.confirmedRows.length}/${res.state.totalRows}).`;
-    setNotice({ type: "success", message: msg });
-    if (speechEnabled) speakText(msg);
-
-    // Si hay transporte del servidor y NO hay cronómetro activo (para no chocar con el cierre de sesión), sincronizamos con clave idempotente
-    if (onSubmitDirectSkillSession && !sessionBridge?.isActive) {
-      await handleSyncPendingRows(res.state);
-    }
-  }, [
-    progress,
-    persistProgress,
-    speechEnabled,
-    speakText,
-    onSubmitDirectSkillSession,
-    sessionBridge?.isActive,
-    handleSyncPendingRows,
-  ]);
+  const handleConfirmRow = useCallback(() => submitGuidedRow("confirm"), [submitGuidedRow]);
 
   const handleFinishGuidedSession = useCallback(async () => {
     if (!progress || !activeProject || !sessionBridge) return;
-    const pendingRows = computePendingUnsyncedRows(progress);
     const ok = await sessionBridge.onFinishSession({
       project: activeProject,
-      pendingRowsToCredit: pendingRows.length,
-      notes: `Sesión guiada Filet (${progress.snapshot.pattern_name} v${progress.patternVersionNumber}): ${progress.confirmedRows.length}/${progress.totalRows} vueltas confirmadas.`,
+      notes: `Sesión guiada Filet (${progress.snapshot.pattern_name} v${progress.patternVersionNumber}): ${progress.syncedConfirmedRows.length}/${progress.totalRows} vueltas confirmadas.`,
     });
     if (ok) {
-      const next = setGuidedSessionStatus(
-        {
-          ...progress,
-          syncedConfirmedRows: Array.from(
-            new Set([...progress.syncedConfirmedRows, ...pendingRows])
-          ).sort((a, b) => a - b),
-          syncState: "synced_server",
-        },
-        progress.confirmedRows.length >= progress.totalRows ? "completed" : "idle"
-      );
-      persistProgress(next);
-      setNotice({
-        type: "success",
-        message: `Sesión finalizada: se acreditaron exactamente ${pendingRows.length} vuelta(s) nueva(s) sin duplicar vueltas previas.`,
+      setProgress(current => {
+        if (!current || current.projectId !== progress.projectId) return current;
+        const next = setGuidedSessionStatus(current, current.confirmedRows.length >= current.totalRows ? "completed" : "idle");
+        saveGuidedProgressSafe(sessionOwner, next);
+        return next;
       });
+      setNotice({ type: "success", message: "Sesión finalizada. Las vueltas se gestionan por separado." });
     }
-  }, [progress, activeProject, sessionBridge, persistProgress]);
+  }, [progress, activeProject, sessionBridge, sessionOwner]);
 
   // Navegación por teclado en computador (Bloque 6)
   useEffect(() => {
@@ -478,7 +481,6 @@ export function FiletGuidedSession({
 
   const syncMeta = SYNC_BADGE[progress.syncState];
   const cellPx = Math.max(8, Math.round((16 * zoomPct) / 100));
-  const pendingRows = computePendingUnsyncedRows(progress);
 
   // Calcular rango de columnas del segmento activo para resaltarlo en el gráfico
   const activeSegColRange = (() => {
@@ -583,7 +585,7 @@ export function FiletGuidedSession({
                     disabled={sessionBridge.submitting}
                     onClick={handleFinishGuidedSession}
                   >
-                    Finalizar ({pendingRows.length} nueva{pendingRows.length === 1 ? "" : "s"})
+                    Finalizar sesión
                   </CozyButton>
                 </>
               )}
@@ -658,15 +660,15 @@ export function FiletGuidedSession({
               >
                 <Sparkles className="h-3 w-3" /> Clara
               </button>
-              {pendingRows.length > 0 && onSubmitDirectSkillSession && !sessionBridge?.isActive && (
+              {progress.pendingServerOperation && (
                 <button
                   type="button"
                   disabled={syncingNow}
-                  onClick={() => void handleSyncPendingRows()}
+                  onClick={() => void submitGuidedRow(progress.pendingServerOperation!.action)}
                   className="rounded-xl border-2 border-[#314C3C] bg-[#E7D69C] px-2.5 py-1 text-[11px] font-black text-[#3A2E2B] cursor-pointer inline-flex items-center gap-1"
                 >
                   <RefreshCw className={`h-3 w-3 ${syncingNow ? "animate-spin" : ""}`} />
-                  Sincronizar ({pendingRows.length})
+                  Reintentar operación
                 </button>
               )}
             </div>
@@ -926,7 +928,7 @@ export function FiletGuidedSession({
               <button
                 type="button"
                 data-testid="guided-confirm-row-btn"
-                disabled={!activeRowView.allSegmentsCompleted || activeRowView.isRowConfirmed}
+                disabled={syncingNow || !!progress.pendingServerOperation || !activeRowView.allSegmentsCompleted || activeRowView.isRowConfirmed}
                 onClick={() => void handleConfirmRow()}
                 className="w-full min-h-[52px] rounded-2xl border-4 border-[#3A2E2B] bg-[#C88973] px-4 py-3 text-sm font-black text-[#FFFDF8] shadow-[0_4px_0_#3A2E2B] active:translate-y-0.5 disabled:opacity-40 cursor-pointer inline-flex items-center justify-center gap-2"
               >
@@ -945,7 +947,7 @@ export function FiletGuidedSession({
                 </button>
                 <button
                   type="button"
-                  disabled={progress.confirmedRows.length === 0}
+                  disabled={syncingNow || !!progress.pendingServerOperation || progress.confirmedRows.length === 0}
                   onClick={() => handleStepBack(true)}
                   className="min-h-[44px] rounded-2xl border-2 border-[#3A2E2B]/50 bg-[#FFFDF8] px-3 py-2 text-xs font-black text-[#5C381E] disabled:opacity-40 cursor-pointer"
                 >

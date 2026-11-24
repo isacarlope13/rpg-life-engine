@@ -55,12 +55,52 @@ ALTER TABLE public.filet_guided_operation_receipts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users manage own filet_guided_progress" ON public.filet_guided_progress;
 CREATE POLICY "Users manage own filet_guided_progress"
   ON public.filet_guided_progress
-  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+
+REVOKE ALL ON public.filet_guided_progress, public.filet_guided_operation_receipts
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON public.filet_guided_progress, public.filet_guided_operation_receipts TO authenticated;
 
 DROP POLICY IF EXISTS "Users read own filet_guided_operation_receipts" ON public.filet_guided_operation_receipts;
 CREATE POLICY "Users read own filet_guided_operation_receipts"
   ON public.filet_guided_operation_receipts
   FOR SELECT USING (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.enforce_filet_project_counter_v1()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE
+  expected_rows integer;
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.linked_pattern_version_id IS NOT NULL THEN
+    IF ROW(NEW.id, NEW.user_id, NEW.total_rows_target, NEW.linked_pattern_id,
+           NEW.linked_pattern_version_id, NEW.linked_pattern_snapshot)
+       IS DISTINCT FROM
+       ROW(OLD.id, OLD.user_id, OLD.total_rows_target, OLD.linked_pattern_id,
+           OLD.linked_pattern_version_id, OLD.linked_pattern_snapshot) THEN
+      RAISE EXCEPTION 'FILET_LINK_IMMUTABLE' USING ERRCODE = '23514';
+    END IF;
+    IF NEW.completed_rows = OLD.completed_rows AND NEW.status = OLD.status THEN RETURN NEW; END IF;
+  END IF;
+
+  IF NEW.linked_pattern_version_id IS NOT NULL THEN
+    SELECT cardinality(confirmed_rows) INTO expected_rows FROM public.filet_guided_progress
+      WHERE user_id = NEW.user_id AND project_id = NEW.id
+        AND pattern_version_id = NEW.linked_pattern_version_id;
+    IF NEW.completed_rows IS DISTINCT FROM COALESCE(expected_rows, 0) THEN
+      RAISE EXCEPTION 'FILET_GUIDED_COUNTER_REQUIRED' USING ERRCODE = '23514';
+    END IF;
+    IF (NEW.status = 'completed' AND NEW.completed_rows < NEW.total_rows_target)
+       OR (NEW.status IN ('in_progress', 'paused') AND NEW.completed_rows >= NEW.total_rows_target) THEN
+      RAISE EXCEPTION 'FILET_GUIDED_STATUS_REQUIRED' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.enforce_filet_project_counter_v1() FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS enforce_filet_project_counter ON public.knitting_projects;
+CREATE TRIGGER enforce_filet_project_counter BEFORE INSERT OR UPDATE ON public.knitting_projects
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_filet_project_counter_v1();
 
 -- 4. RPC Atómica: Confirmar una fila y actualizar `knitting_projects.completed_rows`
 --    en una única transacción serializada con FOR UPDATE.
@@ -118,8 +158,8 @@ BEGIN
     RAISE EXCEPTION 'Proyecto de tejido no encontrado o no pertenece al propietario';
   END IF;
 
-  IF v_project.linked_pattern_version_id IS NOT NULL
-     AND v_project.linked_pattern_version_id <> p_pattern_version_id THEN
+  IF v_project.linked_pattern_version_id IS NULL
+     OR v_project.linked_pattern_version_id IS DISTINCT FROM p_pattern_version_id THEN
     RAISE EXCEPTION 'PATTERN_VERSION_MISMATCH: el proyecto está vinculado a otra versión inmutable';
   END IF;
 
@@ -135,13 +175,17 @@ BEGIN
      AND operation_key = p_operation_key;
 
   IF FOUND THEN
+    IF v_receipt.project_id <> p_project_id OR v_receipt.pattern_version_id <> p_pattern_version_id
+       OR v_receipt.row_number <> p_row_number OR v_receipt.action <> 'confirm_row' THEN
+      RAISE EXCEPTION 'FILET_OPERATION_MISMATCH' USING ERRCODE = '22023';
+    END IF;
     RETURN jsonb_build_object(
       'success', true,
       'applied', false,
       'replayed', true,
       'conflict', false,
       'delta_completed_rows', 0,
-      'completed_rows', v_project.completed_rows,
+      'completed_rows', v_receipt.resulting_completed_rows,
       'revision', v_receipt.resulting_revision,
       'status', v_project.status
     );
@@ -262,13 +306,15 @@ END;
 $$;
 
 -- 5. RPC Atómica: Retroceder la última fila confirmada respetando invariantes (>= 0)
+DROP FUNCTION IF EXISTS public.undo_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION public.undo_filet_row_atomic_v1(
   p_owner_id UUID,
   p_project_id UUID,
   p_pattern_version_id TEXT,
   p_row_number INT,
   p_operation_key TEXT,
-  p_device_id TEXT DEFAULT 'device-local'
+  p_device_id TEXT DEFAULT 'device-local',
+  p_expected_revision INT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -291,18 +337,26 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Proyecto de tejido no encontrado o no pertenece al propietario';
   END IF;
+  IF v_project.linked_pattern_version_id IS NULL
+     OR v_project.linked_pattern_version_id IS DISTINCT FROM p_pattern_version_id THEN
+    RAISE EXCEPTION 'PATTERN_VERSION_MISMATCH';
+  END IF;
 
   SELECT * INTO v_receipt
     FROM public.filet_guided_operation_receipts
    WHERE user_id = p_owner_id AND operation_key = p_operation_key;
 
   IF FOUND THEN
+    IF v_receipt.project_id <> p_project_id OR v_receipt.pattern_version_id <> p_pattern_version_id
+       OR v_receipt.row_number <> p_row_number OR v_receipt.action <> 'undo_row' THEN
+      RAISE EXCEPTION 'FILET_OPERATION_MISMATCH' USING ERRCODE = '22023';
+    END IF;
     RETURN jsonb_build_object(
       'success', true,
       'applied', false,
       'replayed', true,
       'delta_completed_rows', 0,
-      'completed_rows', v_project.completed_rows,
+      'completed_rows', v_receipt.resulting_completed_rows,
       'revision', v_receipt.resulting_revision
     );
   END IF;
@@ -325,6 +379,10 @@ BEGIN
 
   IF v_progress.pattern_version_id <> p_pattern_version_id THEN
     RAISE EXCEPTION 'PATTERN_VERSION_MISMATCH';
+  END IF;
+
+  IF p_expected_revision IS NOT NULL AND v_progress.revision <> p_expected_revision THEN
+    RETURN jsonb_build_object('success', false, 'conflict', true, 'server_revision', v_progress.revision);
   END IF;
 
   v_new_confirmed := array_remove(v_progress.confirmed_rows, p_row_number);
@@ -371,6 +429,6 @@ $$;
 -- 6. Hardening de permisos (Bloque 7): solo `service_role` puede invocar las RPCs SECURITY DEFINER
 REVOKE ALL ON TABLE public.filet_guided_operation_receipts FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.confirm_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, INT, TEXT, INT, INT) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.undo_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.undo_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, TEXT, INT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.confirm_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, INT, TEXT, INT, INT) TO service_role;
-GRANT EXECUTE ON FUNCTION public.undo_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.undo_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, TEXT, INT) TO service_role;
