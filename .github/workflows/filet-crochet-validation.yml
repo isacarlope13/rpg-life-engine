@@ -1,0 +1,65 @@
+name: Filet Crochet Studio — Validation (No Deploy)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/app/api/filet/**'
+      - 'src/app/api/resources/**'
+      - 'src/app/api/shortcuts/skill-session/**'
+      - 'src/components/sanctuary/atelier-building.tsx'
+      - 'src/components/sanctuary/filet-**'
+      - 'src/lib/ai/building-resources-engine.ts'
+      - 'src/lib/ai/clara-lyra-tools.ts'
+      - 'src/lib/atomic-skill-session.ts'
+      - 'src/lib/demo-store.ts'
+      - 'src/lib/filet-session-finalization.ts'
+      - 'src/lib/sanctuary/filet-**'
+      - 'src/lib/sanctuary/pdf-local-renderer.ts'
+      - 'src/lib/sanctuary/universal-session-engine.ts'
+      - 'src/lib/sanctuary/use-filet-workspace-sync.ts'
+      - 'src/lib/state-builder.ts'
+      - 'src/types/rpg.ts'
+      - 'public/pdf.worker.min.mjs'
+      - 'supabase/drafts/**'
+      - 'tests/filet-**'
+      - 'tests/atomic-session-sql.test.ts'
+      - 'docs/continuity/FILET_**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/filet-crochet-validation.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: Node 22 — npm ci, audit, tsc, unit+SQL tests & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OAKHAVEN_PUBLIC_SIGNUP_ENABLED: 'false'
+      OAKHAVEN_OWNER_USER_ID: '00000000-0000-4000-8000-000000000001'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Security audit (production & full)
+        run: |
+          npm audit --omit=dev
+          npm audit
+      - name: TypeScript strict check
+        run: npx tsc --noEmit
+      - name: Run full unit and PGlite SQL test suite
+        env:
+          NODE_OPTIONS: '--experimental-strip-types'
+        run: |
+          trap 'rm -f .env.local' EXIT
+          printf 'NEXT_PUBLIC_SUPABASE_URL=\nNEXT_PUBLIC_SUPABASE_ANON_KEY=\nSUPABASE_SERVICE_ROLE_KEY=\nDEFAULT_PLAYER_USER_ID=\n' > .env.local
+          npm test
+      - name: Production build without external credentials
+        run: npm run build
