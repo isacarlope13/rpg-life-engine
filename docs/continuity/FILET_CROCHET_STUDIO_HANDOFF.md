@@ -2,7 +2,36 @@
 
 **Rama dedicada:** `feat/oakhaven-filet-crochet-studio`
 **Base limpia:** `origin/main @ cb06321` (Release 3.3 — independiente de la PR financiera #2)
-**Estado de despliegue:** Local únicamente (sin `push`, sin `merge`, sin despliegue en Railway y sin migraciones SQL reales).
+**Pull Request en borrador (Draft):** https://github.com/isacarlope13/rpg-life-engine/pull/3 (`feat(atelier): Filet Crochet Studio v1.0`)
+**Estado de despliegue:** Rama publicada en GitHub con PR en estado **Draft** y CI en verde (`0` merges, `0` despliegues en Railway y `0` migraciones SQL aplicadas en Supabase real).
+
+## Fase 6C — Publicación controlada, CI en Node 22 y plan 6D (2026-11-24)
+
+- **Publicación y PR en borrador:** publicada exclusivamente `feat/oakhaven-filet-crochet-studio` (partiendo del cierre funcional `da58a1a` + workflow CI `2d233ab`) y abierta en estado **Draft** la **PR #3** (`https://github.com/isacarlope13/rpg-life-engine/pull/3`). `origin/main` permanece intacto en `cb063213` y la PR financiera #2 (`origin/feat/oakhaven-financial-owner-ledger @ f5de183`) no fue tocada (`CODEX_HANDOFF.md` preservado fuera de commits).
+- **GitHub Actions bajo Node 22:** se incorporó `.github/workflows/filet-crochet-validation.yml` (sin permisos de escritura ni despliegue). Ejecución verificada en verde (`run #45462019068`, `https://github.com/isacarlope13/rpg-life-engine/actions/runs/45462019068`):
+  - `npm ci --ignore-scripts`: aprobado.
+  - `npm audit --omit=dev` y `npm audit`: **0 vulnerabilidades**.
+  - `npx tsc --noEmit`: **0 errores**.
+  - `npm test` (unitarias + SQL PGlite): **383 / 383 casos aprobados** (`23` suites, `0` fallos).
+  - `npm run build` (sin credenciales externas): **37 / 37 páginas generadas**.
+- **Aclaración de recompensas en fixtures:** el arnés SQL directo de 6B.1 inyectó literales sintéticos (`100 GP / 10 XP`) para probar el trigger aisladamente, mientras que la ruta real `POST /api/shortcuts/skill-session` calcula las recompensas exclusivamente en el servidor mediante `demo-store.ts` (`guided = true` → `2.800 GP` y `65 XP` por sesión guiada; `5.600 GP` y `130 XP` para dos sesiones legítimas) más `fn_process_activity_reward()`, ignorando cualquier valor enviado por el cliente.
+- **Estado de conflictos:** `MERGEABLE=True` y `MERGEABLE_STATE=clean` contra `origin/main @ cb063213`. Si PR #2 (`f5de183`) se fusiona primero, solo requerirá unión aditiva controlada en 4 archivos (`package.json`, `src/app/api/shortcuts/skill-session/route.ts`, `src/lib/demo-store.ts`, `src/lib/state-builder.ts`).
+- **Migraciones requeridas y Plan de Fase 6D (sin ejecutar):** documentados en `docs/continuity/FILET_PHASE6D_PRODUCTION_PLAN.md` en orden obligatorio:
+  1. `supabase/drafts/20261124_filet_guided_progress_atomic.sql`
+  2. `supabase/drafts/20261124_filet_workspace_sync.sql`
+  3. `supabase/drafts/20261112_atomic_skill_session.sql`
+- **Riesgos pendientes antes de Fase 6D:** (1) las 3 migraciones están validadas en PGlite y PostgreSQL 17.11 local aislado, pero **pendientes en Supabase real** (Auth/PostgREST reales); (2) pendientes pruebas en dispositivos físicos (iPhone/Galaxy Tab), impresión física a escala `1:1` y tejido físico con alfabetos históricos reales de la usuaria.
+- **Cuotas oficiales:** no consultables programáticamente desde Antigravity; ejecución autorizada por confirmación humana (último registro oficial previo de Codex: `29 %` en 5 h y `57 %` semanal). **Fase 6D detenida a la espera de autorización independiente.**
+
+| Estado | Evidencia actual (cierre Fase 6C) |
+| --- | --- |
+| Implementado | Fases 1–6 completas en `feat/oakhaven-filet-crochet-studio` + workflow CI Node 22 + plan 6D (`FILET_PHASE6D_PRODUCTION_PLAN.md`). |
+| Validado localmente | Node 22 (`383/383` pruebas, `tsc --noEmit` `0` errores, `next build` `37/37` páginas, `npm audit` `0` vulnerabilidades, `git diff --check` limpio, `0` secretos). |
+| Validado en PostgreSQL real aislado | Aprobado en PostgreSQL 17.11 nativo (`127.0.0.1:54387`, carreras multi-conexión, matriz HTTP y clúster sintético retirado). **Supabase real sigue pendiente.** |
+| Validado mediante navegador | Aprobado en escritorio (revisión visual `/cozy` Fases 3–5 + flujo Baby Lucio 80 cuadros en 2 contextos Chromium con finalización concurrente). |
+| Validado en dispositivo físico | Pendiente (iPhone, Galaxy Tab, impresión `1:1` y muestra tejida física). |
+| Pendiente de aprobación | **Fase 6D:** validación en Supabase aislado/staging, migraciones reales, salida de Draft, merge a `main` y despliegue en Railway. |
+| Publicado | Rama `feat/oakhaven-filet-crochet-studio` publicada y **Draft PR #3** abierta con GitHub Actions en verde (`383/383`). Sin merge ni despliegue. |
 
 ## Fase 6A/6B.2 — Finalización Filet atómica (2026-11-24)
 
