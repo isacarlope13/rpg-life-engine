@@ -37,3 +37,31 @@
   - `npx tsc --noEmit`: `0` errores.
   - `npm run build`: aprobado (`35/35` rutas).
   - `git diff --check`: limpio.
+
+---
+
+## Fase 3 — Digitalizador de Alfabetos Históricos (`feat/oakhaven-filet-crochet-studio`, 2026-11-23)
+- **Bloque 0 (Validación y dependencias):**
+  - Dependencia evaluada e instalada: **`pdfjs-dist@6.5.438`** (`npm audit` = **0 vulnerabilidades**, parcha CVE-2024-4367 y CVE-2026-16633; `eval()` eliminado en core v6.5+).
+  - Worker local servido desde `public/pdf.worker.min.mjs` (sin CDN externo, `useSystemFonts: false`, carga diferida con `import("pdfjs-dist")` para no inflar el bundle inicial de `/cozy`).
+  - Paridad de Node: ejecutado con `C:\Program Files\nodejs\node.exe` (`v26.12.1`) bajo autorización explícita; pendiente confirmar paridad bajo **Node 22 (`22.x`)** en CI o terminal con Node 22 antes de merge.
+  - Continuidad de PR financiera #2 protegida (`docs/continuity/CODEX_HANDOFF.md` no modificado ni incluido en el commit).
+- **Bloque 1 — Biblioteca de Documentos Históricos (`building-resources-engine.ts` + `pdf-local-renderer.ts` + `filet-crochet-store.ts`):**
+  - Nuevo tipo de recurso privado en Atelier: `historical_alphabet_document` (`pdf`, `png`, `jpg`, `jpeg`, `webp`) respetando el límite de **5 MB** del Atelier, validación real de magic bytes, prevención de path traversal, límites de dimensiones (`4096 px` / `16 MP`) y máximo `60` páginas PDF.
+  - Renderizado local de PDF con miniaturas, navegación de páginas, zoom/pan, rotación de copia de trabajo (`0°/90°/180°/270°`) y selección de región rectangular sin modificar jamás el documento original.
+- **Bloques 2 y 3 — Calibración Visual y Motor Determinista RGBA (`src/lib/sanctuary/filet-digitizer-engine.ts`):**
+  - Editor de calibración de cuadrícula sobre copia derivada: filas, columnas, origen `X/Y`, ancho/alto de celda, desplazamiento `X/Y`, rotación fina, opacidad de superposición y margen interior de muestreo (`innerSampleMarginRatio`) para evitar líneas de cuadrícula.
+  - Procesamiento determinista puro (sin Gemini, sin OCR externo, sin servicios pagos): escala de grises, contraste, binarización con umbral manual u Otsu automático (`autoSuggestThresholdOtsu`), inversión blanco/negro, detección asistida de líneas (`detectGridLinesAssisted`), clasificación lleno/vacío, detección explícita de celdas ambiguas y **modo 100 % manual** (`createManualEmptyDigitization`).
+- **Bloques 4 y 5 — Revisión 4-en-1, Procedencia e Integración (`filet-crochet-engine.ts` + `filet-historical-digitizer.tsx`):**
+  - Vista simultánea de región original, cuadrícula calibrada, matriz binaria editable y celdas ambiguas resaltadas.
+  - Edición celda por celda, Undo/Redo, zoom, restablecimiento a detección inicial, cero suavizado/estilizado automático y **confirmación manual obligatoria** antes de guardar.
+  - Trazabilidad histórica completa en `FiletGlyph.historicalProvenance` (documento, página, región, calibración, `initiallyDetectedMatrix`, fecha y referencia original), detección de duplicados con soporte de variantes y flujo continuo para digitalizar varias letras de la misma página sin reimportar, integradas de inmediato en el Compositor Visual (Fase 2).
+- **Bloque 6 — UI Profesional de 3 Paneles (`src/components/sanctuary/filet-historical-digitizer.tsx` + `filet-crochet-studio.tsx`):**
+  - Pestaña `4. Digitalizador Histórico (PDF/Img)` con diseño responsivo de 3 paneles (`lg:col-span-3`, `lg:col-span-5`, `lg:col-span-4` + pestañas móviles) en estética Cozy de OakHaven.
+- **Bloque 7 — Pruebas y QA Final (Node `v26.12.1`):**
+  - `tests/filet-crochet-phase3-digitizer.test.ts` (6 pruebas integrales con imágenes sintéticas RGBA: líneas 1px y 4px, detección asistida, Otsu/contraste bajo, inversión, celdas ambiguas, recorte de región, preservación del original, corrección manual, persistencia y recarga, duplicados/variantes, aislamiento por usuario, rechazos de seguridad, integración con Compositor + Motor Técnico, rendimiento `32×32` en `640×640 px` < 300 ms y auditoría de seguridad PDF.js).
+  - `npm test`: **369/369** pruebas aprobadas (21 suites, `0` fallos).
+  - `npx tsc --noEmit`: `0` errores.
+  - `npm run build`: aprobado (`35/35` rutas; `/cozy` `93.4 kB`, First Load JS `351 kB`).
+  - `git diff --check`: limpio.
+  - **Prueba en navegador real (`http://localhost:3099/cozy`):** verificados los 3 paneles en escritorio sin solapamiento, modo manual, edición + Undo/Redo, confirmación obligatoria de revisión, guardado en biblioteca y disponibilidad inmediata del glifo `"Z"` en el Compositor Visual, con `0` errores de consola en Filet Crochet Studio (nota: persiste 1 advertencia preexistente de React `key` en `BentoDailyDashboard` al renderizar `/cozy`, fuera del alcance de Filet Studio).

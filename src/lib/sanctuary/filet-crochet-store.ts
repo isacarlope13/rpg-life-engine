@@ -13,6 +13,7 @@
 import { isOfflineOwner } from "../offline-owner.ts";
 import { safeLocalStorage } from "../storage-safe.ts";
 import type { SessionStorage } from "./session-storage.ts";
+import type { HistoricalDocumentRecord } from "./filet-digitizer-engine.ts";
 import {
   cloneBinaryMatrix,
   cloneComposerSnapshot,
@@ -227,6 +228,17 @@ function cloneWorkspace(workspace: FiletStudioWorkspace): FiletStudioWorkspace {
           ...g.originalReference,
           originalMatrix: cloneBinaryMatrix(g.originalReference.originalMatrix),
         },
+        historicalProvenance: g.historicalProvenance
+          ? {
+              ...g.historicalProvenance,
+              region: { ...g.historicalProvenance.region },
+              calibration: { ...g.historicalProvenance.calibration },
+              processing: { ...g.historicalProvenance.processing },
+              initiallyDetectedMatrix: cloneBinaryMatrix(
+                g.historicalProvenance.initiallyDetectedMatrix
+              ),
+            }
+          : undefined,
       })),
     })),
     patterns: workspace.patterns.map((p) => ({
@@ -699,4 +711,102 @@ export function restoreFiletWorkspaceFromBackupSafe(
   options: { confirmOverwrite: boolean }
 ) {
   return restoreFiletWorkspaceFromBackup(safeLocalStorage, owner, rawJson, options);
+}
+
+// ============================================================================
+// FASE 3 — PERSISTENCIA LOCAL AISLADA DE BIBLIOTECA DE DOCUMENTOS HISTÓRICOS
+// ============================================================================
+
+const MAX_HISTORICAL_DOCS = 32;
+const MAX_HISTORICAL_DOCS_BYTES = 1_800_000;
+
+export function historicalDocsStorageKey(owner: string): string {
+  return `oakhaven_atelier_historical_docs_v1_${encodeURIComponent(owner)}`;
+}
+
+function isValidHistoricalDoc(value: unknown): value is HistoricalDocumentRecord {
+  if (!value || typeof value !== "object") return false;
+  const d = value as Record<string, unknown>;
+  return (
+    typeof d.id === "string" &&
+    typeof d.title === "string" &&
+    typeof d.filename === "string" &&
+    (d.mimeType === "application/pdf" ||
+      d.mimeType === "image/png" ||
+      d.mimeType === "image/jpeg" ||
+      d.mimeType === "image/webp") &&
+    typeof d.sizeBytes === "number" &&
+    d.sizeBytes > 0 &&
+    typeof d.pageCount === "number" &&
+    d.pageCount >= 1 &&
+    (d.source === "local_private" || d.source === "atelier_resource") &&
+    typeof d.addedAt === "string"
+  );
+}
+
+export function readHistoricalDocuments(
+  storage: SessionStorage,
+  owner?: string
+): HistoricalDocumentRecord[] {
+  if (!isOfflineOwner(owner)) return [];
+  try {
+    const raw = storage.getItem(historicalDocsStorageKey(owner));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return [];
+    const env = parsed as { ownerId?: unknown; documents?: unknown };
+    if (env.ownerId !== owner || !Array.isArray(env.documents)) return [];
+    return env.documents.filter(isValidHistoricalDoc);
+  } catch {
+    return [];
+  }
+}
+
+export function saveHistoricalDocuments(
+  storage: SessionStorage,
+  owner: string | undefined,
+  documents: HistoricalDocumentRecord[]
+): { ok: boolean; error?: string; documents: HistoricalDocumentRecord[] } {
+  if (!isOfflineOwner(owner)) {
+    return {
+      ok: false,
+      error: "Inicia sesión para guardar documentos históricos en tu Atelier.",
+      documents: [],
+    };
+  }
+  const cleanDocs = documents.slice(0, MAX_HISTORICAL_DOCS).filter(isValidHistoricalDoc);
+  const serialized = JSON.stringify({ ownerId: owner, documents: cleanDocs });
+  if (serialized.length > MAX_HISTORICAL_DOCS_BYTES) {
+    // Recortar previewDataUrl de documentos antiguos si supera cuota, conservando metadatos
+    const compact = cleanDocs.map((d, idx) =>
+      idx === 0 ? d : { ...d, previewDataUrl: undefined }
+    );
+    const compactRaw = JSON.stringify({ ownerId: owner, documents: compact });
+    if (compactRaw.length > MAX_HISTORICAL_DOCS_BYTES) {
+      return {
+        ok: false,
+        error: "Cuota local excedida para vistas previas de documentos históricos.",
+        documents: readHistoricalDocuments(storage, owner),
+      };
+    }
+    const ok = storage.setItem(historicalDocsStorageKey(owner), compactRaw);
+    return ok === false
+      ? { ok: false, error: "Espacio local lleno.", documents: readHistoricalDocuments(storage, owner) }
+      : { ok: true, documents: compact };
+  }
+  const ok = storage.setItem(historicalDocsStorageKey(owner), serialized);
+  return ok === false
+    ? { ok: false, error: "Espacio local lleno.", documents: readHistoricalDocuments(storage, owner) }
+    : { ok: true, documents: cleanDocs };
+}
+
+export function readHistoricalDocumentsSafe(owner?: string): HistoricalDocumentRecord[] {
+  return readHistoricalDocuments(safeLocalStorage, owner);
+}
+
+export function saveHistoricalDocumentsSafe(
+  owner: string | undefined,
+  documents: HistoricalDocumentRecord[]
+) {
+  return saveHistoricalDocuments(safeLocalStorage, owner, documents);
 }

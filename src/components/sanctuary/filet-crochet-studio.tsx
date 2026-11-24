@@ -58,6 +58,7 @@ import {
 } from "@/lib/sanctuary/filet-crochet-store";
 import { FiletComposerPanel } from "@/components/sanctuary/filet-composer-panel";
 import { FiletRestorePanel } from "@/components/sanctuary/filet-restore-panel";
+import { FiletHistoricalDigitizer } from "@/components/sanctuary/filet-historical-digitizer";
 
 interface FiletCrochetStudioProps {
   sessionOwner?: string;
@@ -114,7 +115,7 @@ export function FiletCrochetStudio({
   sessionOwner,
   activeProject,
 }: FiletCrochetStudioProps) {
-  const [studioMode, setStudioMode] = useState<"alphabet" | "composer" | "backups">("alphabet");
+  const [studioMode, setStudioMode] = useState<"alphabet" | "composer" | "backups" | "digitizer">("alphabet");
   const [workspace, setWorkspace] = useState<FiletStudioWorkspace>(() =>
     readFiletStudioWorkspaceSafe(sessionOwner)
   );
@@ -634,6 +635,7 @@ export function FiletCrochetStudio({
               { id: "alphabet", label: "1. Editor de Alfabetos y Letras" },
               { id: "composer", label: "2. Compositor Visual y Motor Técnico" },
               { id: "backups", label: "3. Respaldos Privados y Restauración" },
+              { id: "digitizer", label: "4. Digitalizador Histórico (PDF/Img)" },
             ] as const
           ).map((tab) => (
             <button
@@ -839,6 +841,15 @@ export function FiletCrochetStudio({
               setHistory(createMatrixHistory(firstCol.glyphs[0].matrix));
             }
           }}
+        />
+      )}
+
+      {studioMode === "digitizer" && (
+        <FiletHistoricalDigitizer
+          sessionOwner={sessionOwner}
+          workspace={workspace}
+          onPersistWorkspace={persistWorkspace}
+          onJumpToComposer={() => setStudioMode("composer")}
         />
       )}
 

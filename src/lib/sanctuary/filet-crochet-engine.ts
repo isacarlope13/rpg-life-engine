@@ -16,6 +16,8 @@
 export type FiletCell = 0 | 1;
 export type BinaryMatrix = FiletCell[][];
 
+import type { HistoricalGlyphProvenance } from "./filet-digitizer-engine.ts";
+
 export const FILET_MIN_DIM = 1;
 export const FILET_MAX_GLYPH_DIM = 64;
 export const FILET_MAX_PATTERN_DIM = 200;
@@ -42,12 +44,18 @@ export interface FiletGlyph {
   id: string;
   symbol: string;
   label: string;
+  /** Opcional (Fase 3): estilo tipográfico o histórico (ej. "Gótico", "Floral", "Clásico"). */
+  style?: string;
+  /** Opcional (Fase 3): etiqueta de variante para caracteres duplicados (ej. "Variante 2"). */
+  variantLabel?: string;
   width: number;
   height: number;
   /** Matriz de trabajo actual (copia editable del glifo). */
   matrix: BinaryMatrix;
   /** Referencia y matriz original intacta. */
   originalReference: FiletOriginalReference;
+  /** Opcional (Fase 3): trazabilidad completa de digitalización desde documento histórico. */
+  historicalProvenance?: HistoricalGlyphProvenance;
   notes: string;
   createdAt: string;
   updatedAt: string;
