@@ -170,6 +170,7 @@ export const BUILDING_LIBRARY_CONFIG: Record<string, BuildingLibraryDefinition> 
       { id: "progress_photo", label: "Foto de avance", allowedExtensions: ["png", "jpg", "jpeg", "webp"], allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"], extractableText: false },
       { id: "yarn_reference", label: "Referencia de lana / ovillo", allowedExtensions: ["png", "jpg", "jpeg", "webp", "txt", "md"], allowedMimeTypes: ["image/png", "image/jpeg", "image/webp", "text/plain", "text/markdown"], extractableText: true },
       { id: "material_list", label: "Lista de materiales", allowedExtensions: ["txt", "md", "csv"], allowedMimeTypes: ["text/plain", "text/markdown", "text/csv"], extractableText: true },
+      { id: "filet_crochet_studio", label: "Filet Crochet Studio (JSON)", allowedExtensions: ["json"], allowedMimeTypes: ["application/json"], extractableText: true },
     ],
   },
 };

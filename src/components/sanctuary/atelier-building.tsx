@@ -35,6 +35,7 @@ import { projectAtelierProgression } from "@/lib/sanctuary/visual-village-progre
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
 import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
+import { FiletCrochetStudio } from "@/components/sanctuary/filet-crochet-studio";
 
 interface AtelierBuildingProps {
   projects: KnittingProject[];
@@ -119,7 +120,7 @@ export function AtelierBuilding({
 }: AtelierBuildingProps) {
   const sessionOwner = useSessionIdentity();
   const [activeTab, setActiveTab] = useState<
-    "taller" | "proyectos" | "patrones" | "galeria" | "clara"
+    "taller" | "proyectos" | "patrones" | "filet" | "galeria" | "clara"
   >("taller");
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
@@ -574,12 +575,20 @@ export function AtelierBuilding({
       description: "Instrucciones vuelta a vuelta, notas personales y subida directa de imágenes.",
     },
     {
+      id: "filet",
+      name: "Filet Crochet Studio",
+      shortName: "Filet Studio",
+      icon: "▦",
+      hotkey: "4",
+      description: "Editor de cuadrícula binaria, colecciones de alfabetos y matrices filet.",
+    },
+    {
       id: "galeria",
       name: "Vitrina & Historial",
       shortName: "Vitrina",
       icon: "🏆",
       badge: knittingSessions.length > 0 ? knittingSessions.length : undefined,
-      hotkey: "4",
+      hotkey: "5",
       description: "Piezas terminadas, evolución del Atelier e historial real de sesiones.",
     },
     {
@@ -587,7 +596,7 @@ export function AtelierBuilding({
       name: "Rincón de Clara",
       shortName: "Clara",
       icon: "🐇",
-      hotkey: "5",
+      hotkey: "6",
       description: "Consejos serenos de Clara la Liebre y propuestas opcionales bajo tu aprobación.",
     },
   ];
@@ -620,6 +629,12 @@ export function AtelierBuilding({
           : activePattern.steps.length > 0
           ? `${activePattern.steps.length} pasos`
           : "Añadir guía o fotos",
+    },
+    {
+      id: "filet",
+      icon: "▦",
+      label: "Filet Studio",
+      hint: "Cuadrícula y alfabetos",
     },
     {
       id: "galeria",
@@ -691,7 +706,7 @@ export function AtelierBuilding({
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {sceneHotspots.map((spot) => {
             const selected = activeTab === spot.id;
             return (
@@ -1492,6 +1507,16 @@ export function AtelierBuilding({
             </CozyButton>
           </div>
         </form>
+      )}
+
+      {/* =======================================================================
+          ESTACIÓN 3B: FILET CROCHET STUDIO (MÓDULO DEL ATELIER DE CLARA)
+         ======================================================================= */}
+      {activeTab === "filet" && (
+        <FiletCrochetStudio
+          sessionOwner={sessionOwner}
+          activeProject={activeProject}
+        />
       )}
 
       {/* =======================================================================
