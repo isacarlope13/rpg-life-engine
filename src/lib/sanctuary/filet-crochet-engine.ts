@@ -106,6 +106,8 @@ export interface FiletVersionedPattern {
   currentVersion: number;
   versions: FiletPatternVersion[];
   composition?: FiletPatternCompositionSpec;
+  /** Opcional (Fase 2): snapshot editable del compositor asociado al patrón. */
+  composerSnapshot?: FiletComposerSnapshot;
   createdAt: string;
   updatedAt: string;
 }
@@ -114,6 +116,8 @@ export interface FiletStudioWorkspace {
   schemaVersion: 1;
   collections: FiletAlphabetCollection[];
   patterns: FiletVersionedPattern[];
+  /** Opcional (Fase 2): borradores de trabajo del compositor visual. */
+  drafts?: FiletComposerDraft[];
   updatedAt: string;
 }
 
@@ -883,6 +887,976 @@ export function createStarterFiletWorkspace(nowIso: string = new Date().toISOStr
     schemaVersion: 1,
     collections: [starterCollection],
     patterns: [],
+    drafts: [],
     updatedAt: nowIso,
+  };
+}
+
+// ============================================================================
+// FASE 2 — BLOQUE 1: COMPOSITOR VISUAL DETERMINISTA (LIENZO, GLIFOS, ESCALADO)
+// ============================================================================
+
+export type FiletBorderStyle = "none" | "open_frame" | "solid_frame";
+export type FiletRotationDegrees = 0 | 90 | 180 | 270;
+export type FiletHorizontalAlignment = "left" | "center" | "right" | "distribute";
+export type FiletVerticalAlignment = "top" | "center" | "bottom";
+
+export interface FiletCanvasSpec {
+  width: number;
+  height: number;
+  marginTop: number;
+  marginRight: number;
+  marginBottom: number;
+  marginLeft: number;
+  borderStyle: FiletBorderStyle;
+  borderThickness: number;
+}
+
+export interface FiletPlacedGlyph {
+  instanceId: string;
+  glyphId: string;
+  symbol: string;
+  /** Coordenada entera X (columna 0-based en el lienzo). */
+  x: number;
+  /** Coordenada entera Y (fila 0-based en el lienzo, 0 = superior). */
+  y: number;
+  rotation: FiletRotationDegrees;
+  flipH: boolean;
+  flipV: boolean;
+  /** Escalado discreto entero (>= 1). Nunca interpola ni deforma silenciosamente. */
+  scaleX: number;
+  scaleY: number;
+}
+
+export interface FiletMissingCharacter {
+  char: string;
+  normalizedChar: string;
+  lineIndex: number;
+  charIndex: number;
+}
+
+export interface FiletOverflowItem {
+  instanceId: string;
+  symbol: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  overflowLeft: number;
+  overflowTop: number;
+  overflowRight: number;
+  overflowBottom: number;
+}
+
+export interface FiletCanvasOverflowReport {
+  hasOverflow: boolean;
+  requiredWidth: number;
+  requiredHeight: number;
+  overflowRight: number;
+  overflowBottom: number;
+  overflowItems: FiletOverflowItem[];
+}
+
+export interface FiletComposerSnapshot {
+  canvas: FiletCanvasSpec;
+  placements: FiletPlacedGlyph[];
+  /** Ediciones manuales de celda sobre la composición final ("row,col" -> 0 | 1). */
+  cellOverrides: Record<string, FiletCell>;
+}
+
+export interface FiletComposerDraft {
+  id: string;
+  title: string;
+  alphabetCollectionId: string;
+  phrase: string;
+  letterSpacingCols: number;
+  wordSpacingCols: number;
+  lineSpacingRows: number;
+  alignment: FiletHorizontalAlignment;
+  verticalAlignment: FiletVerticalAlignment;
+  snapshot: FiletComposerSnapshot;
+  updatedAt: string;
+}
+
+export interface ComposerHistoryState {
+  past: FiletComposerSnapshot[];
+  present: FiletComposerSnapshot;
+  future: FiletComposerSnapshot[];
+  maxDepth: number;
+}
+
+export function cloneComposerSnapshot(snapshot: FiletComposerSnapshot): FiletComposerSnapshot {
+  return {
+    canvas: { ...snapshot.canvas },
+    placements: snapshot.placements.map((p) => ({ ...p })),
+    cellOverrides: { ...snapshot.cellOverrides },
+  };
+}
+
+export function composerSnapshotsEqual(
+  a: FiletComposerSnapshot,
+  b: FiletComposerSnapshot
+): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function createComposerHistory(
+  initial: FiletComposerSnapshot,
+  maxDepth: number = FILET_DEFAULT_HISTORY_DEPTH
+): ComposerHistoryState {
+  return {
+    past: [],
+    present: cloneComposerSnapshot(initial),
+    future: [],
+    maxDepth: Math.max(1, Math.floor(maxDepth)),
+  };
+}
+
+export function pushComposerHistory(
+  history: ComposerHistoryState,
+  next: FiletComposerSnapshot
+): ComposerHistoryState {
+  if (composerSnapshotsEqual(history.present, next)) return history;
+  const nextPast = [...history.past, cloneComposerSnapshot(history.present)];
+  if (nextPast.length > history.maxDepth) {
+    nextPast.splice(0, nextPast.length - history.maxDepth);
+  }
+  return {
+    past: nextPast,
+    present: cloneComposerSnapshot(next),
+    future: [],
+    maxDepth: history.maxDepth,
+  };
+}
+
+export function undoComposerHistory(history: ComposerHistoryState): ComposerHistoryState {
+  if (history.past.length === 0) return history;
+  const prev = history.past[history.past.length - 1];
+  return {
+    past: history.past.slice(0, -1),
+    present: cloneComposerSnapshot(prev),
+    future: [cloneComposerSnapshot(history.present), ...history.future],
+    maxDepth: history.maxDepth,
+  };
+}
+
+export function redoComposerHistory(history: ComposerHistoryState): ComposerHistoryState {
+  if (history.future.length === 0) return history;
+  const next = history.future[0];
+  return {
+    past: [...history.past, cloneComposerSnapshot(history.present)],
+    present: cloneComposerSnapshot(next),
+    future: history.future.slice(1),
+    maxDepth: history.maxDepth,
+  };
+}
+
+/**
+ * Escalado discreto estrictamente entero (Kronecker) sobre una COPIA de la matriz.
+ * Rechaza factores no enteros, menores a 1 o que excedan FILET_MAX_PATTERN_DIM
+ * para impedir interpolación o deformación silenciosa.
+ */
+export function scaleMatrixDiscrete(
+  matrix: BinaryMatrix,
+  scaleX: number,
+  scaleY: number = scaleX
+): BinaryMatrix {
+  if (
+    !Number.isInteger(scaleX) ||
+    !Number.isInteger(scaleY) ||
+    scaleX < 1 ||
+    scaleY < 1
+  ) {
+    throw new Error(
+      `Escalado discreto inválido (${scaleX}x${scaleY}): solo se permiten enteros positivos >= 1 sin interpolación.`
+    );
+  }
+  const check = validateBinaryMatrix(matrix, {
+    maxWidth: FILET_MAX_PATTERN_DIM,
+    maxHeight: FILET_MAX_PATTERN_DIM,
+  });
+  if (!check.valid) {
+    throw new Error(check.errors.join(" "));
+  }
+  const outW = check.width * scaleX;
+  const outH = check.height * scaleY;
+  if (outW > FILET_MAX_PATTERN_DIM || outH > FILET_MAX_PATTERN_DIM) {
+    throw new Error(
+      `El escalado discreto (${outW}×${outH}) excede el máximo permitido (${FILET_MAX_PATTERN_DIM}×${FILET_MAX_PATTERN_DIM}).`
+    );
+  }
+
+  const out: BinaryMatrix = Array.from({ length: outH }, () =>
+    Array<FiletCell>(outW).fill(0)
+  );
+  for (let r = 0; r < check.height; r++) {
+    for (let c = 0; c < check.width; c++) {
+      const val = matrix[r][c];
+      for (let dy = 0; dy < scaleY; dy++) {
+        for (let dx = 0; dx < scaleX; dx++) {
+          out[r * scaleY + dy][c * scaleX + dx] = val;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Resuelve la matriz transformada de un glifo colocado operando SIEMPRE sobre una copia
+ * de `glyph.matrix` (nunca muta `glyph.matrix` ni `glyph.originalReference.originalMatrix`).
+ */
+export function resolvePlacedGlyphMatrix(
+  placement: FiletPlacedGlyph,
+  glyph: FiletGlyph
+): BinaryMatrix {
+  let working = cloneBinaryMatrix(glyph.matrix);
+  if (placement.scaleX > 1 || placement.scaleY > 1) {
+    working = scaleMatrixDiscrete(working, placement.scaleX, placement.scaleY);
+  }
+  if (placement.flipH) {
+    working = flipMatrixHorizontal(working);
+  }
+  if (placement.flipV) {
+    working = flipMatrixVertical(working);
+  }
+  const turns = ((placement.rotation / 90) % 4 + 4) % 4;
+  for (let i = 0; i < turns; i++) {
+    working = rotateMatrix90CW(working);
+  }
+  return working;
+}
+
+export function movePlacedGlyph(
+  placements: FiletPlacedGlyph[],
+  instanceId: string,
+  nextX: number,
+  nextY: number
+): FiletPlacedGlyph[] {
+  const snappedX = Math.round(nextX);
+  const snappedY = Math.round(nextY);
+  return placements.map((p) =>
+    p.instanceId === instanceId ? { ...p, x: snappedX, y: snappedY } : { ...p }
+  );
+}
+
+export function transformPlacedGlyph(
+  placements: FiletPlacedGlyph[],
+  instanceId: string,
+  operation:
+    | { type: "rotate_cw" }
+    | { type: "rotate_ccw" }
+    | { type: "flip_h" }
+    | { type: "flip_v" }
+    | { type: "scale"; scaleX: number; scaleY?: number }
+): FiletPlacedGlyph[] {
+  return placements.map((p) => {
+    if (p.instanceId !== instanceId) return { ...p };
+    switch (operation.type) {
+      case "rotate_cw":
+        return {
+          ...p,
+          rotation: (((p.rotation + 90) % 360) as FiletRotationDegrees),
+        };
+      case "rotate_ccw":
+        return {
+          ...p,
+          rotation: (((p.rotation + 270) % 360) as FiletRotationDegrees),
+        };
+      case "flip_h":
+        return { ...p, flipH: !p.flipH };
+      case "flip_v":
+        return { ...p, flipV: !p.flipV };
+      case "scale": {
+        const sx = operation.scaleX;
+        const sy = operation.scaleY ?? sx;
+        if (!Number.isInteger(sx) || !Number.isInteger(sy) || sx < 1 || sy < 1 || sx > 6 || sy > 6) {
+          throw new Error("El escalado discreto de glifo debe ser un entero entre 1 y 6.");
+        }
+        return { ...p, scaleX: sx, scaleY: sy };
+      }
+    }
+  });
+}
+
+export function createDefaultCanvasSpec(
+  width = 80,
+  height = 24
+): FiletCanvasSpec {
+  return {
+    width: Math.min(FILET_MAX_PATTERN_DIM, Math.max(FILET_MIN_DIM, Math.floor(width))),
+    height: Math.min(FILET_MAX_PATTERN_DIM, Math.max(FILET_MIN_DIM, Math.floor(height))),
+    marginTop: 2,
+    marginRight: 2,
+    marginBottom: 2,
+    marginLeft: 2,
+    borderStyle: "open_frame",
+    borderThickness: 1,
+  };
+}
+
+/**
+ * Alinea o distribuye glifos colocados dentro del área interior del lienzo (respetando márgenes y borde).
+ */
+export function alignPlacedGlyphs(
+  placements: FiletPlacedGlyph[],
+  glyphById: Map<string, FiletGlyph>,
+  canvas: FiletCanvasSpec,
+  mode: "left" | "center_x" | "right" | "top" | "center_y" | "bottom" | "distribute_x",
+  targetIds?: string[]
+): FiletPlacedGlyph[] {
+  if (placements.length === 0) return [];
+  const targetSet = targetIds && targetIds.length > 0 ? new Set(targetIds) : null;
+  const borderPad = canvas.borderStyle === "none" ? 0 : Math.max(0, canvas.borderThickness);
+  const innerLeft = Math.max(0, canvas.marginLeft + borderPad);
+  const innerRight = Math.max(innerLeft + 1, canvas.width - canvas.marginRight - borderPad);
+  const innerTop = Math.max(0, canvas.marginTop + borderPad);
+  const innerBottom = Math.max(innerTop + 1, canvas.height - canvas.marginBottom - borderPad);
+  const innerW = innerRight - innerLeft;
+  const innerH = innerBottom - innerTop;
+
+  const measured = placements.map((p) => {
+    const g = glyphById.get(p.glyphId);
+    const mat = g ? resolvePlacedGlyphMatrix(p, g) : [[0 as FiletCell]];
+    return {
+      placement: { ...p },
+      w: mat[0]?.length ?? 1,
+      h: mat.length || 1,
+      selected: !targetSet || targetSet.has(p.instanceId),
+    };
+  });
+
+  const active = measured.filter((m) => m.selected);
+  if (active.length === 0) return measured.map((m) => m.placement);
+
+  if (mode === "distribute_x" && active.length >= 2) {
+    const sorted = [...active].sort((a, b) => a.placement.x - b.placement.x);
+    const sumW = sorted.reduce((acc, item) => acc + item.w, 0);
+    const availableGap = Math.max(0, innerW - sumW);
+    const stepGap = Math.floor(availableGap / (sorted.length - 1));
+    let cursorX = innerLeft;
+    for (const item of sorted) {
+      item.placement.x = cursorX;
+      cursorX += item.w + stepGap;
+    }
+    return measured.map((m) => m.placement);
+  }
+
+  const minX = Math.min(...active.map((m) => m.placement.x));
+  const maxX = Math.max(...active.map((m) => m.placement.x + m.w));
+  const minY = Math.min(...active.map((m) => m.placement.y));
+  const maxY = Math.max(...active.map((m) => m.placement.y + m.h));
+  const groupW = maxX - minX;
+  const groupH = maxY - minY;
+
+  let dx = 0;
+  let dy = 0;
+  if (mode === "left") dx = innerLeft - minX;
+  else if (mode === "center_x") dx = innerLeft + Math.floor((innerW - groupW) / 2) - minX;
+  else if (mode === "right") dx = innerRight - groupW - minX;
+  else if (mode === "top") dy = innerTop - minY;
+  else if (mode === "center_y") dy = innerTop + Math.floor((innerH - groupH) / 2) - minY;
+  else if (mode === "bottom") dy = innerBottom - groupH - minY;
+
+  return measured.map((m) =>
+    m.selected
+      ? { ...m.placement, x: m.placement.x + dx, y: m.placement.y + dy }
+      : m.placement
+  );
+}
+
+/**
+ * Renderiza el lienzo compuesto (borde + glifos colocados + ediciones manuales de celda)
+ * y calcula el reporte exacto de desbordamiento.
+ */
+export function renderComposedCanvas(
+  canvas: FiletCanvasSpec,
+  placements: FiletPlacedGlyph[],
+  glyphById: Map<string, FiletGlyph>,
+  cellOverrides: Record<string, FiletCell> = {}
+): { matrix: BinaryMatrix; overflow: FiletCanvasOverflowReport } {
+  const safeW = Math.min(FILET_MAX_PATTERN_DIM, Math.max(FILET_MIN_DIM, Math.floor(canvas.width)));
+  const safeH = Math.min(FILET_MAX_PATTERN_DIM, Math.max(FILET_MIN_DIM, Math.floor(canvas.height)));
+  const matrix = createEmptyMatrix(safeW, safeH, 0, FILET_MAX_PATTERN_DIM);
+
+  // 1. Borde perimetral configurable (dentro del lienzo)
+  const borderThick = Math.max(0, Math.min(6, Math.floor(canvas.borderThickness)));
+  if (canvas.borderStyle === "solid_frame" && borderThick > 0) {
+    for (let r = 0; r < safeH; r++) {
+      for (let c = 0; c < safeW; c++) {
+        if (
+          r < borderThick ||
+          r >= safeH - borderThick ||
+          c < borderThick ||
+          c >= safeW - borderThick
+        ) {
+          matrix[r][c] = 1;
+        }
+      }
+    }
+  }
+
+  // 2. Componer cada glifo colocado y detectar desbordamientos exactos
+  const overflowItems: FiletOverflowItem[] = [];
+  let maxRight = safeW;
+  let maxBottom = safeH;
+
+  for (const placement of placements) {
+    const glyph = glyphById.get(placement.glyphId);
+    if (!glyph) continue;
+    const gMat = resolvePlacedGlyphMatrix(placement, glyph);
+    const gh = gMat.length;
+    const gw = gMat[0]?.length ?? 0;
+
+    const overflowLeft = Math.max(0, -placement.x);
+    const overflowTop = Math.max(0, -placement.y);
+    const overflowRight = Math.max(0, placement.x + gw - safeW);
+    const overflowBottom = Math.max(0, placement.y + gh - safeH);
+
+    if (placement.x + gw > maxRight) maxRight = placement.x + gw;
+    if (placement.y + gh > maxBottom) maxBottom = placement.y + gh;
+
+    if (overflowLeft > 0 || overflowTop > 0 || overflowRight > 0 || overflowBottom > 0) {
+      overflowItems.push({
+        instanceId: placement.instanceId,
+        symbol: placement.symbol,
+        x: placement.x,
+        y: placement.y,
+        width: gw,
+        height: gh,
+        overflowLeft,
+        overflowTop,
+        overflowRight,
+        overflowBottom,
+      });
+    }
+
+    for (let r = 0; r < gh; r++) {
+      const targetR = placement.y + r;
+      if (targetR < 0 || targetR >= safeH) continue;
+      for (let c = 0; c < gw; c++) {
+        const targetC = placement.x + c;
+        if (targetC < 0 || targetC >= safeW) continue;
+        if (gMat[r][c] === 1) {
+          matrix[targetR][targetC] = 1;
+        }
+      }
+    }
+  }
+
+  // 3. Aplicar ediciones manuales de celda encima de la composición
+  for (const [key, val] of Object.entries(cellOverrides)) {
+    const [rawR, rawC] = key.split(",");
+    const r = Number(rawR);
+    const c = Number(rawC);
+    if (Number.isInteger(r) && Number.isInteger(c) && r >= 0 && r < safeH && c >= 0 && c < safeW) {
+      matrix[r][c] = val === 1 ? 1 : 0;
+    }
+  }
+
+  return {
+    matrix,
+    overflow: {
+      hasOverflow: overflowItems.length > 0,
+      requiredWidth: maxRight,
+      requiredHeight: maxBottom,
+      overflowRight: Math.max(0, maxRight - safeW),
+      overflowBottom: Math.max(0, maxBottom - safeH),
+      overflowItems,
+    },
+  };
+}
+
+/**
+ * Compone automáticamente nombres o frases sobre un lienzo configurable.
+ * REGLA ESTRICTA: cuando falta un carácter en el alfabeto, lo informa en `missingCharacters`
+ * y NUNCA lo sustituye silenciosamente (solo aplica `explicitSubstitutions` si la usuaria
+ * proporcionó una alternativa explícita).
+ */
+export function composePhraseOnCanvas(params: {
+  collection: FiletAlphabetCollection;
+  phrase: string;
+  canvas: FiletCanvasSpec;
+  letterSpacingCols?: number;
+  wordSpacingCols?: number;
+  lineSpacingRows?: number;
+  alignment?: FiletHorizontalAlignment;
+  verticalAlignment?: FiletVerticalAlignment;
+  explicitSubstitutions?: Record<string, string>;
+}): {
+  placements: FiletPlacedGlyph[];
+  matrix: BinaryMatrix;
+  missingCharacters: FiletMissingCharacter[];
+  overflow: FiletCanvasOverflowReport;
+} {
+  const { collection, phrase, canvas } = params;
+  const letterGap = Math.max(0, Math.min(20, Math.floor(params.letterSpacingCols ?? 1)));
+  const wordGap = Math.max(1, Math.min(30, Math.floor(params.wordSpacingCols ?? 4)));
+  const lineGap = Math.max(0, Math.min(20, Math.floor(params.lineSpacingRows ?? 2)));
+  const alignment = params.alignment ?? "center";
+  const verticalAlignment = params.verticalAlignment ?? "center";
+  const subs = params.explicitSubstitutions || {};
+
+  // Buscar coincidencia exacta primero (para distinguir mayúsculas/minúsculas si el alfabeto las define)
+  // y fallback por coincidencia case-insensitive del MISMO carácter si el alfabeto solo tiene un caso.
+  const exactLookup = new Map<string, FiletGlyph>();
+  const upperLookup = new Map<string, FiletGlyph>();
+  const glyphById = new Map<string, FiletGlyph>();
+  for (const g of collection.glyphs) {
+    exactLookup.set(g.symbol, g);
+    if (!upperLookup.has(g.symbol.toUpperCase())) {
+      upperLookup.set(g.symbol.toUpperCase(), g);
+    }
+    glyphById.set(g.id, g);
+  }
+
+  const borderPad = canvas.borderStyle === "none" ? 0 : Math.max(0, Math.floor(canvas.borderThickness));
+  const innerLeft = Math.max(0, Math.floor(canvas.marginLeft) + borderPad);
+  const innerRight = Math.max(innerLeft + 1, Math.floor(canvas.width) - Math.floor(canvas.marginRight) - borderPad);
+  const innerTop = Math.max(0, Math.floor(canvas.marginTop) + borderPad);
+  const innerBottom = Math.max(innerTop + 1, Math.floor(canvas.height) - Math.floor(canvas.marginBottom) - borderPad);
+  const innerW = innerRight - innerLeft;
+  const innerH = innerBottom - innerTop;
+
+  const missingCharacters: FiletMissingCharacter[] = [];
+  const rawLines = (phrase || "").split(/\r?\n/);
+
+  interface LineEntry {
+    items: Array<{ type: "glyph"; glyph: FiletGlyph; instanceId: string } | { type: "space" }>;
+    contentWidth: number;
+    lineHeight: number;
+  }
+
+  const parsedLines: LineEntry[] = [];
+  let seq = 0;
+
+  rawLines.forEach((rawLine, lineIndex) => {
+    const chars = Array.from(rawLine);
+    const items: LineEntry["items"] = [];
+    let lineHeight = collection.defaultHeight;
+
+    chars.forEach((ch, charIndex) => {
+      if (ch === " ") {
+        items.push({ type: "space" });
+        return;
+      }
+
+      let glyph = exactLookup.get(ch) || upperLookup.get(ch.toUpperCase());
+      if (!glyph) {
+        const explicitAlt = subs[ch] ?? subs[ch.toUpperCase()];
+        if (explicitAlt) {
+          glyph = exactLookup.get(explicitAlt) || upperLookup.get(explicitAlt.toUpperCase());
+        }
+      }
+
+      if (!glyph) {
+        missingCharacters.push({
+          char: ch,
+          normalizedChar: ch.toUpperCase(),
+          lineIndex,
+          charIndex,
+        });
+        return;
+      }
+
+      seq += 1;
+      lineHeight = Math.max(lineHeight, glyph.height);
+      items.push({
+        type: "glyph",
+        glyph,
+        instanceId: `placed_${lineIndex}_${charIndex}_${seq}`,
+      });
+    });
+
+    // Calcular ancho real de la línea con separación exacta entre letras y palabras
+    let contentWidth = 0;
+    for (let i = 0; i < items.length; i++) {
+      const curr = items[i];
+      const prev = i > 0 ? items[i - 1] : null;
+      if (curr.type === "space") {
+        contentWidth += wordGap;
+      } else {
+        if (prev && prev.type === "glyph") {
+          contentWidth += letterGap;
+        }
+        contentWidth += curr.glyph.width;
+      }
+    }
+
+    parsedLines.push({ items, contentWidth, lineHeight });
+  });
+
+  const totalLinesHeight =
+    parsedLines.reduce((acc, l) => acc + l.lineHeight, 0) +
+    Math.max(0, parsedLines.length - 1) * lineGap;
+
+  let cursorY =
+    verticalAlignment === "center"
+      ? innerTop + Math.floor((innerH - totalLinesHeight) / 2)
+      : verticalAlignment === "bottom"
+      ? innerBottom - totalLinesHeight
+      : innerTop;
+
+  const placements: FiletPlacedGlyph[] = [];
+
+  for (const line of parsedLines) {
+    const glyphItems = line.items.filter(
+      (i): i is { type: "glyph"; glyph: FiletGlyph; instanceId: string } => i.type === "glyph"
+    );
+
+    if (alignment === "distribute" && glyphItems.length >= 2) {
+      const sumW = glyphItems.reduce((acc, g) => acc + g.glyph.width, 0);
+      const extraGap = Math.max(letterGap, Math.floor((innerW - sumW) / (glyphItems.length - 1)));
+      let cursorX = innerLeft;
+      for (const item of glyphItems) {
+        placements.push({
+          instanceId: item.instanceId,
+          glyphId: item.glyph.id,
+          symbol: item.glyph.symbol,
+          x: cursorX,
+          y: cursorY + (line.lineHeight - item.glyph.height),
+          rotation: 0,
+          flipH: false,
+          flipV: false,
+          scaleX: 1,
+          scaleY: 1,
+        });
+        cursorX += item.glyph.width + extraGap;
+      }
+    } else {
+      let cursorX =
+        alignment === "center"
+          ? innerLeft + Math.floor((innerW - line.contentWidth) / 2)
+          : alignment === "right"
+          ? innerRight - line.contentWidth
+          : innerLeft;
+
+      for (let i = 0; i < line.items.length; i++) {
+        const curr = line.items[i];
+        const prev = i > 0 ? line.items[i - 1] : null;
+        if (curr.type === "space") {
+          cursorX += wordGap;
+        } else {
+          if (prev && prev.type === "glyph") {
+            cursorX += letterGap;
+          }
+          placements.push({
+            instanceId: curr.instanceId,
+            glyphId: curr.glyph.id,
+            symbol: curr.glyph.symbol,
+            x: cursorX,
+            y: cursorY + (line.lineHeight - curr.glyph.height),
+            rotation: 0,
+            flipH: false,
+            flipV: false,
+            scaleX: 1,
+            scaleY: 1,
+          });
+          cursorX += curr.glyph.width;
+        }
+      }
+    }
+
+    cursorY += line.lineHeight + lineGap;
+  }
+
+  const rendered = renderComposedCanvas(canvas, placements, glyphById, {});
+  return {
+    placements,
+    matrix: rendered.matrix,
+    missingCharacters,
+    overflow: rendered.overflow,
+  };
+}
+
+// ============================================================================
+// FASE 2 — BLOQUE 3: MOTOR TÉCNICO DE FILET CROCHET (SEPARADO DE MATRIZ VISUAL)
+// ============================================================================
+
+export type FiletMeshSize = 3 | 4;
+
+export interface FiletTechnicalConvention {
+  /** 3 posiciones = 1 pa + 1 cad + 1 pa (paso 2); 4 posiciones = 1 pa + 2 cad + 1 pa (paso 3). */
+  meshSize: FiletMeshSize;
+  /** Los postes verticales entre cuadros contiguos son compartidos. */
+  sharedEdges: true;
+  /** Cadenas interiores en cada cuadro vacío (1 en malla de 3; 2 en malla de 4). */
+  innerChainsPerEmptyMesh: 1 | 2;
+  /** Puntos altos interiores en cada cuadro lleno (1 en malla de 3; 2 en malla de 4). */
+  innerDcPerFilledMesh: 1 | 2;
+  /** Avance en puntos base por cada cuadro adicional compartiendo el borde izquierdo/derecho. */
+  stepStitchesPerMesh: 2 | 3;
+  /** Cadenetas de subida si la vuelta inicia en cuadro lleno (reemplaza 1er pa). */
+  turningChainsFilled: 3;
+  /** Cadenetas de subida si la vuelta inicia en cuadro vacío (3 cad de altura + cadenas interiores). */
+  turningChainsEmpty: 4 | 5;
+  /** Dirección de lectura de la vuelta 1 (base inferior). */
+  firstRowDirection: FiletRowDirection;
+}
+
+export interface FiletFoundationSpec {
+  gridWidth: number;
+  baseStitches: number;
+  startingCell: FiletCell;
+  turningChains: number;
+  totalFoundationChains: number;
+  formulaDescription: string;
+}
+
+export interface FiletCompiledRun {
+  cell: FiletCell;
+  kind: "filled" | "empty";
+  count: number;
+  /** Puntos altos (pa) adicionales consumidos en esta secuencia (sin contar el borde inicial de vuelta). */
+  additionalDcCount: number;
+  /** Cadenetas interiores totales en esta secuencia. */
+  innerChainsCount: number;
+}
+
+export interface FiletRowRunSequence {
+  direction: FiletRowDirection;
+  totalSquares: number;
+  filledSquares: number;
+  emptySquares: number;
+  runs: FiletCompiledRun[];
+  shortNotation: string;
+}
+
+export interface FiletTechnicalRowPlan {
+  rowNumber: number;
+  matrixRowIndex: number;
+  direction: FiletRowDirection;
+  startingCell: FiletCell;
+  turningChains: number;
+  expectedBaseStitches: number;
+  totalSquares: number;
+  filledSquares: number;
+  emptySquares: number;
+  totalDoubleCrochets: number;
+  totalInnerChains: number;
+  runs: FiletCompiledRun[];
+  instructionText: string;
+}
+
+export interface FiletTechnicalPatternPlan {
+  convention: FiletTechnicalConvention;
+  gridWidth: number;
+  gridHeight: number;
+  foundation: FiletFoundationSpec;
+  totalSquares: number;
+  totalFilledSquares: number;
+  totalEmptySquares: number;
+  rows: FiletTechnicalRowPlan[];
+}
+
+export function createFiletTechnicalConvention(
+  meshSize: FiletMeshSize = 3,
+  firstRowDirection: FiletRowDirection = "rtl"
+): FiletTechnicalConvention {
+  if (meshSize === 4) {
+    return {
+      meshSize: 4,
+      sharedEdges: true,
+      innerChainsPerEmptyMesh: 2,
+      innerDcPerFilledMesh: 2,
+      stepStitchesPerMesh: 3,
+      turningChainsFilled: 3,
+      turningChainsEmpty: 5,
+      firstRowDirection,
+    };
+  }
+  return {
+    meshSize: 3,
+    sharedEdges: true,
+    innerChainsPerEmptyMesh: 1,
+    innerDcPerFilledMesh: 1,
+    stepStitchesPerMesh: 2,
+    turningChainsFilled: 3,
+    turningChainsEmpty: 4,
+    firstRowDirection,
+  };
+}
+
+export function calculateFiletFoundationSpec(
+  gridWidth: number,
+  startingCell: FiletCell,
+  convention: FiletTechnicalConvention
+): FiletFoundationSpec {
+  if (!Number.isInteger(gridWidth) || gridWidth < 1) {
+    throw new Error("El ancho en cuadros debe ser un entero positivo.");
+  }
+  const baseStitches = gridWidth * convention.stepStitchesPerMesh + 1;
+  const turningChains =
+    startingCell === 1 ? convention.turningChainsFilled : convention.turningChainsEmpty;
+  const totalFoundationChains = baseStitches + turningChains;
+  const formulaDescription = `Malla de ${convention.meshSize} con bordes compartidos: (${gridWidth} × ${convention.stepStitchesPerMesh}) + 1 = ${baseStitches} puntos base + ${turningChains} cad de subida = ${totalFoundationChains} cadenetas iniciales.`;
+
+  return {
+    gridWidth,
+    baseStitches,
+    startingCell,
+    turningChains,
+    totalFoundationChains,
+    formulaDescription,
+  };
+}
+
+/**
+ * Compila una fila binaria en secuencias consecutivas de cuadros llenos y vacíos
+ * en lectura normal (`ltr`: izquierda→derecha) o invertida (`rtl`: derecha→izquierda).
+ */
+export function compileFiletRowRuns(
+  row: FiletCell[],
+  direction: FiletRowDirection,
+  convention: FiletTechnicalConvention = createFiletTechnicalConvention(3)
+): FiletRowRunSequence {
+  if (!Array.isArray(row) || row.length === 0) {
+    throw new Error("La fila debe contener al menos un cuadro binario.");
+  }
+  const ordered = direction === "rtl" ? row.slice().reverse() : row.slice();
+  const runs: FiletCompiledRun[] = [];
+  let filledSquares = 0;
+  let emptySquares = 0;
+
+  for (const cell of ordered) {
+    if (cell !== 0 && cell !== 1) {
+      throw new Error("Cada cuadro de la fila debe ser 0 (vacío) o 1 (lleno).");
+    }
+    if (cell === 1) filledSquares += 1;
+    else emptySquares += 1;
+
+    const last = runs[runs.length - 1];
+    if (last && last.cell === cell) {
+      last.count += 1;
+    } else {
+      runs.push({
+        cell,
+        kind: cell === 1 ? "filled" : "empty",
+        count: 1,
+        additionalDcCount: 0,
+        innerChainsCount: 0,
+      });
+    }
+  }
+
+  // Calcular puntos técnicos exactos con bordes compartidos por secuencia
+  for (const run of runs) {
+    if (run.cell === 1) {
+      // Cada cuadro lleno aporta (innerDcPerFilledMesh) interiores + 1 poste de cierre compartido
+      run.additionalDcCount = run.count * convention.stepStitchesPerMesh;
+      run.innerChainsCount = 0;
+    } else {
+      // Cada cuadro vacío aporta (innerChainsPerEmptyMesh) cadenas interiores + 1 poste de cierre compartido
+      run.additionalDcCount = run.count;
+      run.innerChainsCount = run.count * convention.innerChainsPerEmptyMesh;
+    }
+  }
+
+  const shortNotation = runs
+    .map((r) => `${r.count} ${r.kind === "filled" ? (r.count === 1 ? "lleno" : "llenos") : r.count === 1 ? "vacío" : "vacíos"}`)
+    .join(", ");
+
+  return {
+    direction,
+    totalSquares: ordered.length,
+    filledSquares,
+    emptySquares,
+    runs,
+    shortNotation,
+  };
+}
+
+export function compileFiletTechnicalRow(
+  row: FiletCell[],
+  rowNumber: number,
+  matrixRowIndex: number,
+  direction: FiletRowDirection,
+  convention: FiletTechnicalConvention
+): FiletTechnicalRowPlan {
+  const compiled = compileFiletRowRuns(row, direction, convention);
+  const startingCell: FiletCell = compiled.runs[0].cell;
+  const turningChains =
+    startingCell === 1 ? convention.turningChainsFilled : convention.turningChainsEmpty;
+
+  // Primer poste vertical lo aporta las 3 cadenetas de subida; el resto son los additionalDcCount
+  const totalDoubleCrochets =
+    1 + compiled.runs.reduce((acc, r) => acc + r.additionalDcCount, 0);
+  const totalInnerChains = compiled.runs.reduce((acc, r) => acc + r.innerChainsCount, 0);
+  const expectedBaseStitches = compiled.totalSquares * convention.stepStitchesPerMesh + 1;
+  const dirLabel = direction === "rtl" ? "Der→Izq (invertida)" : "Izq→Der (normal)";
+
+  const instructionText = `V${rowNumber} [${dirLabel}] · Subir ${turningChains} cad (${
+    startingCell === 1 ? "inicio lleno" : `inicio vacío, ${convention.innerChainsPerEmptyMesh} cad int.`
+  }) → ${compiled.shortNotation} · Total: ${compiled.totalSquares} cuadros (${totalDoubleCrochets} pa incl. subida, ${totalInnerChains} cad int.).`;
+
+  return {
+    rowNumber,
+    matrixRowIndex,
+    direction,
+    startingCell,
+    turningChains,
+    expectedBaseStitches,
+    totalSquares: compiled.totalSquares,
+    filledSquares: compiled.filledSquares,
+    emptySquares: compiled.emptySquares,
+    totalDoubleCrochets,
+    totalInnerChains,
+    runs: compiled.runs,
+    instructionText,
+  };
+}
+
+/**
+ * Compila una matriz visual completa en un plan técnico de ejecución de Filet Crochet,
+ * separando completamente la matriz binaria de la convención de malla (3 o 4 posiciones).
+ */
+export function compileFiletTechnicalPattern(
+  matrix: BinaryMatrix,
+  convention: FiletTechnicalConvention = createFiletTechnicalConvention(3, "rtl")
+): FiletTechnicalPatternPlan {
+  const check = validateBinaryMatrix(matrix, {
+    maxWidth: FILET_MAX_PATTERN_DIM,
+    maxHeight: FILET_MAX_PATTERN_DIM,
+  });
+  if (!check.valid) {
+    throw new Error(check.errors.join(" "));
+  }
+
+  const rows: FiletTechnicalRowPlan[] = [];
+  for (let rowNumber = 1; rowNumber <= check.height; rowNumber++) {
+    const matrixRowIndex = check.height - rowNumber;
+    const isOdd = rowNumber % 2 === 1;
+    const direction: FiletRowDirection = isOdd
+      ? convention.firstRowDirection
+      : convention.firstRowDirection === "rtl"
+      ? "ltr"
+      : "rtl";
+
+    rows.push(
+      compileFiletTechnicalRow(
+        matrix[matrixRowIndex],
+        rowNumber,
+        matrixRowIndex,
+        direction,
+        convention
+      )
+    );
+  }
+
+  const foundation = calculateFiletFoundationSpec(
+    check.width,
+    rows[0].startingCell,
+    convention
+  );
+
+  return {
+    convention,
+    gridWidth: check.width,
+    gridHeight: check.height,
+    foundation,
+    totalSquares: check.width * check.height,
+    totalFilledSquares: check.filledCount,
+    totalEmptySquares: check.openCount,
+    rows,
   };
 }

@@ -56,6 +56,8 @@ import {
   readFiletStudioWorkspaceSafe,
   saveFiletStudioWorkspaceSafe,
 } from "@/lib/sanctuary/filet-crochet-store";
+import { FiletComposerPanel } from "@/components/sanctuary/filet-composer-panel";
+import { FiletRestorePanel } from "@/components/sanctuary/filet-restore-panel";
 
 interface FiletCrochetStudioProps {
   sessionOwner?: string;
@@ -112,6 +114,7 @@ export function FiletCrochetStudio({
   sessionOwner,
   activeProject,
 }: FiletCrochetStudioProps) {
+  const [studioMode, setStudioMode] = useState<"alphabet" | "composer" | "backups">("alphabet");
   const [workspace, setWorkspace] = useState<FiletStudioWorkspace>(() =>
     readFiletStudioWorkspaceSafe(sessionOwner)
   );
@@ -619,11 +622,37 @@ export function FiletCrochetStudio({
               className="flex items-center gap-1.5"
             >
               <CloudUpload className="h-3.5 w-3.5" />
-              {backingUpPrivate ? "Respaldando..." : "Respaldar en Atelier Privado"}
+              {backingUpPrivate ? "Respaldando..." : "Respaldo Manual en Atelier"}
             </CozyButton>
           </div>
         </div>
 
+        {/* Sub-navegación del Filet Crochet Studio */}
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {(
+            [
+              { id: "alphabet", label: "1. Editor de Alfabetos y Letras" },
+              { id: "composer", label: "2. Compositor Visual y Motor Técnico" },
+              { id: "backups", label: "3. Respaldos Privados y Restauración" },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setStudioMode(tab.id)}
+              className={`rounded-xl border-2 px-3 py-1.5 text-xs font-black cursor-pointer transition-colors ${
+                studioMode === tab.id
+                  ? "border-[#3A2E2B] bg-[#314C3C] text-[#FFFDF8] shadow-[0_2px_0_#1A2B20]"
+                  : "border-[#3A2E2B]/35 bg-[#F4EEDC] text-[#3A2E2B] hover:bg-[#E7D69C]/60"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {studioMode === "alphabet" && (
+          <>
         {/* Selector de Colección de Alfabetos */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#3A2E2B]/15">
           <label className="text-[11px] font-black text-[#3A2E2B]" htmlFor="filet-collection-select">
@@ -774,6 +803,8 @@ export function FiletCrochetStudio({
             </div>
           </form>
         )}
+          </>
+        )}
       </div>
 
       {notice && (
@@ -785,7 +816,34 @@ export function FiletCrochetStudio({
         />
       )}
 
-      {/* Cuerpo principal: Lista de glifos + Editor de cuadrícula numerada */}
+      {studioMode === "composer" && (
+        <FiletComposerPanel
+          workspace={workspace}
+          activeProject={activeProject}
+          onPersistWorkspace={persistWorkspace}
+          onJumpToAlphabetEditor={() => setStudioMode("alphabet")}
+        />
+      )}
+
+      {studioMode === "backups" && (
+        <FiletRestorePanel
+          sessionOwner={sessionOwner}
+          workspace={workspace}
+          activeProject={activeProject}
+          onWorkspaceRestored={(restored) => {
+            setWorkspace(restored);
+            const firstCol = restored.collections[0];
+            setSelectedCollectionId(firstCol?.id || "");
+            setSelectedGlyphId(firstCol?.glyphs[0]?.id || "");
+            if (firstCol?.glyphs[0]) {
+              setHistory(createMatrixHistory(firstCol.glyphs[0].matrix));
+            }
+          }}
+        />
+      )}
+
+      {studioMode === "alphabet" && (
+      /* Cuerpo principal: Lista de glifos + Editor de cuadrícula numerada */
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Columna izquierda: Glifos de la colección + Referencia original */}
         <div className="lg:col-span-4 space-y-4">
@@ -1175,6 +1233,7 @@ export function FiletCrochetStudio({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

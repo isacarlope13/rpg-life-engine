@@ -15,11 +15,13 @@ import { safeLocalStorage } from "../storage-safe.ts";
 import type { SessionStorage } from "./session-storage.ts";
 import {
   cloneBinaryMatrix,
+  cloneComposerSnapshot,
   createStarterFiletWorkspace,
   FILET_MAX_GLYPH_DIM,
   FILET_MAX_PATTERN_DIM,
   validateBinaryMatrix,
   type FiletAlphabetCollection,
+  type FiletComposerDraft,
   type FiletGlyph,
   type FiletOriginalReference,
   type FiletPatternVersion,
@@ -156,6 +158,36 @@ function isValidVersionedPattern(value: unknown): value is FiletVersionedPattern
   return p.versions.every(isValidPatternVersion);
 }
 
+function isValidDraft(value: unknown): value is FiletComposerDraft {
+  if (!value || typeof value !== "object") return false;
+  const d = value as Record<string, unknown>;
+  if (
+    typeof d.id !== "string" ||
+    typeof d.title !== "string" ||
+    typeof d.alphabetCollectionId !== "string" ||
+    typeof d.phrase !== "string" ||
+    typeof d.updatedAt !== "string" ||
+    !d.snapshot ||
+    typeof d.snapshot !== "object"
+  ) {
+    return false;
+  }
+  const snap = d.snapshot as Record<string, unknown>;
+  const canvas = snap.canvas as Record<string, unknown> | undefined;
+  return Boolean(
+    canvas &&
+      typeof canvas.width === "number" &&
+      canvas.width >= 1 &&
+      canvas.width <= FILET_MAX_PATTERN_DIM &&
+      typeof canvas.height === "number" &&
+      canvas.height >= 1 &&
+      canvas.height <= FILET_MAX_PATTERN_DIM &&
+      Array.isArray(snap.placements) &&
+      snap.cellOverrides &&
+      typeof snap.cellOverrides === "object"
+  );
+}
+
 export function isValidFiletWorkspace(value: unknown): value is FiletStudioWorkspace {
   if (!value || typeof value !== "object") return false;
   const w = value as Record<string, unknown>;
@@ -167,6 +199,9 @@ export function isValidFiletWorkspace(value: unknown): value is FiletStudioWorks
     !Array.isArray(w.patterns) ||
     w.patterns.length > MAX_PATTERNS
   ) {
+    return false;
+  }
+  if (w.drafts !== undefined && (!Array.isArray(w.drafts) || !w.drafts.every(isValidDraft))) {
     return false;
   }
   return w.collections.every(isValidCollection) && w.patterns.every(isValidVersionedPattern);
@@ -201,6 +236,13 @@ function cloneWorkspace(workspace: FiletStudioWorkspace): FiletStudioWorkspace {
         matrix: cloneBinaryMatrix(v.matrix),
       })),
       composition: p.composition ? { ...p.composition } : undefined,
+      composerSnapshot: p.composerSnapshot
+        ? cloneComposerSnapshot(p.composerSnapshot)
+        : undefined,
+    })),
+    drafts: (workspace.drafts || []).map((d) => ({
+      ...d,
+      snapshot: cloneComposerSnapshot(d.snapshot),
     })),
   };
 }
@@ -330,6 +372,7 @@ export function buildFiletStudioPrivateResourcePayload(
         schemaVersion: 1,
         collections: [selectedCollection],
         patterns: safeWorkspace.patterns,
+        drafts: safeWorkspace.drafts || [],
         updatedAt: safeWorkspace.updatedAt,
       }
     : safeWorkspace;
@@ -379,4 +422,281 @@ export function parseFiletStudioFromPrivateResourceText(rawJson: string): FiletS
   } catch {
     return null;
   }
+}
+
+// ============================================================================
+// FASE 2 — BLOQUE 2: VISTA PREVIA, VALIDACIÓN DE VERSIÓN Y RESTAURACIÓN SEGURA
+// ============================================================================
+
+export const SUPPORTED_FILET_SCHEMA_VERSION = 1;
+
+export interface FiletWorkspaceCounts {
+  collections: number;
+  glyphs: number;
+  patterns: number;
+  patternVersions: number;
+  drafts: number;
+}
+
+export interface FiletBackupPreviewResult {
+  valid: boolean;
+  schemaVersion: number | null;
+  errors: string[];
+  workspace: FiletStudioWorkspace | null;
+  summary: {
+    updatedAt: string;
+    counts: FiletWorkspaceCounts;
+    collectionNames: string[];
+    patternTitles: string[];
+  } | null;
+}
+
+export interface FiletRestoreConflictReport {
+  hasLocalWorkspace: boolean;
+  hasConflict: boolean;
+  isIdentical: boolean;
+  localIsNewer: boolean;
+  localUpdatedAt: string | null;
+  incomingUpdatedAt: string;
+  localCounts: FiletWorkspaceCounts;
+  incomingCounts: FiletWorkspaceCounts;
+  reason: string;
+}
+
+export function countFiletWorkspace(workspace: FiletStudioWorkspace | null): FiletWorkspaceCounts {
+  if (!workspace) {
+    return { collections: 0, glyphs: 0, patterns: 0, patternVersions: 0, drafts: 0 };
+  }
+  return {
+    collections: workspace.collections.length,
+    glyphs: workspace.collections.reduce((acc, c) => acc + c.glyphs.length, 0),
+    patterns: workspace.patterns.length,
+    patternVersions: workspace.patterns.reduce((acc, p) => acc + p.versions.length, 0),
+    drafts: workspace.drafts?.length || 0,
+  };
+}
+
+/**
+ * Valida la sintaxis JSON, versión de esquema y estructura completa de un respaldo privado
+ * antes de mostrar su vista previa o permitir la restauración.
+ */
+export function validateFiletBackupPreview(rawJson: string): FiletBackupPreviewResult {
+  if (typeof rawJson !== "string" || !rawJson.trim()) {
+    return {
+      valid: false,
+      schemaVersion: null,
+      errors: ["El respaldo está vacío o no contiene texto JSON legible."],
+      workspace: null,
+      summary: null,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch {
+    return {
+      valid: false,
+      schemaVersion: null,
+      errors: ["JSON inválido: el archivo de respaldo está corrupto o incompleto."],
+      workspace: null,
+      summary: null,
+    };
+  }
+
+  const candidate =
+    parsed && typeof parsed === "object" && "workspace" in parsed
+      ? (parsed as { workspace?: unknown }).workspace
+      : parsed;
+
+  if (!candidate || typeof candidate !== "object") {
+    return {
+      valid: false,
+      schemaVersion: null,
+      errors: ["Estructura de respaldo incompatible con Filet Crochet Studio."],
+      workspace: null,
+      summary: null,
+    };
+  }
+
+  const rawVersion = (candidate as { schemaVersion?: unknown }).schemaVersion;
+  const schemaVersion = typeof rawVersion === "number" ? rawVersion : null;
+  if (schemaVersion !== SUPPORTED_FILET_SCHEMA_VERSION) {
+    return {
+      valid: false,
+      schemaVersion,
+      errors: [
+        `Versión de esquema no soportada (${String(rawVersion ?? "desconocida")}). Versión esperada: ${SUPPORTED_FILET_SCHEMA_VERSION}.`,
+      ],
+      workspace: null,
+      summary: null,
+    };
+  }
+
+  if (!isValidFiletWorkspace(candidate)) {
+    return {
+      valid: false,
+      schemaVersion,
+      errors: [
+        "El respaldo contiene colecciones, glifos, matrices binarias o patrones con estructura inválida.",
+      ],
+      workspace: null,
+      summary: null,
+    };
+  }
+
+  const safe = cloneWorkspace(candidate);
+  return {
+    valid: true,
+    schemaVersion: safe.schemaVersion,
+    errors: [],
+    workspace: safe,
+    summary: {
+      updatedAt: safe.updatedAt,
+      counts: countFiletWorkspace(safe),
+      collectionNames: safe.collections.map((c) => c.name),
+      patternTitles: safe.patterns.map((p) => `${p.title} (v${p.currentVersion})`),
+    },
+  };
+}
+
+function fingerprintWorkspaceContent(w: FiletStudioWorkspace): string {
+  return JSON.stringify({
+    collections: w.collections,
+    patterns: w.patterns,
+    drafts: w.drafts || [],
+  });
+}
+
+/**
+ * Compara el espacio de trabajo local actual contra el respaldo entrante para detectar
+ * conflictos reales y evitar sobrescrituras silenciosas.
+ */
+export function detectFiletRestoreConflict(
+  localWorkspace: FiletStudioWorkspace | null,
+  incomingWorkspace: FiletStudioWorkspace
+): FiletRestoreConflictReport {
+  const localCounts = countFiletWorkspace(localWorkspace);
+  const incomingCounts = countFiletWorkspace(incomingWorkspace);
+
+  if (!localWorkspace) {
+    return {
+      hasLocalWorkspace: false,
+      hasConflict: false,
+      isIdentical: false,
+      localIsNewer: false,
+      localUpdatedAt: null,
+      incomingUpdatedAt: incomingWorkspace.updatedAt,
+      localCounts,
+      incomingCounts,
+      reason: "No existen cambios locales previos guardados para este usuario.",
+    };
+  }
+
+  const isIdentical =
+    fingerprintWorkspaceContent(localWorkspace) ===
+    fingerprintWorkspaceContent(incomingWorkspace);
+  const localTs = Date.parse(localWorkspace.updatedAt) || 0;
+  const incomingTs = Date.parse(incomingWorkspace.updatedAt) || 0;
+  const localIsNewer = localTs > incomingTs;
+
+  if (isIdentical) {
+    return {
+      hasLocalWorkspace: true,
+      hasConflict: false,
+      isIdentical: true,
+      localIsNewer,
+      localUpdatedAt: localWorkspace.updatedAt,
+      incomingUpdatedAt: incomingWorkspace.updatedAt,
+      localCounts,
+      incomingCounts,
+      reason: "El respaldo coincide exactamente con tu estado local actual.",
+    };
+  }
+
+  return {
+    hasLocalWorkspace: true,
+    hasConflict: true,
+    isIdentical: false,
+    localIsNewer,
+    localUpdatedAt: localWorkspace.updatedAt,
+    incomingUpdatedAt: incomingWorkspace.updatedAt,
+    localCounts,
+    incomingCounts,
+    reason: localIsNewer
+      ? "Conflicto detectado: tu copia local offline es más reciente que el respaldo seleccionado. Confirmar sobrescribirá tus cambios locales."
+      : "Conflicto detectado: tu copia local difiere del respaldo seleccionado. Se requiere confirmación explícita para reemplazarla.",
+  };
+}
+
+/**
+ * Restaura un respaldo validado en el almacenamiento privado del propietario.
+ * NUNCA sobrescribe cambios locales en conflicto sin `confirmOverwrite: true`.
+ */
+export function restoreFiletWorkspaceFromBackup(
+  storage: SessionStorage,
+  owner: string | undefined,
+  rawJson: string,
+  options: { confirmOverwrite: boolean }
+): {
+  ok: boolean;
+  requiresConfirmation?: boolean;
+  error?: string;
+  preview: FiletBackupPreviewResult;
+  conflict?: FiletRestoreConflictReport;
+  workspace?: FiletStudioWorkspace;
+} {
+  const preview = validateFiletBackupPreview(rawJson);
+  if (!isOfflineOwner(owner)) {
+    return {
+      ok: false,
+      error: "Inicia sesión para restaurar respaldos privados en tu Atelier.",
+      preview,
+    };
+  }
+  if (!preview.valid || !preview.workspace) {
+    return {
+      ok: false,
+      error: preview.errors[0] || "El respaldo no superó la validación de integridad.",
+      preview,
+    };
+  }
+
+  const existingLocal = readFiletStudioWorkspace(storage, owner);
+  const conflict = detectFiletRestoreConflict(existingLocal, preview.workspace);
+
+  if (conflict.hasConflict && !options.confirmOverwrite) {
+    return {
+      ok: false,
+      requiresConfirmation: true,
+      error: conflict.reason,
+      preview,
+      conflict,
+    };
+  }
+
+  const saved = saveFiletStudioWorkspace(storage, owner, preview.workspace);
+  if (!saved.ok) {
+    return {
+      ok: false,
+      error: saved.error,
+      preview,
+      conflict,
+    };
+  }
+
+  return {
+    ok: true,
+    preview,
+    conflict,
+    workspace: saved.workspace,
+  };
+}
+
+export function restoreFiletWorkspaceFromBackupSafe(
+  owner: string | undefined,
+  rawJson: string,
+  options: { confirmOverwrite: boolean }
+) {
+  return restoreFiletWorkspaceFromBackup(safeLocalStorage, owner, rawJson, options);
 }
