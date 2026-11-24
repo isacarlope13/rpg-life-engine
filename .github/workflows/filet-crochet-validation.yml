@@ -35,8 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      OAKHAVEN_PUBLIC_SIGNUP_ENABLED: 'false'
-      OAKHAVEN_OWNER_USER_ID: '00000000-0000-4000-8000-000000000001'
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +57,10 @@ jobs:
           NODE_OPTIONS: '--experimental-strip-types'
         run: |
           trap 'rm -f .env.local' EXIT
-          printf 'NEXT_PUBLIC_SUPABASE_URL=\nNEXT_PUBLIC_SUPABASE_ANON_KEY=\nSUPABASE_SERVICE_ROLE_KEY=\nDEFAULT_PLAYER_USER_ID=\n' > .env.local
+          printf 'NEXT_PUBLIC_SUPABASE_URL=\nNEXT_PUBLIC_SUPABASE_ANON_KEY=\nSUPABASE_SERVICE_ROLE_KEY=\nDEFAULT_PLAYER_USER_ID=\nSHORTCUTS_API_SECRET=\nGEMINI_API_KEY=\n' > .env.local
           npm test
       - name: Production build without external credentials
+        env:
+          OAKHAVEN_PUBLIC_SIGNUP_ENABLED: 'false'
+          OAKHAVEN_OWNER_USER_ID: '00000000-0000-4000-8000-000000000001'
         run: npm run build
