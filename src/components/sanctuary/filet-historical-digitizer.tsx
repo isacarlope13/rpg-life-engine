@@ -300,12 +300,29 @@ export function FiletHistoricalDigitizer({
     try {
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
-      const baseValidation = validateHistoricalDocumentInput({
-        filename: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-        bytes,
-      });
+      const isLargeLocalPdf =
+        (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) &&
+        file.size > 5 * 1024 * 1024 &&
+        file.size <= 50 * 1024 * 1024 &&
+        bytes.length >= 5 &&
+        bytes[0] === 0x25 &&
+        bytes[1] === 0x50 &&
+        bytes[2] === 0x44 &&
+        bytes[3] === 0x46 &&
+        bytes[4] === 0x2d;
+
+      const baseValidation = isLargeLocalPdf
+        ? {
+            valid: true,
+            normalizedMime: "application/pdf" as const,
+            safeFilename: file.name.replace(/[^a-zA-Z0-9._-]/g, "_"),
+          }
+        : validateHistoricalDocumentInput({
+            filename: file.name,
+            mimeType: file.type,
+            sizeBytes: file.size,
+            bytes,
+          });
 
       if (!baseValidation.valid || !baseValidation.normalizedMime) {
         setNotice({
@@ -328,7 +345,7 @@ export function FiletHistoricalDigitizer({
         const pageValidation = validateHistoricalDocumentInput({
           filename: file.name,
           mimeType: file.type,
-          sizeBytes: file.size,
+          sizeBytes: isLargeLocalPdf ? 1024 : file.size,
           pageCount: handle.pageCount,
         });
         if (!pageValidation.valid) {
@@ -388,9 +405,11 @@ export function FiletHistoricalDigitizer({
       }
 
       // Opcional: guardar copia del documento original intacto en /api/resources (atelier)
+      // Si es PDF grande (> 5 MB), NO se sube el PDF completo (se respeta el límite de 5 MB del servidor);
+      // solo se trabaja en memoria local y se avisa explícitamente al usuario.
       let resourceId: string | undefined;
       let source: HistoricalDocumentRecord["source"] = "local_private";
-      if (uploadToPrivateAtelier) {
+      if (uploadToPrivateAtelier && !isLargeLocalPdf) {
         try {
           const form = new FormData();
           form.append("buildingId", "atelier");

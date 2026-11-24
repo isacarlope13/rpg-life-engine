@@ -27,6 +27,9 @@ function extractTable(name: string): string {
 before(async () => {
   db = await PGlite.create();
   await db.exec(`
+    CREATE ROLE anon;
+    CREATE ROLE authenticated;
+    CREATE ROLE service_role BYPASSRLS;
     CREATE SCHEMA auth;
     CREATE TABLE auth.users(id uuid PRIMARY KEY);
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$

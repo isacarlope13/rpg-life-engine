@@ -71,7 +71,9 @@ CREATE OR REPLACE FUNCTION public.confirm_filet_row_atomic_v1(
   p_row_number INT,
   p_operation_key TEXT,
   p_expected_revision INT DEFAULT NULL,
-  p_device_id TEXT DEFAULT 'device-local'
+  p_device_id TEXT DEFAULT 'device-local',
+  p_completed_segments_count INT DEFAULT NULL,
+  p_expected_segments_count INT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -96,6 +98,12 @@ BEGIN
   END IF;
   IF p_row_number IS NULL OR p_row_number < 1 THEN
     RAISE EXCEPTION 'row_number debe ser >= 1';
+  END IF;
+  -- Validación de segmentos en servidor (Bloque 7): rechazar confirmaciones incompletas
+  IF p_expected_segments_count IS NOT NULL THEN
+    IF p_expected_segments_count < 1 OR p_completed_segments_count IS NULL OR p_completed_segments_count < p_expected_segments_count THEN
+      RAISE EXCEPTION 'INCOMPLETE_SEGMENTS: faltan segmentos por completar en la fila %', p_row_number;
+    END IF;
   END IF;
 
   -- Serializar acceso concurrente (dos dispositivos) sobre el proyecto
@@ -359,3 +367,10 @@ BEGIN
   );
 END;
 $$;
+
+-- 6. Hardening de permisos (Bloque 7): solo `service_role` puede invocar las RPCs SECURITY DEFINER
+REVOKE ALL ON TABLE public.filet_guided_operation_receipts FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.confirm_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, INT, TEXT, INT, INT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.undo_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.confirm_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, INT, TEXT, INT, INT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.undo_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, TEXT) TO service_role;

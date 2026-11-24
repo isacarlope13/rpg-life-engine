@@ -95,3 +95,40 @@
   - `npm run build`: aprobado (`35/35` rutas).
   - `git diff --check`: limpio.
   - **Prueba en navegador real (`http://localhost:3099/cozy`):** creación de proyecto desde versión inmutable `v1` (`POST /api/shortcuts/skill-session` `201`), recarga completa e hidratación en `5. Mesa de Tejido Guiada`, guardia de confirmación deshabilitada hasta completar segmentos, confirmación de Vuelta 1 (`Guardado localmente` → `Confirmado por el servidor`, `Confirmadas: 1 (4%)`, avance a `Vuelta 2 / 24`), tarjeta determinista de Clara y `0` errores de consola en Filet Crochet Studio.
+
+---
+
+## Fase 5 — Exportaciones Profesionales, Sincronización y Preparación para Producción (`feat/oakhaven-filet-crochet-studio`, 2026-11-24)
+- **Bloque 0 (Entorno aislado Node 22 y auditoría):**
+  - Entorno portable aislado con **Node `v22.14.0`** (sin modificar el Node global `v26.12.1`) utilizado para todas las verificaciones finales (`npm test` con `NODE_OPTIONS="--experimental-strip-types"`, `tsc --noEmit`, `npm run build`).
+  - **Cero dependencias npm añadidas** en Fase 5 (`npm audit --omit=dev` = **`0 vulnerabilities`**).
+  - Continuidad de PR financiera #2 intacta (`docs/continuity/CODEX_HANDOFF.md` excluido de commits).
+- **Bloques 1, 2, 3 y 5 — Motor Universal de Exportación (`src/lib/sanctuary/filet-export-engine.ts` + `src/components/sanctuary/filet-export-panel.tsx`):**
+  - Fuente única de verdad desde la matriz binaria y versión inmutable (sin datos personales, credenciales ni IDs internos).
+  - **PDF 1.4 vectorial puro** sin dependencias externas: papel `A4`, `A3` y `Carta`, orientación vertical/horizontal, 3 modos (`Ajustar a 1 página`, `Dividir en varias páginas` con coordenadas globales y marcas de continuidad, y `Escala configurable en mm/cuadro`), numeración en los 4 lados, leyenda, referencia histórica opcional y páginas de instrucciones por vuelta con casilla `[ ]`.
+  - **SVG 1.1 vectorial seguro** (cuadros alineados, texto legible, cero `<script>`, cero handlers, cero referencias externas) y **PNG binario determinista** (firma PNG, `IHDR`, `pHYs` con `150 / 300 / 600 DPI`, fondo blanco o transparente, límite de memoria `4096 px / 16 MP`).
+  - **Documento independiente de instrucciones imprimibles** (`.md` y páginas PDF): distingue explícitamente cadenetas de montaje, subida, interiores y puntos altos, verifica que cada fila suma exactamente el ancho del patrón y advierte que las fórmulas pertenecen a la convención activa seleccionada (`Malla 3` o `Malla 4`).
+- **Bloque 4 — Archivo de Proyecto Reutilizable (`src/lib/sanctuary/filet-project-archive.ts`):**
+  - Formato JSON versionado (`oakhaven.filet-project-archive`, `schemaVersion: 1`, máx. `5 MB`) para exportar/importar patrón, versiones seleccionadas, matrices, configuración técnica, glifos y referencias históricas.
+  - Progreso de tejido incluido solo mediante opción explícita; prohíbe y rechaza sesiones, XP, GP y `operationIds`; detecta duplicados/conflictos y jamás sobrescribe sin confirmación explícita.
+- **Bloques 6 y 7 — Sincronización Segura, Auditoría SQL y Seguridad (`filet-sync-engine.ts`, `20261124_filet_guided_progress_atomic.sql`, `atelier-building.tsx`, `FILET_PHASE5_MIGRATION_AND_ROLLBACK.md`):**
+  - Motor de sincronización (`src/lib/sanctuary/filet-sync-engine.ts`) con revisiones monotónicas, hash determinista FNV-1a, cola offline idempotente, detección real de conflictos (nunca por `updatedAt`) y resolución manual (`keep_local`, `keep_remote`, `merge_collections_and_patterns`).
+  - Hardening de `supabase/drafts/20261124_filet_guided_progress_atomic.sql` (borrador **no aplicado** en Supabase real): `REVOKE ALL` para `PUBLIC, anon, authenticated` + `GRANT EXECUTE TO service_role`, validación `INCOMPLETE_SEGMENTS` en servidor, RLS estricto y `SET search_path = public`.
+  - Protección en `atelier-building.tsx`: los contadores manuales rápidos bloquean escrituras directas sobre proyectos vinculados a un patrón Filet guiado para evitar desincronización.
+  - Procedimiento documentado de migración, verificación post-migración y rollback en `docs/continuity/FILET_PHASE5_MIGRATION_AND_ROLLBACK.md`.
+- **Bloques 8 y 9 — PDFs Grandes (> 5 MB) y Rendimiento (`filet-historical-digitizer.tsx`, `filet-crochet-studio.tsx`):**
+  - Soporte en `filet-historical-digitizer.tsx` para abrir localmente PDFs válidos > 5 MB (hasta 50 MB) en memoria sin subir el archivo completo al servidor (respetando intacto el límite de `5 MB` de `/api/resources`).
+  - Carga diferida (`next/dynamic`, `ssr: false`) del Digitalizador Histórico y del Panel de Exportaciones (`6. Exportaciones e Impresión`): `/cozy` **redujo** su First Load JS de `362 kB` a **`352 kB`**.
+  - Rendimiento verificado en patrón `200×200` (16 baldosas A3 vectoriales de `50×50`): `< 3.5 s`.
+- **Bloque 10 — Resultados QA Verificados bajo Node `v22.14.0`:**
+  - `npm test`: **379 / 379** pruebas aprobadas (23 suites, `0` fallos, incluyendo `tests/filet-crochet-phase5-production.test.ts` y pruebas SQL aisladas en PGlite).
+  - `npx tsc --noEmit`: `0` errores.
+  - `npm run build`: aprobado (`35/35` rutas; `/cozy` `93.4 kB`, First Load JS `352 kB`).
+  - `npm audit --omit=dev`: `0 vulnerabilities`.
+  - `git diff --check`: limpio.
+  - **Auditoría HTTP real (`localhost:3099`):** `/api/state` = `401`, `/api/resources?buildingId=atelier` = `401`, `POST /api/shortcuts/skill-session` = `401` para sesiones anónimas.
+  - **Prueba en navegador real (`http://localhost:3099/cozy`):** carga diferida de `6. Exportaciones e Impresión`, vista previa SVG vectorial `80×24` con numeración de 4 lados, descarga real de PDF vectorial (`18.3 kB`, 2 páginas) y PNG `300 DPI` (`1313×417 px`), instrucciones imprimibles verificadas y `0` errores de consola en Filet Crochet Studio.
+- **Limitaciones honestas (pendientes de entorno real antes de producción):**
+  - La migración borrador `supabase/drafts/20261124_filet_guided_progress_atomic.sql` ha sido verificada únicamente en **PGlite** y **NO** ha sido aplicada ni probada contra PostgreSQL/Supabase real en staging/producción.
+  - La sincronización multidispositivo en tiempo real de `FiletWorkspaceSyncEnvelope` sobre tablas dedicadas de Supabase requiere promover y conectar las rutas/tablas tras aprobación humana; hoy el respaldo remoto en `/api/resources` sigue siendo manual e idempotente.
+  - No se realizó `git push`, `merge` a `main`, despliegue en Railway ni migraciones reales.

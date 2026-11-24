@@ -334,6 +334,15 @@ export function AtelierBuilding({
 
   const handleSaveQuickRowsWithoutTimer = async () => {
     if (sessionRows <= 0 || savingQuickRows) return;
+    // Bloque 7: proteger proyectos guiados Filet contra desincronización por contadores manuales
+    if (activeProject?.linked_filet_pattern) {
+      setNotification({
+        type: "warning",
+        message:
+          "Este proyecto está vinculado a un patrón Filet guiado. Confirma tus vueltas en Filet Studio → 5. Mesa de Tejido Guiada para conservar la trazabilidad exacta.",
+      });
+      return;
+    }
     setSavingQuickRows(true);
     triggerHaptic("medium");
     try {

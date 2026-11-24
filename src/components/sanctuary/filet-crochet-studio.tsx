@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   CloudUpload,
   Crop,
@@ -58,18 +59,48 @@ import {
 } from "@/lib/sanctuary/filet-crochet-store";
 import { FiletComposerPanel } from "@/components/sanctuary/filet-composer-panel";
 import { FiletRestorePanel } from "@/components/sanctuary/filet-restore-panel";
-import { FiletHistoricalDigitizer } from "@/components/sanctuary/filet-historical-digitizer";
 import {
   FiletGuidedSession,
   type GuidedUniversalSessionBridge,
 } from "@/components/sanctuary/filet-guided-session";
+
+// Bloque 9: carga diferida del Digitalizador Histórico y el Panel de Exportaciones
+const FiletHistoricalDigitizer = dynamic(
+  () =>
+    import("@/components/sanctuary/filet-historical-digitizer").then(
+      (m) => m.FiletHistoricalDigitizer
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 text-center text-xs font-bold text-[#795548]">
+        Cargando Digitalizador Histórico (PDF.js local)...
+      </div>
+    ),
+  }
+);
+
+const FiletExportPanel = dynamic(
+  () =>
+    import("@/components/sanctuary/filet-export-panel").then(
+      (m) => m.FiletExportPanel
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-3xl border-4 border-[#3A2E2B] bg-[#FFFDF8] p-6 text-center text-xs font-bold text-[#795548]">
+        Cargando Motor de Exportaciones (PDF / SVG / PNG / JSON)...
+      </div>
+    ),
+  }
+);
 
 interface FiletCrochetStudioProps {
   sessionOwner?: string;
   activeProject?: KnittingProject;
   projects?: KnittingProject[];
   sessions?: SkillSessionRecord[];
-  initialStudioMode?: "alphabet" | "composer" | "backups" | "digitizer" | "guided";
+  initialStudioMode?: "alphabet" | "composer" | "backups" | "digitizer" | "guided" | "export";
   onSelectProject?: (projectId: string) => void;
   onCreateProjectFromPattern?: (params: {
     name: string;
@@ -139,7 +170,7 @@ export function FiletCrochetStudio({
   sessionBridge,
 }: FiletCrochetStudioProps) {
   const [studioMode, setStudioMode] = useState<
-    "alphabet" | "composer" | "backups" | "digitizer" | "guided"
+    "alphabet" | "composer" | "backups" | "digitizer" | "guided" | "export"
   >(initialStudioMode);
 
   useEffect(() => {
@@ -666,6 +697,7 @@ export function FiletCrochetStudio({
               { id: "backups", label: "3. Respaldos Privados y Restauración" },
               { id: "digitizer", label: "4. Digitalizador Histórico (PDF/Img)" },
               { id: "guided", label: "5. Mesa de Tejido Guiada" },
+              { id: "export", label: "6. Exportaciones e Impresión" },
             ] as const
           ).map((tab) => (
             <button
@@ -901,6 +933,13 @@ export function FiletCrochetStudio({
           onSubmitDirectSkillSession={onSubmitDirectSkillSession}
           onRefreshState={onRefreshState}
           sessionBridge={sessionBridge}
+        />
+      )}
+
+      {studioMode === "export" && (
+        <FiletExportPanel
+          workspace={workspace}
+          onPersistWorkspace={persistWorkspace}
         />
       )}
 
