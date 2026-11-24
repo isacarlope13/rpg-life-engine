@@ -16,7 +16,12 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import type { KnittingProject, KnittingProjectStatus, SkillSessionRecord } from "@/types/rpg";
+import type {
+  KnittingProject,
+  KnittingProjectStatus,
+  LinkedFiletPatternSnapshot,
+  SkillSessionRecord,
+} from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { useSessionIdentity } from "@/lib/sanctuary/session-identity";
 import {
@@ -122,6 +127,9 @@ export function AtelierBuilding({
   const [activeTab, setActiveTab] = useState<
     "taller" | "proyectos" | "patrones" | "filet" | "galeria" | "clara"
   >("taller");
+  const [filetInitialMode, setFiletInitialMode] = useState<
+    "alphabet" | "composer" | "backups" | "digitizer" | "guided"
+  >("alphabet");
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     const firstActive = projects.find((p) => p.status === "in_progress") || projects[0];
@@ -1277,6 +1285,11 @@ export function AtelierBuilding({
                         <span className="text-[10px] text-[#795548] font-bold block">
                           {proj.technique} • {proj.yarn_details || "Hilado libre"}
                         </span>
+                        {proj.linked_filet_pattern && (
+                          <span className="mt-1 inline-block rounded-full border border-[#314C3C]/50 bg-[#314C3C]/10 px-2 py-0.5 text-[9px] font-black text-[#314C3C]">
+                            📐 Filet v{proj.linked_filet_pattern.version_number} ({proj.linked_filet_pattern.grid_width}×{proj.linked_filet_pattern.grid_height})
+                          </span>
+                        )}
                       </button>
 
                       <span
@@ -1315,6 +1328,20 @@ export function AtelierBuilding({
                         <option value="completed">✨ Terminado</option>
                         <option value="archived">📦 Archivado</option>
                       </select>
+
+                      {proj.linked_filet_pattern && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedProjectId(proj.id);
+                            setFiletInitialMode("guided");
+                            setActiveTab("filet");
+                          }}
+                          className="rounded-lg border border-[#3A2E2B] bg-[#314C3C] px-2 py-1 text-[10px] font-black text-[#FFFDF8] cursor-pointer"
+                        >
+                          Tejer guiado ➜
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -1516,6 +1543,78 @@ export function AtelierBuilding({
         <FiletCrochetStudio
           sessionOwner={sessionOwner}
           activeProject={activeProject}
+          projects={projects}
+          sessions={knittingSessions}
+          initialStudioMode={filetInitialMode}
+          onSelectProject={(projectId) => setSelectedProjectId(projectId)}
+          onCreateProjectFromPattern={async ({ name, linkedPattern }) => {
+            const res = await fetch("/api/shortcuts/skill-session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "add_knitting_project",
+                title: name,
+                knitting_technique: "Crochet",
+                knitting_total_rows: linkedPattern.total_rows,
+                yarn_details: `Filet Crochet · Malla ${linkedPattern.mesh_size} · ${linkedPattern.grid_width}×${linkedPattern.grid_height}`,
+                linked_filet_pattern: linkedPattern,
+              }),
+            });
+            const data = (await res.json().catch(() => ({}))) as {
+              project?: KnittingProject;
+              error?: string;
+            };
+            if (!res.ok || !data.project) {
+              setNotification({
+                type: "error",
+                message: data.error || "No se pudo crear el proyecto de tejido desde el patrón.",
+              });
+              return;
+            }
+            setSelectedProjectId(data.project.id);
+            setFiletInitialMode("guided");
+            await onRefreshState();
+            setNotification({
+              type: "success",
+              message: `🧶 Proyecto "${data.project.name}" creado desde versión inmutable v${linkedPattern.version_number} y listo en la Mesa Guiada.`,
+            });
+          }}
+          onSubmitDirectSkillSession={onSubmitDirectSkillSession}
+          onRefreshState={onRefreshState}
+          sessionBridge={{
+            isActive,
+            isRunning,
+            isPaused,
+            formattedTime,
+            elapsedSeconds: session?.elapsedSeconds || 0,
+            submitting,
+            submissionError,
+            onStartSession: (proj) => {
+              setSelectedProjectId(proj.id);
+              triggerHaptic("light");
+              startSession({
+                domain: "knitting",
+                buildingId: "atelier",
+                resourceId: proj.id,
+                resourceTitle: proj.name,
+                objective: `Sesión guiada Filet: ${proj.name}`,
+              });
+            },
+            onPauseSession: () => pauseSession(),
+            onResumeSession: () => resumeSession(),
+            onFinishSession: async ({ project, pendingRowsToCredit, notes }) => {
+              const result = await finishSession({
+                project_id: project.id,
+                rows_completed: pendingRowsToCredit,
+                stitches_notes: notes,
+              });
+              if (result) {
+                await onRefreshState();
+                return true;
+              }
+              return false;
+            },
+          }}
         />
       )}
 

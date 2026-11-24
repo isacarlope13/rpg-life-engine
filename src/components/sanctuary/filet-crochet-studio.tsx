@@ -20,7 +20,7 @@ import {
   ZoomOut,
   Contrast,
 } from "lucide-react";
-import type { KnittingProject } from "@/types/rpg";
+import type { KnittingProject, LinkedFiletPatternSnapshot, SkillSessionRecord } from "@/types/rpg";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
 import {
   FILET_MAX_GLYPH_DIM,
@@ -59,10 +59,25 @@ import {
 import { FiletComposerPanel } from "@/components/sanctuary/filet-composer-panel";
 import { FiletRestorePanel } from "@/components/sanctuary/filet-restore-panel";
 import { FiletHistoricalDigitizer } from "@/components/sanctuary/filet-historical-digitizer";
+import {
+  FiletGuidedSession,
+  type GuidedUniversalSessionBridge,
+} from "@/components/sanctuary/filet-guided-session";
 
 interface FiletCrochetStudioProps {
   sessionOwner?: string;
   activeProject?: KnittingProject;
+  projects?: KnittingProject[];
+  sessions?: SkillSessionRecord[];
+  initialStudioMode?: "alphabet" | "composer" | "backups" | "digitizer" | "guided";
+  onSelectProject?: (projectId: string) => void;
+  onCreateProjectFromPattern?: (params: {
+    name: string;
+    linkedPattern: LinkedFiletPatternSnapshot;
+  }) => Promise<void>;
+  onSubmitDirectSkillSession?: (payload: Record<string, unknown>) => Promise<unknown>;
+  onRefreshState?: () => Promise<void>;
+  sessionBridge?: GuidedUniversalSessionBridge;
 }
 
 type PaintTool = "toggle" | "fill" | "erase";
@@ -114,8 +129,22 @@ function MiniMatrixPreview({
 export function FiletCrochetStudio({
   sessionOwner,
   activeProject,
+  projects = [],
+  sessions = [],
+  initialStudioMode = "alphabet",
+  onSelectProject,
+  onCreateProjectFromPattern,
+  onSubmitDirectSkillSession,
+  onRefreshState,
+  sessionBridge,
 }: FiletCrochetStudioProps) {
-  const [studioMode, setStudioMode] = useState<"alphabet" | "composer" | "backups" | "digitizer">("alphabet");
+  const [studioMode, setStudioMode] = useState<
+    "alphabet" | "composer" | "backups" | "digitizer" | "guided"
+  >(initialStudioMode);
+
+  useEffect(() => {
+    setStudioMode(initialStudioMode);
+  }, [initialStudioMode]);
   const [workspace, setWorkspace] = useState<FiletStudioWorkspace>(() =>
     readFiletStudioWorkspaceSafe(sessionOwner)
   );
@@ -636,6 +665,7 @@ export function FiletCrochetStudio({
               { id: "composer", label: "2. Compositor Visual y Motor Técnico" },
               { id: "backups", label: "3. Respaldos Privados y Restauración" },
               { id: "digitizer", label: "4. Digitalizador Histórico (PDF/Img)" },
+              { id: "guided", label: "5. Mesa de Tejido Guiada" },
             ] as const
           ).map((tab) => (
             <button
@@ -824,6 +854,14 @@ export function FiletCrochetStudio({
           activeProject={activeProject}
           onPersistWorkspace={persistWorkspace}
           onJumpToAlphabetEditor={() => setStudioMode("alphabet")}
+          onCreateProjectFromPattern={
+            onCreateProjectFromPattern
+              ? async (params) => {
+                  await onCreateProjectFromPattern(params);
+                  setStudioMode("guided");
+                }
+              : undefined
+          }
         />
       )}
 
@@ -850,6 +888,19 @@ export function FiletCrochetStudio({
           workspace={workspace}
           onPersistWorkspace={persistWorkspace}
           onJumpToComposer={() => setStudioMode("composer")}
+        />
+      )}
+
+      {studioMode === "guided" && (
+        <FiletGuidedSession
+          sessionOwner={sessionOwner}
+          projects={projects}
+          selectedProjectId={activeProject?.id}
+          sessions={sessions}
+          onSelectProject={onSelectProject}
+          onSubmitDirectSkillSession={onSubmitDirectSkillSession}
+          onRefreshState={onRefreshState}
+          sessionBridge={sessionBridge}
         />
       )}
 

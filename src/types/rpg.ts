@@ -203,6 +203,22 @@ export interface ReadingBook {
 
 export type KnittingProjectStatus = "in_progress" | "paused" | "completed" | "archived";
 
+export interface LinkedFiletPatternSnapshot {
+  pattern_id: string;
+  pattern_name: string;
+  version_id: string;
+  version_number: number;
+  matrix: Array<Array<0 | 1>>;
+  grid_width: number;
+  grid_height: number;
+  technique: "Filet Crochet";
+  mesh_size: 3 | 4;
+  orientation: "bottom_to_top" | "top_to_bottom";
+  first_row_direction: "rtl" | "ltr";
+  total_rows: number;
+  created_at: string;
+}
+
 export interface KnittingProject {
   id: string;
   name: string;
@@ -211,6 +227,8 @@ export interface KnittingProject {
   completed_rows: number;
   yarn_details: string;
   status: KnittingProjectStatus;
+  created_at?: string;
+  linked_filet_pattern?: LinkedFiletPatternSnapshot | null;
 }
 
 export type AgileMethodology = "none" | "scrum" | "kanban" | "lean";

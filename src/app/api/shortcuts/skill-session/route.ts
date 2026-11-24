@@ -22,6 +22,8 @@ import { requireShortcutUser, scopeIdempotencyKey } from "@/lib/request-auth";
 import { persistUserCollectionsState } from "@/lib/persistence-sync";
 import { isPositiveSessionDuration } from "@/lib/skill-session-validation";
 import { recoverSkillSessionStateFromProfile } from "@/lib/skill-session-recovery";
+import { validateLinkedFiletPatternSnapshot } from "@/lib/sanctuary/filet-guided-engine";
+import type { LinkedFiletPatternSnapshot } from "@/types/rpg";
 
 export interface SkillSessionEndpointRequest {
   idempotency_key?: string;
@@ -128,6 +130,7 @@ export interface SkillSessionEndpointRequest {
   knitting_yarn_details?: string;
   knitting_status?: "in_progress" | "paused" | "completed" | "archived";
   yarn_details?: string;
+  linked_filet_pattern?: LinkedFiletPatternSnapshot | null;
   // Study
   subject?: string;
   study_method?:
@@ -521,11 +524,26 @@ export async function POST(req: Request) {
     }
 
     if (body.action === "add_knitting_project") {
+      let validatedLinkedPattern: LinkedFiletPatternSnapshot | undefined;
+      if (body.linked_filet_pattern) {
+        const checked = validateLinkedFiletPatternSnapshot(body.linked_filet_pattern);
+        if (!checked.valid) {
+          return NextResponse.json(
+            { error: `Patrón Filet vinculado inválido: ${checked.error}` },
+            { status: 400 }
+          );
+        }
+        validatedLinkedPattern = checked.snapshot;
+      }
+
       const project = store.addKnittingProject({
         name: body.title || body.knitting_name || "",
         technique: body.knitting_technique || "Crochet",
-        total_rows_target: body.knitting_total_rows || 50,
+        total_rows_target: validatedLinkedPattern
+          ? validatedLinkedPattern.total_rows
+          : body.knitting_total_rows || 50,
         yarn_details: body.yarn_details || body.knitting_yarn_details,
+        linked_filet_pattern: validatedLinkedPattern,
       });
 
       if (isSupabaseConfigured && db) {

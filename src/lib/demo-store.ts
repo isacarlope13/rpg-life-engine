@@ -1757,24 +1757,35 @@ export class RPGEngineMemoryStore {
     technique?: "Crochet" | "Dos Agujas" | "Amigurumi" | "Telar";
     total_rows_target: number;
     yarn_details?: string;
+    linked_filet_pattern?: KnittingProject["linked_filet_pattern"];
   }): KnittingProject {
     const cleanName = (params.name || "").trim();
     if (!cleanName) {
       throw new Error("El nombre del proyecto de tejido es obligatorio.");
     }
+    const frozenLinked = params.linked_filet_pattern
+      ? {
+          ...params.linked_filet_pattern,
+          matrix: params.linked_filet_pattern.matrix.map((row) => [...row] as Array<0 | 1>),
+        }
+      : undefined;
+    const minRows = frozenLinked ? 1 : 5;
+    const targetRows = frozenLinked
+      ? frozenLinked.total_rows
+      : Math.round(params.total_rows_target || 50);
+
     const newProj: KnittingProject = {
       id: `knit-${crypto.randomUUID().slice(0, 8)}`,
       name: cleanName,
       technique: params.technique || "Crochet",
-      total_rows_target: Math.max(
-        5,
-        Math.round(params.total_rows_target || 50)
-      ),
+      total_rows_target: Math.max(minRows, targetRows),
       completed_rows: 0,
       yarn_details: (
         params.yarn_details || "Hilaza algodón / lana acrílica"
       ).trim(),
       status: "in_progress",
+      created_at: new Date().toISOString(),
+      ...(frozenLinked ? { linked_filet_pattern: frozenLinked } : {}),
     };
     this.knittingProjects.unshift(newProj);
     return newProj;

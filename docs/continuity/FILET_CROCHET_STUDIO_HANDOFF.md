@@ -65,3 +65,33 @@
   - `npm run build`: aprobado (`35/35` rutas; `/cozy` `93.4 kB`, First Load JS `351 kB`).
   - `git diff --check`: limpio.
   - **Prueba en navegador real (`http://localhost:3099/cozy`):** verificados los 3 paneles en escritorio sin solapamiento, modo manual, edición + Undo/Redo, confirmación obligatoria de revisión, guardado en biblioteca y disponibilidad inmediata del glifo `"Z"` en el Compositor Visual, con `0` errores de consola en Filet Crochet Studio (nota: persiste 1 advertencia preexistente de React `key` en `BentoDailyDashboard` al renderizar `/cozy`, fuera del alcance de Filet Studio).
+
+---
+
+## Fase 4 — Integración con Proyectos y Sesiones de Tejido Guiadas (`feat/oakhaven-filet-crochet-studio`, 2026-11-24)
+- **Bloque 0 (Validación previa):**
+  - Entorno local: `Node v26.12.1` (`npm 11.20.0`); **Node 22 (`22.x`) no disponible** en esta máquina — autorización humana explícita recibida para ejecutar e implementar bajo `v26.12.1` manteniendo pendiente la verificación de paridad con `Node 22.x` antes de merge.
+  - Continuidad de PR financiera #2 protegida (`docs/continuity/CODEX_HANDOFF.md` intacto y excluido de commits).
+- **Bloque 1 — Creación de proyecto desde versión inmutable (`rpg.ts`, `demo-store.ts`, `/api/shortcuts/skill-session`, `state-builder.ts`, `filet-composer-panel.tsx`, `atelier-building.tsx`):**
+  - `KnittingProject` extendido con `created_at` y `linked_filet_pattern?: LinkedFiletPatternSnapshot | null` (100 % retrocompatible con proyectos antiguos sin patrón vinculado).
+  - Acción **🧶 Crear proyecto de tejido (vN)** en `FiletComposerPanel`: congela una copia profunda inmutable de la matriz, dimensiones, convención de malla (`3` o `4`), orientación y dirección inicial. Modificaciones posteriores en el compositor o nuevas versiones `v2+` jamás alteran proyectos activos.
+  - Hidratación verificada en `src/lib/state-builder.ts` (`GET /api/state`) conservando `linked_filet_pattern` desde `profiles.collections_state` sin requerir migración real en Supabase.
+  - Tarjetas de proyectos en el Atelier muestran insignia `📐 Filet vN (W×H)` y botón directo `Tejer guiado ➜`.
+- **Bloque 2 — Motor determinista de progreso y borrador SQL atómico (`filet-guided-engine.ts` + `supabase/drafts/20261124_filet_guided_progress_atomic.sql`):**
+  - Motor puro (`src/lib/sanctuary/filet-guided-engine.ts`) que cumple las 10 reglas invariantes: completar segmentos no suma vueltas; confirmar fila exige todos sus segmentos; incremento exacto `+1`; idempotencia por `operationId` y `rowNumber`; prevención de doble confirmación entre dispositivos; pausa/reanudación inocua; recuperación y cierre de sesión sin duplicar filas ya acreditadas (`syncedConfirmedRows`); bloqueo por `PATTERN_VERSION_MISMATCH`; retroceso seguro sin contadores negativos.
+  - Borrador SQL `supabase/drafts/20261124_filet_guided_progress_atomic.sql` (NO aplicado en Supabase real): tablas `filet_guided_progress` y `filet_guided_operation_receipts` con RLS, más RPCs atómicas `confirm_filet_row_atomic_v1` y `undo_filet_row_atomic_v1` con bloqueo `FOR UPDATE` sobre `knitting_projects` para actualizar progreso + `completed_rows` en una sola transacción.
+- **Bloques 3, 4, 5 y 6 — Mesa de Tejido Guiada, Persistencia, Clara y Multidispositivo (`filet-guided-session.tsx`, `filet-guided-store.ts`, `clara-lyra-tools.ts`):**
+  - Pestaña `5. Mesa de Tejido Guiada` reutilizando directamente `useUniversalSession("knitting", "atelier")` vía `sessionBridge` (cero cronómetros paralelos).
+  - Tres vistas (`Gráfico`, `Instrucciones`, `Ambos`), resaltado de fila y segmento activos, zoom (`50%–200%`), desplazamiento con Pointer Events (compatible con S Pen / Galaxy Tab), navegación por teclado (`Espacio`/`Enter`, `Backspace`/`ArrowLeft`, `C`) y botones grandes de una mano para iPhone / Safari.
+  - Persistencia local automática aislada por propietario (`filet-guided-store.ts`), recuperación tras recarga/cierre, detección y fusión segura de conflictos sin duplicar vueltas, estado visible (`Guardado localmente`, `Pendiente de sincronización`, `Confirmado por el servidor`, `Conflicto detectado`, `Error de red`) y reintento idempotente.
+  - Herramienta determinista `getGuidedFiletProjectStatus` en `clara-lyra-tools.ts` + tarjeta de Clara en la Mesa Guiada + lectura opcional mediante `window.speechSynthesis` (100 % desacoplada de IA externa).
+- **Bloques 7 y 8 — Pruebas obligatorias, PGlite SQL y Regresión del Digitalizador:**
+  - `tests/filet-crochet-phase4-guided.test.ts` (4 pruebas integrales): prueba de aceptación principal de **80 cuadros** (`11 vacíos, 2 llenos, 12 vacíos, 2 llenos, 53 vacíos`), cierre/reapertura, confirmación repetida, inmutabilidad, proyectos antiguos, concurrencia de 2 dispositivos, conflictos, fallos de red, aislamiento de usuarios, retroceso, finalización, cero duplicación XP/GP/vueltas, Clara determinista y regresión Bloque 8 (PDF `%PDF-1.4`, worker local `public/pdf.worker.min.mjs`, recorte, calibración, glifo, original intacto, compositor y vigencia del límite de 5 MB del servidor).
+  - Evaluación de PDFs > 5 MB (Bloque 8): se mantiene el límite de seguridad de **5 MB** en `/api/resources`; la extracción local de páginas individuales (renderizar localmente en Canvas/PNG una página seleccionada de un PDF grande sin subir el PDF completo al servidor) queda documentada como mejora segura opcional para fase posterior sin relajar los límites del servidor.
+  - `tests/filet-crochet-phase4-sql.test.ts` (2 pruebas aisladas en **PGlite**): atomicidad de `confirm_filet_row_atomic_v1` y `undo_filet_row_atomic_v1`, replays, 2 dispositivos, conflicto de revisión optimista, aislamiento de propietario, rechazo de versión distinta y compatibilidad con proyectos antiguos.
+- **Resultados QA (Node `v26.12.1`):**
+  - `npm test`: **375/375** pruebas aprobadas (22 suites, `0` fallos, incluyendo PGlite SQL).
+  - `npx tsc --noEmit`: `0` errores.
+  - `npm run build`: aprobado (`35/35` rutas).
+  - `git diff --check`: limpio.
+  - **Prueba en navegador real (`http://localhost:3099/cozy`):** creación de proyecto desde versión inmutable `v1` (`POST /api/shortcuts/skill-session` `201`), recarga completa e hidratación en `5. Mesa de Tejido Guiada`, guardia de confirmación deshabilitada hasta completar segmentos, confirmación de Vuelta 1 (`Guardado localmente` → `Confirmado por el servidor`, `Confirmadas: 1 (4%)`, avance a `Vuelta 2 / 24`), tarjeta determinista de Clara y `0` errores de consola en Filet Crochet Studio.

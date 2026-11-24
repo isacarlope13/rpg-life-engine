@@ -513,17 +513,37 @@ export async function buildSupabaseEngineState(params: {
 
     if (knittingRes.data && knittingRes.data.length > 0) {
       engineMirror.knittingProjects = knittingRes.data.map(
-        (k): KnittingProject => ({
-          id: String(k.id),
-          name: String(k.name),
-          technique: (k.technique || "Crochet") as KnittingProject["technique"],
-          total_rows_target: Number(k.total_rows_target),
-          completed_rows: Number(k.completed_rows),
-          yarn_details: String(k.yarn_details || ""),
-          status: (k.status === "completed"
-            ? "completed"
-            : "in_progress") as KnittingProject["status"],
-        })
+        (k): KnittingProject => {
+          const localKnit = userStore.knittingProjects.find(
+            (lk) =>
+              lk.id === String(k.id) ||
+              (lk.name.toLowerCase() === String(k.name).toLowerCase() &&
+                Boolean(lk.linked_filet_pattern))
+          );
+          const rawStatus = String(k.status || "in_progress");
+          const safeStatus: KnittingProject["status"] =
+            rawStatus === "completed" ||
+            rawStatus === "paused" ||
+            rawStatus === "archived"
+              ? rawStatus
+              : "in_progress";
+          const remoteLinked =
+            k.linked_pattern_snapshot && typeof k.linked_pattern_snapshot === "object"
+              ? (k.linked_pattern_snapshot as KnittingProject["linked_filet_pattern"])
+              : undefined;
+          const resolvedLinked = remoteLinked || localKnit?.linked_filet_pattern;
+          return {
+            id: String(k.id),
+            name: String(k.name),
+            technique: (k.technique || "Crochet") as KnittingProject["technique"],
+            total_rows_target: Number(k.total_rows_target),
+            completed_rows: Number(k.completed_rows),
+            yarn_details: String(k.yarn_details || ""),
+            status: safeStatus,
+            created_at: k.created_at ? String(k.created_at) : localKnit?.created_at,
+            ...(resolvedLinked ? { linked_filet_pattern: resolvedLinked } : {}),
+          };
+        }
       );
     }
 

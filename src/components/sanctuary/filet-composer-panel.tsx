@@ -26,8 +26,9 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { KnittingProject } from "@/types/rpg";
+import type { KnittingProject, LinkedFiletPatternSnapshot } from "@/types/rpg";
 import { CozyButton, CozyNotification } from "@/components/cozy/ui";
+import { buildLinkedFiletPatternSnapshot } from "@/lib/sanctuary/filet-guided-engine";
 import {
   FILET_MAX_PATTERN_DIM,
   FILET_MIN_DIM,
@@ -67,6 +68,10 @@ interface FiletComposerPanelProps {
   activeProject?: KnittingProject;
   onPersistWorkspace: (next: FiletStudioWorkspace, silent?: boolean) => void;
   onJumpToAlphabetEditor?: () => void;
+  onCreateProjectFromPattern?: (params: {
+    name: string;
+    linkedPattern: LinkedFiletPatternSnapshot;
+  }) => Promise<void>;
 }
 
 const COMPOSER_ZOOM_LEVELS = [25, 40, 55, 75, 100, 125, 150, 200] as const;
@@ -76,6 +81,7 @@ export function FiletComposerPanel({
   activeProject,
   onPersistWorkspace,
   onJumpToAlphabetEditor,
+  onCreateProjectFromPattern,
 }: FiletComposerPanelProps) {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>(
     () => workspace.collections[0]?.id || ""
@@ -1357,10 +1363,39 @@ export function FiletComposerPanel({
               />
             </div>
             {selectedPattern && (
-              <p className="text-[10px] text-[#795548]">
-                Versiones inmutables en &ldquo;{selectedPattern.title}&rdquo;:{" "}
-                {selectedPattern.versions.map((v) => `v${v.version} (${v.width}×${v.height})`).join(" · ")}
-              </p>
+              <div className="space-y-1.5">
+                <p className="text-[10px] text-[#795548]">
+                  Versiones inmutables en &ldquo;{selectedPattern.title}&rdquo;:{" "}
+                  {selectedPattern.versions.map((v) => `v${v.version} (${v.width}×${v.height})`).join(" · ")}
+                </p>
+                {onCreateProjectFromPattern && selectedPattern.versions.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {selectedPattern.versions.map((ver) => (
+                      <button
+                        key={ver.version}
+                        type="button"
+                        data-testid={`create-project-from-v${ver.version}`}
+                        onClick={() => {
+                          const snapshot = buildLinkedFiletPatternSnapshot({
+                            patternId: selectedPattern.id,
+                            patternName: selectedPattern.title,
+                            version: ver,
+                            convention: createFiletTechnicalConvention(meshSize, firstRowDirection),
+                            orientation: "bottom_to_top",
+                          });
+                          void onCreateProjectFromPattern({
+                            name: `${selectedPattern.title} (v${ver.version})`,
+                            linkedPattern: snapshot,
+                          });
+                        }}
+                        className="rounded-xl border-2 border-[#3A2E2B] bg-[#314C3C] px-2.5 py-1 text-[11px] font-black text-[#FFFDF8] hover:bg-[#3E5F4C] cursor-pointer"
+                      >
+                        🧶 Crear proyecto de tejido (v{ver.version})
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
