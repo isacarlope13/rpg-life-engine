@@ -229,3 +229,67 @@ test("aislamiento por propietario, rechazo de versión distinta, retroceso atóm
   assert.equal(legacy.rows[0].completed_rows, 4);
   assert.equal(legacy.rows[0].linked_pattern_id, null);
 });
+
+test("SQL Fase 6D.2 — 4 migraciones promovidas en orden alfabético y endurecimiento idempotente de recompensas", async () => {
+  const expectedFiles = [
+    "2026112501_filet_guided_progress_atomic.sql",
+    "2026112502_filet_workspace_sync.sql",
+    "2026112503_atomic_skill_session.sql",
+    "2026112504_reward_trigger_hardening.sql",
+  ];
+  assert.deepEqual([...expectedFiles].sort(), expectedFiles);
+  for (const file of expectedFiles) {
+    assert.ok(fs.existsSync(new URL(`../supabase/migrations/${file}`, import.meta.url)), `Falta migración promovida: ${file}`);
+  }
+
+  const localDb = new PGlite();
+  await localDb.exec(`
+    CREATE ROLE anon;
+    CREATE ROLE authenticated;
+    CREATE ROLE service_role;
+    CREATE TABLE public.activity_logs (id uuid PRIMARY KEY, user_id uuid, earned_xp int DEFAULT 0);
+    GRANT ALL ON TABLE public.activity_logs TO anon, authenticated, service_role;
+    CREATE FUNCTION public.fn_process_activity_reward() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+    BEGIN RETURN NEW; END;
+    $$;
+  `);
+
+  const hardeningSql = fs.readFileSync(
+    new URL("../supabase/migrations/2026112504_reward_trigger_hardening.sql", import.meta.url),
+    "utf8"
+  );
+  // Aplicar dos veces para comprobar idempotencia
+  await localDb.exec(hardeningSql);
+  await localDb.exec(hardeningSql);
+
+  const check = await localDb.query<{
+    proconfig: string[] | null;
+    anon_fn: boolean;
+    auth_fn: boolean;
+    auth_upd: boolean;
+    auth_del: boolean;
+    anon_ins: boolean;
+    auth_ins: boolean;
+  }>(`
+    SELECT
+      p.proconfig,
+      has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_fn,
+      has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_fn,
+      has_table_privilege('authenticated', 'public.activity_logs', 'UPDATE') AS auth_upd,
+      has_table_privilege('authenticated', 'public.activity_logs', 'DELETE') AS auth_del,
+      has_table_privilege('anon', 'public.activity_logs', 'INSERT') AS anon_ins,
+      has_table_privilege('authenticated', 'public.activity_logs', 'INSERT') AS auth_ins
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'fn_process_activity_reward';
+  `);
+  const row = check.rows[0];
+  assert.ok(row.proconfig?.some((c) => c.includes("search_path=pg_catalog, public")));
+  assert.equal(row.anon_fn, false);
+  assert.equal(row.auth_fn, false);
+  assert.equal(row.auth_upd, false);
+  assert.equal(row.auth_del, false);
+  assert.equal(row.anon_ins, false);
+  assert.equal(row.auth_ins, true);
+  await localDb.close();
+});
