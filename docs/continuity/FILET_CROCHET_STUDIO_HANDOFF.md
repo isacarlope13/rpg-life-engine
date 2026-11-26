@@ -3,7 +3,17 @@
 **Rama dedicada:** `feat/oakhaven-filet-crochet-studio`
 **Base limpia:** `origin/main @ cb06321` (Release 3.3 — independiente de la PR financiera #2)
 **Pull Request en borrador (Draft):** https://github.com/isacarlope13/rpg-life-engine/pull/3 (`feat(atelier): Filet Crochet Studio v1.0`)
-**Estado de despliegue:** Rama publicada en GitHub con PR en estado **Draft**, CI en verde y **Fases 6D.1 + 6D.2 aprobadas** (`0` merges, `0` despliegues en Railway y `0` migraciones aplicadas en Supabase de producción).
+**Estado de despliegue:** Rama publicada en GitHub con PR en estado **Draft**, CI en verde y **CHECKPOINT A — Opción A implementada y validada en QA** (`0` merges, `0` despliegues en Railway y `0` migraciones aplicadas en Supabase de producción).
+
+## CHECKPOINT A — Resolución definitiva de `activity_logs` (Opción A, 2026-11-25)
+
+- **Cambios mínimos en escritores legacy:**
+  - Nuevo helper server-only `src/lib/server-activity-writer.ts`: usa `supabaseAdmin` (`service_role`), aplica **fail-closed (`503`)** si falta `SUPABASE_SERVICE_ROLE_KEY`, rechaza manipulación de identidad de cliente (`hasClientIdentityOverride` → `400`), valida propiedad de `treasury.user_id === userId` (`403`) y límites canónicos de GP (`<= 25.000`), XP (`<= 500`) y duración (`<= 1.440 min`), conservando idempotencia `23505`.
+  - Actualizados los 2 únicos escritores legacy: `src/app/api/shortcuts/habit-log/route.ts` y `src/app/api/shortcuts/skill-session/route.ts` (contratos HTTP preservados, Filet y PR #2 intactos).
+- **Quinta migración post-deploy aislada:** `supabase/post-deploy/2026112505_activity_logs_server_only_insert.sql` (fuera de `supabase/migrations/` para impedir aplicación prematura por comandos masivos). Revoca `INSERT`/`UPDATE`/`DELETE` de `PUBLIC`/`anon`/`authenticated` en `public.activity_logs`, reemplaza políticas `FOR ALL` por `FOR SELECT` (`activity_logs_read_owner`) y concede `SELECT, INSERT` exclusivamente a `service_role`. **No es retrocompatible con `main @ cb06321`** y debe aplicarse únicamente tras desplegar y verificar la nueva aplicación en Railway.
+- **Evidencia real en Supabase QA (`tklsdqfuzbyyaxqezlab`, PostgreSQL 17.12):**
+  - `INSERT` directo autenticado → **`42501`** (`treasury_unchanged: true`), `INSERT` anónimo → **`42501`**, `UPDATE` → **`42501`**, `DELETE` → **`42501`**, recibos internos → **`42501`**, `has_column_privilege(..., 'INSERT')` → **`false`**, `SELECT` propietario → **`ok`**, e `INSERT` bajo `service_role` dispara `fn_process_activity_reward()` (`transferred_gp: 3300` con multiplicador `1.10x`).
+- **Documentos actualizados:** `FILET_PHASE6D_PRODUCTION_PLAN.md`, `FILET_PHASE5_MIGRATION_AND_ROLLBACK.md` (estrategia de rollback sin restaurar permisos inseguros automáticamente) y `FILET_CROCHET_STUDIO_HANDOFF.md`.
 
 ## Fase 6D.2 — Preparación definitiva de producción (2026-11-25)
 

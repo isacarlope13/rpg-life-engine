@@ -23,6 +23,7 @@ import { persistUserCollectionsState } from "@/lib/persistence-sync";
 import { isPositiveSessionDuration } from "@/lib/skill-session-validation";
 import { recoverSkillSessionStateFromProfile } from "@/lib/skill-session-recovery";
 import { finalizeFiletSession } from "@/lib/filet-session-finalization";
+import { hasClientIdentityOverride, insertServerActivityLog } from "@/lib/server-activity-writer";
 import { validateLinkedFiletPatternSnapshot } from "@/lib/sanctuary/filet-guided-engine";
 import type { LinkedFiletPatternSnapshot } from "@/types/rpg";
 
@@ -186,7 +187,13 @@ export async function POST(req: Request) {
     if (!authCtx.ok) return authCtx.response;
     const { userId, store, db } = authCtx;
 
-    const body = (await req.json()) as SkillSessionEndpointRequest;
+    const body = (await req.json()) as SkillSessionEndpointRequest & Record<string, unknown>;
+    if (hasClientIdentityOverride(body, userId)) {
+      return NextResponse.json(
+        { success: false, error: "Identidad de cliente no permitida" },
+        { status: 400 }
+      );
+    }
 
     if (body.action === "new_scramble") {
       return NextResponse.json({
@@ -1157,18 +1164,29 @@ export async function POST(req: Request) {
       const treasury = await resolvePlayerTreasury(userId, db);
 
       if (treasury) {
-        await db.from("activity_logs").insert({
-          user_id: userId,
-          treasury_id: treasury.id,
+        const writeRes = await insertServerActivityLog({
+          userId,
+          treasuryId: String(treasury.id),
+          treasuryUserId: String(treasury.user_id),
           domain,
-          activity_name: result.session.title,
-          duration_minutes: result.session.duration_minutes,
-          requested_gp: result.session.gp_earned,
-          earned_xp: result.session.xp_earned,
-          session_metadata: result.session.metadata || {},
+          activityName: result.session.title,
+          durationMinutes: result.session.duration_minutes,
+          requestedGp: result.session.gp_earned,
+          earnedXp: result.session.xp_earned,
+          sessionMetadata: (result.session.metadata as Record<string, unknown>) || {},
           notes: body.notes || result.session.details,
-          idempotency_key: scopeIdempotencyKey(userId, body.idempotency_key),
+          idempotencyKey: scopeIdempotencyKey(userId, body.idempotency_key),
         });
+        if (!writeRes.ok) {
+          return NextResponse.json(
+            {
+              success: false,
+              code: "SESSION_PERSISTENCE_PENDING",
+              error: writeRes.error,
+            },
+            { status: writeRes.status }
+          );
+        }
       }
 
       if (

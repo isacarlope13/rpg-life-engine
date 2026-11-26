@@ -1,47 +1,30 @@
-# Procedimiento de Migración, Verificación y Rollback — Filet Crochet Studio (Fase 5)
+# Procedimiento de Migración, Verificación y Rollback — Filet Crochet Studio v1.0
 
-> **Estado:** BORRADOR VERIFICADO EN PGLITE — **NO APLICADO EN SUPABASE REAL.**
-> Archivo SQL: `supabase/drafts/20261124_filet_guided_progress_atomic.sql`
+> **Estado:** ACTUALIZADO TRAS OPCIÓN A (5 MIGRACIONES DEFINITIVAS, SIN APLICAR EN PRODUCCIÓN).
+> Inventario oficial: 4 migraciones pre-deploy en `supabase/migrations/` (`2026112501`–`2026112504`) + 1 migración post-deploy en `supabase/post-deploy/` (`2026112505`).
 
-## 1. Pre-requisitos antes de aplicar en producción
-1. Confirmar backup lógico reciente en Supabase (`pg_dump` o snapshot del proyecto).
-2. Confirmar que el código de producción ya incluye el soporte opcional para `linked_filet_pattern` (`src/lib/state-builder.ts` y `/api/shortcuts/skill-session`).
-3. Ejecutar previamente en un entorno staging o rama de base de datos aislada.
+## 1. Inventario y separación obligatoria (Pre-Deploy vs Post-Deploy)
+1. **Pre-deploy (`supabase/migrations/`, 100 % retrocompatibles con `main @ cb06321`):**
+   - `2026112501_filet_guided_progress_atomic.sql`
+   - `2026112502_filet_workspace_sync.sql`
+   - `2026112503_atomic_skill_session.sql`
+   - `2026112504_reward_trigger_hardening.sql`
+2. **Post-deploy (`supabase/post-deploy/`, FUERA de `supabase/migrations/` para impedir aplicación prematura):**
+   - `2026112505_activity_logs_server_only_insert.sql`
+   - **NO es retrocompatible con `main @ cb06321` (Release 3.3):** revoca `INSERT` de `authenticated` en `public.activity_logs`, por lo que solo debe aplicarse **después** de que la nueva aplicación (con escritores server-side `service_role` en `habit-log` y `skill-session`) esté desplegada y verificada en Railway.
 
-## 2. Procedimiento de Migración
-1. Copiar `supabase/drafts/20261124_filet_guided_progress_atomic.sql` a `supabase/migrations/` tras aprobación humana explícita.
-2. Aplicar en una sola transacción:
-   - Añade columnas `NULL`-permitidas (`linked_pattern_id`, `linked_pattern_version_id`, `linked_pattern_snapshot`) a `public.knitting_projects` (operación no destructiva, 100 % retrocompatible con proyectos antiguos).
-   - Crea `public.filet_guided_progress` y `public.filet_guided_operation_receipts` con RLS habilitado.
-   - Crea `confirm_filet_row_atomic_v1` y `undo_filet_row_atomic_v1` con `SECURITY DEFINER`, `SET search_path = public`, bloqueo `FOR UPDATE` y `REVOKE ALL ... FROM PUBLIC, anon, authenticated; GRANT EXECUTE ... TO service_role;`.
+## 2. Matriz de compatibilidad durante el despliegue
+| Combinación | Resultado | Acción operativa |
+|---|---|---|
+| App anterior (`cb06321`) + 4 migraciones | **Compatible** | Funcionamiento normal de todos los módulos. |
+| App nueva + 4 migraciones | **Compatible** | Funcionamiento normal; escritores server-side ya activos. |
+| App nueva + 5 migraciones | **Compatible + Bloqueo total** | Funcionamiento normal y bloqueo efectivo (`42501`) de `INSERT`/`UPDATE`/`DELETE` directo de clientes en `activity_logs`. |
+| App anterior (`cb06321`) + 5 migraciones | **INCOMPATIBLE** | Los endpoints legacy de `cb06321` (`habit-log` y `skill-session` no Filet) fallarán al insertar en `activity_logs` con `42501`. |
 
-## 3. Verificación Post-Migración
-1. Confirmar RLS activo:
-   ```sql
-   SELECT tablename, rowsecurity
-     FROM pg_tables
-    WHERE schemaname = 'public'
-      AND tablename IN ('filet_guided_progress', 'filet_guided_operation_receipts');
-   ```
-2. Confirmar privilegios de RPC (debe devolver `false` para `anon` y `authenticated`, `true` para `service_role`):
-   ```sql
-   SELECT has_function_privilege('authenticated', 'public.confirm_filet_row_atomic_v1(uuid,uuid,text,int,text,int,text,int,int)', 'EXECUTE');
-   SELECT has_function_privilege('service_role', 'public.confirm_filet_row_atomic_v1(uuid,uuid,text,int,text,int,text,int,int)', 'EXECUTE');
-   ```
-3. Verificar que los proyectos existentes sin patrón conservan sus `completed_rows` y `status` sin cambios.
-
-## 4. Procedimiento de Rollback Seguro
-Si se detecta cualquier anomalía tras la migración, el rollback no afecta proyectos antiguos ni datos previos de `knitting_projects`:
-```sql
-BEGIN;
-DROP FUNCTION IF EXISTS public.confirm_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, INT, TEXT, INT, INT);
-DROP FUNCTION IF EXISTS public.undo_filet_row_atomic_v1(UUID, UUID, TEXT, INT, TEXT, TEXT);
-DROP TABLE IF EXISTS public.filet_guided_operation_receipts;
-DROP TABLE IF EXISTS public.filet_guided_progress;
--- Opcional (solo si se requiere limpiar columnas nuevas sin datos):
--- ALTER TABLE public.knitting_projects
---   DROP COLUMN IF EXISTS linked_pattern_snapshot,
---   DROP COLUMN IF EXISTS linked_pattern_version_id,
---   DROP COLUMN IF EXISTS linked_pattern_id;
-COMMIT;
-```
+## 3. Estrategia de Rollback Seguro y No Destructivo
+- **Antes de aplicar la Migración #5 (ventana con 4 migraciones):**
+  - El rollback de aplicación en Railway al despliegue `54407ef8` (`cb06321`) es **100 % compatible y sin pérdida de datos**.
+  - Si se requiere contener Filet sin perder datos, revocar `EXECUTE` a `service_role` sobre la RPC afectada (`503` recuperable).
+- **Después de aplicar la Migración #5 (`2026112505`):**
+  - **NO revertir ciegamente a `cb06321`** porque `cb06321` no usa `service_role` para `activity_logs` y fallaría el registro de hábitos y sesiones tradicionales.
+  - **Prioridad de recuperación:** (1) aplicar hotfix hacia adelante sobre la rama nueva conservando la Migración #5 y todos los controles de seguridad, o (2) si una emergencia crítica exige volver temporalmente a `cb06321`, **nunca restaurar `INSERT` inseguro automáticamente**; requerir autorización humana explícita y ventana acotada para cualquier concesión temporal, y jamás ejecutar `DROP TABLE` ni `DROP COLUMN` sobre datos reales.

@@ -291,5 +291,72 @@ test("SQL Fase 6D.2 — 4 migraciones promovidas en orden alfabético y endureci
   assert.equal(row.auth_del, false);
   assert.equal(row.anon_ins, false);
   assert.equal(row.auth_ins, true);
+
+  // Post-deploy Migration #5 (ubicada fuera de supabase/migrations para impedir aplicación prematura)
+  const postDeployPath = new URL("../supabase/post-deploy/2026112505_activity_logs_server_only_insert.sql", import.meta.url);
+  assert.ok(fs.existsSync(postDeployPath), "Falta migración post-deploy #5");
+  assert.equal(
+    fs.existsSync(new URL("../supabase/migrations/2026112505_activity_logs_server_only_insert.sql", import.meta.url)),
+    false,
+    "La 5.ª migración NO debe estar dentro de supabase/migrations/"
+  );
+  const postDeploySql = fs.readFileSync(postDeployPath, "utf8");
+  await localDb.exec(`CREATE SCHEMA IF NOT EXISTS auth; CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;`);
+  await localDb.exec(postDeploySql);
+  await localDb.exec(postDeploySql);
+
+  const postCheck = await localDb.query<{
+    auth_ins: boolean;
+    auth_sel: boolean;
+    auth_upd: boolean;
+    auth_del: boolean;
+    anon_ins: boolean;
+    svc_ins: boolean;
+    col_auth_ins: boolean;
+  }>(`
+    SELECT
+      has_table_privilege('authenticated', 'public.activity_logs', 'INSERT') AS auth_ins,
+      has_table_privilege('authenticated', 'public.activity_logs', 'SELECT') AS auth_sel,
+      has_table_privilege('authenticated', 'public.activity_logs', 'UPDATE') AS auth_upd,
+      has_table_privilege('authenticated', 'public.activity_logs', 'DELETE') AS auth_del,
+      has_table_privilege('anon', 'public.activity_logs', 'INSERT') AS anon_ins,
+      has_table_privilege('service_role', 'public.activity_logs', 'INSERT') AS svc_ins,
+      has_column_privilege('authenticated', 'public.activity_logs', 'earned_xp', 'INSERT') AS col_auth_ins;
+  `);
+  const pr = postCheck.rows[0];
+  assert.equal(pr.auth_ins, false);
+  assert.equal(pr.col_auth_ins, false);
+  assert.equal(pr.anon_ins, false);
+  assert.equal(pr.auth_upd, false);
+  assert.equal(pr.auth_del, false);
+  assert.equal(pr.auth_sel, true);
+  assert.equal(pr.svc_ins, true);
+
+  // Validar helper server-activity-writer (fail-closed, límites y rechazo de identidad manipulada)
+  const { hasClientIdentityOverride, insertServerActivityLog, validateActivityRewardBounds } = await import(
+    "../src/lib/server-activity-writer.ts"
+  );
+  assert.equal(hasClientIdentityOverride({ user_id: USER_B }, USER_A), true);
+  assert.equal(hasClientIdentityOverride({ ownerId: USER_B }, USER_A), true);
+  assert.equal(hasClientIdentityOverride({ user_id: USER_A }, USER_A), false);
+  assert.equal(validateActivityRewardBounds({ requestedGp: 999999, earnedXp: 50 }).ok, false);
+  assert.equal(validateActivityRewardBounds({ requestedGp: 3000, earnedXp: -1 }).ok, false);
+  assert.equal(validateActivityRewardBounds({ requestedGp: 3000, earnedXp: 65, durationMinutes: 25 }).ok, true);
+  const failClosed = await insertServerActivityLog(
+    {
+      userId: USER_A,
+      treasuryId: PROJ_A,
+      treasuryUserId: USER_A,
+      domain: "knitting",
+      activityName: "Test fail-closed",
+      requestedGp: 1000,
+      earnedXp: 25,
+      idempotencyKey: "k-fail-closed",
+    },
+    null
+  );
+  assert.equal(failClosed.ok, false);
+  if (!failClosed.ok) assert.equal(failClosed.status, 503);
+
   await localDb.close();
 });

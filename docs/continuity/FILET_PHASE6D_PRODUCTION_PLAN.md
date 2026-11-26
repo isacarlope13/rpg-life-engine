@@ -29,6 +29,19 @@ Confirmar antes de aplicar la Migración #1 que el proyecto productivo dispone d
 | **2** | `2026112502_filet_workspace_sync.sql` | Tablas `filet_workspace_sync`, `filet_workspace_sync_receipts`; RLS `filet_workspace_read_owner`; RPC `save_filet_workspace_v1(uuid, uuid, bigint, jsonb)`. | `auth.users`. |
 | **3** | `2026112503_atomic_skill_session.sql` | Tablas `skill_session_operation_receipts`, `filet_session_operation_aliases` (FK diferida); RPC `record_skill_session_atomic_v1` (`SECURITY INVOKER` + `auth.role() = 'service_role'`, identidad canónica `ses_univ_<owner>_<sessionId>`). | **Depende de #1** (`knitting_projects.linked_pattern_version_id`) + `profiles`, `player_treasury`, `activity_logs`, `fn_process_activity_reward()`. |
 | **4** | `2026112504_reward_trigger_hardening.sql` | Fija `search_path = pg_catalog, public` en `fn_process_activity_reward()`; revoca `EXECUTE` de `PUBLIC`/`anon`/`authenticated` sobre el trigger; revoca `UPDATE`/`DELETE` de `PUBLIC`/`anon`/`authenticated` e `INSERT` de `anon` sobre `public.activity_logs`. | `public.fn_process_activity_reward()`, `public.activity_logs` y #3. |
+| **5 (Post-Deploy)** | `supabase/post-deploy/2026112505_activity_logs_server_only_insert.sql` | Revoca `INSERT` (tabla y columnas) de `PUBLIC`/`anon`/`authenticated` en `public.activity_logs`; reemplaza políticas `FOR ALL` por `FOR SELECT` (`activity_logs_read_owner`); concede `SELECT, INSERT` exclusivamente a `service_role`. **Ubicada fuera de `supabase/migrations/` para impedir aplicación prematura.** | **Depende del despliegue verificado de la aplicación nueva en Railway** (escritores server-side `src/lib/server-activity-writer.ts` en `habit-log` y `skill-session`). |
+
+### 2.3 Secuencia productiva futura (10 pasos — sin ejecutar)
+1. Respaldo productivo verificado (`pg_dump -Fc --schema=public --schema=supabase_migrations`, `SHA-256` y `pg_restore --list`).
+2. Aplicación secuencial de las primeras 4 migraciones (`2026112501` → `2026112504`).
+3. Verificación de compatibilidad con la aplicación anterior (`cb06321`) + verificación RLS/RPC.
+4. Autorización independiente de merge (CHECKPOINT B).
+5. Merge de PR #3 a `main` y despliegue automático de Railway (`RAILPACK V3`, Node 22).
+6. Verificación de la nueva aplicación y de los escritores server-side (`habit-log`, `skill-session` y Filet).
+7. Autorización explícita para aplicar la 5.ª migración.
+8. Aplicación de `supabase/post-deploy/2026112505_activity_logs_server_only_insert.sql` (minimizando la ventana tras el paso 6).
+9. Verificación final de seguridad (`has_table_privilege` = `false` para `authenticated INSERT`, `0` advertencias SQL).
+10. Smoke tests de producción y aceptación personal.
 
 ---
 
