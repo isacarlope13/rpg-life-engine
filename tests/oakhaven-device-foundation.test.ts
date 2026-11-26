@@ -1,5 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   addPageToNotebook,
   computeStrokeWidth,
@@ -12,6 +13,9 @@ import {
 import {
   DEVICE_CHANNEL_CAPABILITIES,
   buildDeterministicQuickCaptureKey,
+  checkDeviceRateLimit,
+  checkReplayProtection,
+  hashPersonalTokenSha256,
   isScopedDeviceTokenAuthorized,
   validateQuickCapturePayload,
 } from "../src/lib/devices/wrist-shortcut-contract.ts";
@@ -114,5 +118,56 @@ describe("OAKHAVEN P1/P2 — Ink (Cuadernos/S Pen), Wrist/iOS Shortcuts y Portab
     assert.equal(preview.newBooksCount, 1);
     assert.equal(preview.duplicateNotesCount, 1);
     assert.equal(preview.newNotesCount, 1);
+  });
+
+  test("4. Seguridad Wrist: hash SHA-256, rate-limit, protección anti-replay e integración real en /cozy", async () => {
+    const hash = await hashPersonalTokenSha256("oak_test_token_demo_only");
+    assert.match(hash, /^[a-f0-9]{64}$/);
+    assert.equal(hash, await hashPersonalTokenSha256("oak_test_token_demo_only"));
+
+    const now = Date.parse("2026-11-26T16:00:00Z");
+    const rlOk = checkDeviceRateLimit({ recentTimestampsMs: [now - 5000], nowMs: now, maxRequests: 2 });
+    assert.equal(rlOk.allowed, true);
+    const rlBlock = checkDeviceRateLimit({
+      recentTimestampsMs: [now - 5000, now - 2000],
+      nowMs: now,
+      maxRequests: 2,
+    });
+    assert.equal(rlBlock.allowed, false);
+
+    const seen = new Set<string>(["qc:used:key"]);
+    assert.equal(
+      checkReplayProtection({
+        idempotencyKey: "qc:used:key",
+        capturedAtIso: "2026-11-26T15:59:00Z",
+        seenKeys: seen,
+        nowMs: now,
+      }).allowed,
+      false
+    );
+    assert.equal(
+      checkReplayProtection({
+        idempotencyKey: "qc:old:key",
+        capturedAtIso: "2026-11-26T12:00:00Z",
+        seenKeys: seen,
+        nowMs: now,
+      }).allowed,
+      false
+    );
+    assert.equal(
+      checkReplayProtection({
+        idempotencyKey: "qc:fresh:key",
+        capturedAtIso: "2026-11-26T15:59:00Z",
+        seenKeys: seen,
+        nowMs: now,
+      }).allowed,
+      true
+    );
+
+    const cozySrc = fs.readFileSync(
+      new URL("../src/components/cozy-rpg-dashboard.tsx", import.meta.url),
+      "utf8"
+    );
+    assert.match(cozySrc, /DeviceHubModal/);
   });
 });

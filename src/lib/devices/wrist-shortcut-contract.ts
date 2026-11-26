@@ -93,7 +93,79 @@ export type QuickCaptureActionType =
   | "quick_timer_start"
   | "quick_timer_stop"
   | "quick_note"
-  | "quick_crochet_row";
+  | "quick_crochet_row"
+  | "quick_tasks_query"
+  | "quick_expense_confirm"
+  | "quick_idea"
+  | "quick_gp_xp_query"
+  | "quick_priorities_query"
+  | "quick_energy_log";
+
+export interface DeviceRateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetAtIso: string;
+}
+
+/**
+ * Calcula hash determinista SHA-256 hex de un token personal para almacenamiento seguro
+ * (jamás se guarda el token en claro). Funciona en Node 22 y navegadores modernos (WebCrypto).
+ */
+export async function hashPersonalTokenSha256(rawToken: string): Promise<string> {
+  const clean = (rawToken || "").trim();
+  if (!clean) throw new Error("Token vacío no permitido para hashing.");
+  const bytes = new TextEncoder().encode(clean);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Control de tasa determinista (ventana deslizante en memoria) por token de dispositivo.
+ */
+export function checkDeviceRateLimit(params: {
+  recentTimestampsMs: number[];
+  nowMs?: number;
+  windowMs?: number;
+  maxRequests?: number;
+}): DeviceRateLimitResult {
+  const now = params.nowMs ?? Date.now();
+  const windowMs = params.windowMs ?? 60_000;
+  const maxRequests = params.maxRequests ?? 30;
+  const active = params.recentTimestampsMs.filter((t) => now - t < windowMs);
+  const allowed = active.length < maxRequests;
+  return {
+    allowed,
+    remaining: Math.max(0, maxRequests - active.length - (allowed ? 1 : 0)),
+    resetAtIso: new Date(now + windowMs).toISOString(),
+  };
+}
+
+/**
+ * Protección contra replay: exige idempotencyKey no repetido y marca temporal dentro de ventana válida.
+ */
+export function checkReplayProtection(params: {
+  idempotencyKey: string;
+  capturedAtIso: string;
+  seenKeys: Set<string>;
+  nowMs?: number;
+  maxSkewMs?: number;
+}): { allowed: boolean; reason?: string } {
+  if (params.seenKeys.has(params.idempotencyKey)) {
+    return { allowed: false, reason: "Evento duplicado o replay detectado (idempotencyKey ya procesado)." };
+  }
+  const capturedMs = new Date(params.capturedAtIso).getTime();
+  if (!Number.isFinite(capturedMs)) {
+    return { allowed: false, reason: "Marca temporal capturedAt inválida." };
+  }
+  const now = params.nowMs ?? Date.now();
+  const maxSkewMs = params.maxSkewMs ?? 15 * 60_000; // 15 min por defecto
+  if (Math.abs(now - capturedMs) > maxSkewMs) {
+    return { allowed: false, reason: "Solicitud fuera de la ventana temporal permitida (protección anti-replay)." };
+  }
+  return { allowed: true };
+}
 
 export interface QuickCaptureEvent {
   schemaVersion: 1;
@@ -172,6 +244,12 @@ export function validateQuickCapturePayload(
     "quick_timer_stop",
     "quick_note",
     "quick_crochet_row",
+    "quick_tasks_query",
+    "quick_expense_confirm",
+    "quick_idea",
+    "quick_gp_xp_query",
+    "quick_priorities_query",
+    "quick_energy_log",
   ];
   const actionType = raw.actionType as QuickCaptureActionType;
   if (!allowedActions.includes(actionType)) {
