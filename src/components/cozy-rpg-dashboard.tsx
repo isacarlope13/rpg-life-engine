@@ -84,6 +84,7 @@ import { CozyQuickCaptureModal } from "@/components/cozy/cozy-quick-capture-moda
 import { AiCommandAutomationPanel } from "@/components/cozy/ai-command-automation-panel";
 import { CozyCommandPalette } from "@/components/cozy/cozy-command-palette";
 import { CozyModal } from "@/components/cozy/ui";
+import { DeviceHubModal } from "@/components/cozy/device-hub-modal";
 import {
   queueOfflineAction,
   processOfflineQueue,
@@ -158,6 +159,7 @@ export function CozyRpgDashboard() {
   const [isSoundscapeOpen, setIsSoundscapeOpen] = useState(false);
   const [isVillageQuestsOpen, setIsVillageQuestsOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [isDeviceHubOpen, setIsDeviceHubOpen] = useState(false);
   const [isCommandCenterOpen, setIsCommandCenterOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
@@ -486,8 +488,15 @@ export function CozyRpgDashboard() {
               onSyncNow={handleManualSync}
             />
 
-            {/* Acceso directo real a AI Command Center, Automatizaciones y Buscador Global Ctrl+K */}
+            {/* Acceso directo real a OakHaven Ink/Wrist/Portabilidad, AI Command Center y Buscador Global Ctrl+K */}
             <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsDeviceHubOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] px-3.5 py-1.5 text-xs font-black text-[#3A2E2B] shadow-[0_3px_0_#3A2E2B] hover:bg-[#E7D69C] transition-colors cursor-pointer"
+              >
+                ✍️ Ink (S Pen) · ⌚ Wrist · 📦 Portabilidad
+              </button>
               <button
                 type="button"
                 onClick={() => setIsCommandCenterOpen(true)}
@@ -1060,6 +1069,22 @@ export function CozyRpgDashboard() {
         onSuccess={fetchState}
       />
 
+      {/* CENTRO DE DISPOSITIVOS: OAKHAVEN INK, WRIST/ATAJOS Y PORTABILIDAD */}
+      <DeviceHubModal
+        isOpen={isDeviceHubOpen}
+        onClose={() => setIsDeviceHubOpen(false)}
+        walletGp={walletGp}
+        vaultRemainingGp={vaultGp}
+        vaultCapGp={state?.vault_cap_gp ?? 0}
+        currentXp={currentXp}
+        playerLevel={playerLevel}
+        streakDays={streakDays}
+        knittingProjects={knittingProjects}
+        readingBooks={readingBooks}
+        quests={quests}
+        notesList={notesList}
+      />
+
       {/* AI COMMAND CENTER & AUTOMATION CORE (INTEGRADO EN NAVEGACIÓN REAL) */}
       <CozyModal
         isOpen={isCommandCenterOpen}
@@ -1094,6 +1119,13 @@ export function CozyRpgDashboard() {
             category: "Edificio",
             keywords: "crochet filet clara patron tejido",
             onSelect: () => setActiveBuildingModal("atelier"),
+          },
+          {
+            id: "open-device-hub",
+            label: "✍️ Abrir OakHaven Ink (S Pen), Wrist & Portabilidad",
+            category: "Dispositivos",
+            keywords: "ink s pen cuaderno wrist atajos ios exportar importar",
+            onSelect: () => setIsDeviceHubOpen(true),
           },
           {
             id: "open-command-center",
