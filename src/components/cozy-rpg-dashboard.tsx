@@ -81,6 +81,9 @@ import { CompanionsModal } from "@/components/cozy/companions-modal";
 import { CozySoundscapeModal } from "@/components/cozy/cozy-soundscape-modal";
 import { VillageQuestsModal } from "@/components/cozy/village-quests-modal";
 import { CozyQuickCaptureModal } from "@/components/cozy/cozy-quick-capture-modal";
+import { AiCommandAutomationPanel } from "@/components/cozy/ai-command-automation-panel";
+import { CozyCommandPalette } from "@/components/cozy/cozy-command-palette";
+import { CozyModal } from "@/components/cozy/ui";
 import {
   queueOfflineAction,
   processOfflineQueue,
@@ -155,6 +158,20 @@ export function CozyRpgDashboard() {
   const [isSoundscapeOpen, setIsSoundscapeOpen] = useState(false);
   const [isVillageQuestsOpen, setIsVillageQuestsOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [isCommandCenterOpen, setIsCommandCenterOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+
+  // Atajo global Ctrl+K / Cmd+K para abrir Command Palette de OakHaven
+  useEffect(() => {
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsCommandPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onGlobalKey);
+    return () => window.removeEventListener("keydown", onGlobalKey);
+  }, []);
   const [isCompanionsOpen, setIsCompanionsOpen] = useState(false);
   const { notesList, quickNote, setQuickNote, addNote, removeNote, notesError } = useOwnedNotes(state?.user?.id);
 
@@ -468,6 +485,24 @@ export function CozyRpgDashboard() {
               offlineQueueCount={offlineQueueCount}
               onSyncNow={handleManualSync}
             />
+
+            {/* Acceso directo real a AI Command Center, Automatizaciones y Buscador Global Ctrl+K */}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCommandCenterOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] px-3.5 py-1.5 text-xs font-black text-[#3A2E2B] shadow-[0_3px_0_#3A2E2B] hover:bg-[#E7D69C] transition-colors cursor-pointer"
+              >
+                🤖 AI Command Center &amp; Automatizaciones
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCommandPaletteOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-3 py-1.5 text-xs font-black text-[#3A2E2B] shadow-[0_3px_0_#3A2E2B] hover:bg-[#E7D69C] transition-colors cursor-pointer"
+              >
+                🔍 Buscar (Ctrl+K)
+              </button>
+            </div>
 
             {/* ===================================================================
                 VISTA 1: PUEBLO VIVO INTERACTIVO (MAPA DE EDIFICIOS & TIER VISUAL)
@@ -1023,6 +1058,79 @@ export function CozyRpgDashboard() {
         isOpen={isQuickCaptureOpen}
         onClose={() => setIsQuickCaptureOpen(false)}
         onSuccess={fetchState}
+      />
+
+      {/* AI COMMAND CENTER & AUTOMATION CORE (INTEGRADO EN NAVEGACIÓN REAL) */}
+      <CozyModal
+        isOpen={isCommandCenterOpen}
+        onClose={() => setIsCommandCenterOpen(false)}
+        title="AI Command Center & Automation Core"
+        subtitle="Especialistas deterministas, aprobaciones humanas, simulador de 10 reglas e interruptor de emergencia"
+        maxWidth="2xl"
+      >
+        <AiCommandAutomationPanel
+          automationContext={{
+            dateBucket: new Date().toISOString().slice(0, 10),
+            abandonedProjects: [],
+            pendingCreativeProjects: knittingProjects
+              .filter((p) => p.status === "in_progress")
+              .map((p) => ({ id: p.id, name: p.name })),
+            plannedMinutesToday: quests.length * 25,
+            capacityMinutesToday: 150,
+            studyMinutesToday: 0,
+            budgetSpentRatioPct: 0,
+          }}
+        />
+      </CozyModal>
+
+      {/* COMMAND PALETTE GLOBAL (CTRL+K) */}
+      <CozyCommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        actions={[
+          {
+            id: "open-atelier",
+            label: "🧶 Abrir El Atelier & Filet Crochet Studio (Clara)",
+            category: "Edificio",
+            keywords: "crochet filet clara patron tejido",
+            onSelect: () => setActiveBuildingModal("atelier"),
+          },
+          {
+            id: "open-command-center",
+            label: "🤖 Abrir AI Command Center & Automatizaciones",
+            category: "Inteligencia",
+            keywords: "ia agentes automatizaciones rowan reglas",
+            onSelect: () => setIsCommandCenterOpen(true),
+          },
+          {
+            id: "open-library",
+            label: "📚 Abrir Biblioteca (Eldrin)",
+            category: "Edificio",
+            keywords: "libros lectura eldrin",
+            onSelect: () => setActiveBuildingModal("library"),
+          },
+          {
+            id: "open-office",
+            label: "💼 Abrir Oficina (Aura)",
+            category: "Edificio",
+            keywords: "trabajo proyectos sprint aura",
+            onSelect: () => setActiveBuildingModal("office"),
+          },
+          {
+            id: "open-bank",
+            label: "🏦 Abrir Banco de OakHaven (Silas)",
+            category: "Finanzas",
+            keywords: "banco silas finanzas presupuesto",
+            onSelect: () => setActiveBuildingModal("bank"),
+          },
+          {
+            id: "open-quick-capture",
+            label: "⚡ Captura Rápida Omni",
+            category: "Acción",
+            keywords: "captura rapida nota habito",
+            onSelect: () => setIsQuickCaptureOpen(true),
+          },
+        ]}
       />
     </div>
     </SessionIdentityProvider>

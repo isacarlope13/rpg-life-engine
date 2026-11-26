@@ -1,13 +1,13 @@
 /**
  * ============================================================================
- * OAKHAVEN — AI COMMAND CENTER CORE (P2)
+ * OAKHAVEN — AI COMMAND CENTER CORE (FASE 4)
  * ============================================================================
- * Integra los especialistas existentes (`ALL_RUNTIME_SKILLS`) sin reconstruirlos:
- * - Registro de agentes y catálogo de capacidades.
- * - Enrutamiento 100 % determinista (0 llamadas innecesarias a modelos pagos).
- * - Contexto compartido controlado con aislamiento financiero estricto.
- * - Cola de tareas, aprobaciones humanas, historial de ejecuciones, errores
- *   y presupuesto de tokens / métricas de consumo.
+ * Reutiliza `ALL_RUNTIME_SKILLS` sin duplicar especialistas:
+ * - Registro central de especialistas, catálogo de capacidades y estado.
+ * - Enrutamiento determinista prioritario (0 costo de tokens por defecto).
+ * - Contexto compartido con permisos estrictos (aislamiento financiero COP).
+ * - Cola de tareas, aprobaciones humanas, cancelación, registro de decisiones,
+ *   manejo de errores y presupuesto diario de tokens.
  */
 
 import { ALL_RUNTIME_SKILLS, type RuntimeBuildingSkill } from "./building-skills-registry.ts";
@@ -28,6 +28,7 @@ export type CommandTaskStatus =
   | "pending_approval"
   | "completed"
   | "rejected"
+  | "cancelled"
   | "failed";
 
 export interface CommandExecutionTask {
@@ -40,15 +41,62 @@ export interface CommandExecutionTask {
   status: CommandTaskStatus;
   deterministic: boolean;
   estimatedTokens: number;
+  dataScopeUsed: string[];
   resultSummary?: string;
   errorMessage?: string;
+}
+
+export interface CommandDecisionRecord {
+  at: string;
+  taskId: string;
+  agentName: string;
+  decision: "approved" | "rejected" | "cancelled";
+  note?: string;
 }
 
 export interface CommandCenterState {
   tokenBudgetDaily: number;
   tokensUsedToday: number;
   tasks: CommandExecutionTask[];
+  decisionLog: CommandDecisionRecord[];
   errorLog: Array<{ at: string; taskId: string; message: string }>;
+}
+
+export interface RawSharedPersonalContext {
+  activeProjectsCount: number;
+  pendingTasksCount: number;
+  streakDays: number;
+  availableRealMoneyCop?: number;
+}
+
+export interface ControlledSharedContext {
+  residentId: string;
+  activeProjectsCount: number;
+  pendingTasksCount: number;
+  streakDays: number;
+  financialDataVisible: boolean;
+  availableRealMoneyCop?: number;
+}
+
+/**
+ * Construye contexto compartido con mínimo privilegio:
+ * ÚNICAMENTE Silas (Banco) puede recibir cifras en dinero real COP.
+ */
+export function buildControlledSharedContext(
+  residentId: string,
+  raw: RawSharedPersonalContext
+): ControlledSharedContext {
+  const isSilas = residentId === "silas";
+  return {
+    residentId,
+    activeProjectsCount: raw.activeProjectsCount,
+    pendingTasksCount: raw.pendingTasksCount,
+    streakDays: raw.streakDays,
+    financialDataVisible: isSilas && raw.availableRealMoneyCop !== undefined,
+    ...(isSilas && raw.availableRealMoneyCop !== undefined
+      ? { availableRealMoneyCop: raw.availableRealMoneyCop }
+      : {}),
+  };
 }
 
 export function getRegisteredAgentCatalog(
@@ -69,7 +117,7 @@ export function getRegisteredAgentCatalog(
 export function routePersonalCommandRequest(
   prompt: string,
   catalog: AgentCapabilityDescriptor[] = getRegisteredAgentCatalog()
-): { agent: AgentCapabilityDescriptor; reason: string; requiresApproval: boolean } {
+): { agent: AgentCapabilityDescriptor; reason: string; requiresApproval: boolean; dataScope: string[] } {
   const q = (prompt || "").toLowerCase();
   const findById = (id: string) => catalog.find((c) => c.residentId === id) || catalog[0];
 
@@ -77,30 +125,75 @@ export function routePersonalCommandRequest(
     /(modificar|borrar|eliminar|enviar|reprogramar|guardar nota|crear proyecto|actualizar)/i.test(q);
 
   if (/(crochet|filet|tejido|vuelta|hilo|patr[oó]n|alfabeto|priscilla)/i.test(q)) {
-    return { agent: findById("clara"), reason: "Consulta de tejido / Filet Crochet -> Clara (Atelier).", requiresApproval };
+    return {
+      agent: findById("clara"),
+      reason: "Consulta de tejido / Filet Crochet -> Clara (Atelier).",
+      requiresApproval,
+      dataScope: ["knitting_projects", "filet_workspace"],
+    };
   }
   if (/(presupuesto|dinero|cop|deuda|ahorro|gasto|banco|finanz)/i.test(q)) {
-    return { agent: findById("silas"), reason: "Consulta financiera aislada en COP -> Silas (Banco).", requiresApproval: true };
+    return {
+      agent: findById("silas"),
+      reason: "Consulta financiera aislada en COP -> Silas (Banco).",
+      requiresApproval: true,
+      dataScope: ["owner_finance_cop_only"],
+    };
   }
   if (/(estudi|repas|examen|flashcard|apunte)/i.test(q)) {
-    return { agent: findById("lyra"), reason: "Consulta de estudio -> Lyra (Sala de Estudio).", requiresApproval };
+    return {
+      agent: findById("lyra"),
+      reason: "Consulta de estudio -> Lyra (Sala de Estudio).",
+      requiresApproval,
+      dataScope: ["study_sessions", "spaced_cards"],
+    };
   }
   if (/(trabajo|sprint|oficina|entregable|proyecto laboral)/i.test(q)) {
-    return { agent: findById("aura"), reason: "Consulta de trabajo -> Aura (Oficina).", requiresApproval };
+    return {
+      agent: findById("aura"),
+      reason: "Consulta de trabajo -> Aura (Oficina).",
+      requiresApproval,
+      dataScope: ["work_projects"],
+    };
   }
   if (/(libro|lectura|p[aá]gina|cita)/i.test(q)) {
-    return { agent: findById("eldrin"), reason: "Consulta de lectura -> Eldrin (Biblioteca).", requiresApproval };
+    return {
+      agent: findById("eldrin"),
+      reason: "Consulta de lectura -> Eldrin (Biblioteca).",
+      requiresApproval,
+      dataScope: ["reading_books"],
+    };
   }
   if (/(gym|entrenamiento|ejercicio|fuerza)/i.test(q)) {
-    return { agent: findById("bruno"), reason: "Consulta de entrenamiento -> Bruno (Gimnasio).", requiresApproval };
+    return {
+      agent: findById("bruno"),
+      reason: "Consulta de entrenamiento -> Bruno (Gimnasio).",
+      requiresApproval,
+      dataScope: ["gym_workout_sets"],
+    };
   }
   if (/(cubo|rubik|scramble|pb|ao5)/i.test(q)) {
-    return { agent: findById("milo"), reason: "Consulta de speedcubing -> Milo (Taller).", requiresApproval };
+    return {
+      agent: findById("milo"),
+      reason: "Consulta de speedcubing -> Milo (Taller).",
+      requiresApproval,
+      dataScope: ["rubik_solves"],
+    };
   }
   if (/(pel[ií]cula|serie|cine|watchlist)/i.test(q)) {
-    return { agent: findById("nora"), reason: "Consulta de cine/descanso -> Nora (Cine).", requiresApproval };
+    return {
+      agent: findById("nora"),
+      reason: "Consulta de cine/descanso -> Nora (Cine).",
+      requiresApproval,
+      dataScope: ["cinema_entries"],
+    };
   }
-  return { agent: findById("rowan"), reason: "Coordinación general / decisión diaria -> Rowan (Ayuntamiento).", requiresApproval };
+  return {
+    agent: findById("rowan"),
+    reason: "Coordinación general / decisión diaria -> Rowan (Ayuntamiento).",
+    requiresApproval,
+    dataScope: ["quests", "energy_capacity"],
+  };
 }
 
 export function createInitialCommandCenterState(tokenBudgetDaily = 20000): CommandCenterState {
@@ -108,6 +201,7 @@ export function createInitialCommandCenterState(tokenBudgetDaily = 20000): Comma
     tokenBudgetDaily: Math.max(1000, Math.round(tokenBudgetDaily)),
     tokensUsedToday: 0,
     tasks: [],
+    decisionLog: [],
     errorLog: [],
   };
 }
@@ -133,6 +227,7 @@ export function enqueueCommandTask(
       status: "failed",
       deterministic,
       estimatedTokens,
+      dataScopeUsed: routed.dataScope,
       errorMessage: "Presupuesto diario de tokens agotado; utiliza ejecución determinista o amplía el presupuesto.",
     };
     return {
@@ -155,6 +250,7 @@ export function enqueueCommandTask(
     status: routed.requiresApproval ? "pending_approval" : "completed",
     deterministic,
     estimatedTokens,
+    dataScopeUsed: routed.dataScope,
     resultSummary: routed.requiresApproval
       ? `En espera de aprobación humana: ${routed.reason}`
       : `Ejecutado deterministamente: ${routed.reason}`,
@@ -175,18 +271,58 @@ export function resolveCommandApproval(
   taskId: string,
   decision: "approve" | "reject"
 ): CommandCenterState {
+  const target = state.tasks.find((t) => t.id === taskId && t.status === "pending_approval");
+  if (!target) return state;
+  const now = new Date().toISOString();
   return {
     ...state,
-    tasks: state.tasks.map((t) => {
-      if (t.id !== taskId || t.status !== "pending_approval") return t;
-      return {
-        ...t,
-        status: decision === "approve" ? "completed" : "rejected",
-        resultSummary:
-          decision === "approve"
-            ? `Aprobado por el propietario (${t.targetAgentName}).`
-            : `Rechazado por el propietario; no se ejecutó ninguna acción.`,
-      };
-    }),
+    decisionLog: [
+      {
+        at: now,
+        taskId,
+        agentName: target.targetAgentName,
+        decision: decision === "approve" ? "approved" : "rejected",
+      },
+      ...state.decisionLog,
+    ],
+    tasks: state.tasks.map((t) =>
+      t.id === taskId
+        ? {
+            ...t,
+            status: decision === "approve" ? "completed" : "rejected",
+            resultSummary:
+              decision === "approve"
+                ? `Aprobado por el propietario (${t.targetAgentName}).`
+                : `Rechazado por el propietario; no se ejecutó ninguna acción.`,
+          }
+        : t
+    ),
+  };
+}
+
+export function cancelCommandTask(
+  state: CommandCenterState,
+  taskId: string
+): CommandCenterState {
+  const target = state.tasks.find(
+    (t) => t.id === taskId && (t.status === "queued" || t.status === "pending_approval")
+  );
+  if (!target) return state;
+  const now = new Date().toISOString();
+  return {
+    ...state,
+    decisionLog: [
+      { at: now, taskId, agentName: target.targetAgentName, decision: "cancelled" },
+      ...state.decisionLog,
+    ],
+    tasks: state.tasks.map((t) =>
+      t.id === taskId
+        ? {
+            ...t,
+            status: "cancelled",
+            resultSummary: "Ejecución cancelada manualmente por el propietario.",
+          }
+        : t
+    ),
   };
 }
