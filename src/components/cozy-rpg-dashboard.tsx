@@ -103,7 +103,9 @@ export type NavItem =
 
 interface EngineStateData {
   wallet_gp: number;
-  vault_gp: number;
+  vault_gp?: number;
+  vault_cap_gp?: number;
+  vault_remaining_gp?: number;
   player_level: number;
   current_xp: number;
   current_streak_days: number;
@@ -381,7 +383,7 @@ export function CozyRpgDashboard() {
   const WeatherIcon = activeWeather.icon;
 
   const walletGp = state?.wallet_gp || 0;
-  const vaultGp = state?.vault_gp || 0;
+  const vaultGp = state?.vault_remaining_gp ?? state?.vault_gp ?? 0;
   const playerLevel = state?.player_level || 1;
   const currentXp = state?.current_xp || 0;
   const streakDays = state?.current_streak_days || 0;
@@ -794,7 +796,7 @@ export function CozyRpgDashboard() {
                   skillLevel={state?.skill_summaries?.find((s) => s.domain === "work")?.level || 1}
                   totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "work")?.total_gp_earned || 0}
                   walletGp={state?.wallet_gp || 0}
-                  vaultGp={state?.vault_gp || 0}
+                  vaultGp={state?.vault_remaining_gp ?? state?.vault_gp ?? 0}
                   vaultCapGp={400000}
                   aegisShields={state?.aegis_shields || 1}
                   onRefreshState={fetchState}
