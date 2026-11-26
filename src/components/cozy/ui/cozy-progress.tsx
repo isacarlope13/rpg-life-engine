@@ -6,6 +6,7 @@ export interface CozyProgressProps {
   value: number;
   max?: number;
   label?: string;
+  valueLabel?: string;
   showPercentage?: boolean;
   variant?: "sage" | "forest" | "sunlight" | "clay";
   size?: "sm" | "md" | "lg";
@@ -29,20 +30,25 @@ export function CozyProgress({
   value,
   max = 100,
   label,
+  valueLabel,
   showPercentage = true,
   variant = "sage",
   size = "md",
   className = "",
 }: CozyProgressProps) {
-  const clampedValue = Math.min(Math.max(0, value), max);
-  const percentage = Math.round((clampedValue / max) * 100);
+  const safeMax = Number.isFinite(max) && max > 0 ? max : 100;
+  const safeVal = Number.isFinite(value) ? value : 0;
+  const clampedValue = Math.min(Math.max(0, safeVal), safeMax);
+  const percentage = Math.round((clampedValue / safeMax) * 100);
 
   return (
     <div className={`w-full space-y-1.5 ${className}`}>
-      {(label || showPercentage) && (
-        <div className="flex items-center justify-between text-xs font-black text-[#3A2E2B]">
-          {label && <span>{label}</span>}
-          {showPercentage && <span className="font-mono text-[11px]">{percentage}%</span>}
+      {(label || valueLabel || showPercentage) && (
+        <div className="flex items-center justify-between gap-2 text-xs font-black text-[#3A2E2B]">
+          {label && <span className="truncate">{label}</span>}
+          <span className="font-mono text-[11px] shrink-0">
+            {valueLabel ? `${valueLabel}${showPercentage ? ` (${percentage}%)` : ""}` : showPercentage ? `${percentage}%` : ""}
+          </span>
         </div>
       )}
 
@@ -50,11 +56,14 @@ export function CozyProgress({
         role="progressbar"
         aria-valuenow={clampedValue}
         aria-valuemin={0}
-        aria-valuemax={max}
+        aria-valuemax={safeMax}
+        aria-label={label || "Progreso"}
         className={`w-full rounded-full border-2 border-[#3A2E2B] bg-[#E8DFCF] p-0.5 overflow-hidden shadow-inner ${HEIGHT_CLASSES[size]}`}
       >
         <div
-          className={`h-full rounded-full transition-all duration-300 ${FILL_COLORS[variant]}`}
+          className={`relative h-full rounded-full overflow-hidden transition-[width] duration-500 ease-out ${
+            percentage > 0 ? "cozy-progress-sheen" : ""
+          } ${FILL_COLORS[variant]}`}
           style={{ width: `${percentage}%` }}
         />
       </div>
