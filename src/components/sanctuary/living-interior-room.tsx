@@ -67,6 +67,8 @@ export interface LivingInteriorRoomProps {
     floorPattern?: "wood" | "stone" | "tile" | "carpet";
     ambientWarmth?: "sunny" | "fireplace" | "candlelight" | "night";
   };
+  /** Do not expose unverified specialist/legacy tools in a private ledger. */
+  hideSpecialistAndLibrary?: boolean;
   children: React.ReactNode;
 }
 
@@ -91,6 +93,7 @@ export function LivingInteriorRoom({
     floorPattern: "wood",
     ambientWarmth: "fireplace",
   },
+  hideSpecialistAndLibrary = false,
   children,
 }: LivingInteriorRoomProps) {
   // Manejo de atajos de teclado (1-5 para seleccionar estaciones, Escape para volver al pueblo)
@@ -402,10 +405,10 @@ export function LivingInteriorRoom({
               </p>
             </div>
           )}
-          <div className="flex flex-col gap-2">
+          {!hideSpecialistAndLibrary && <div className="flex flex-col gap-2">
             <BuildingSpecialistPanel buildingId={buildingId} avatar={resident?.avatar || icon} />
             <BuildingLibraryPanel buildingId={buildingId} />
-          </div>
+          </div>}
         </div>
       </div>
 

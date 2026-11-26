@@ -1,0 +1,63 @@
+# OakHaven owner-only financial ledger (DRAFT)
+
+## Deployment hold
+**Do not merge, deploy or run SQL without explicit owner approval.** This change is isolated from the current production dashboard. No personal transactions, account numbers, balances, creditors, source XLSX/CSV, credentials or individual schedules are committed in this branch.
+
+## What is implemented
+- Supabase SQL schema: `supabase/owner_finance_ledger.sql` with four owner-scoped RLS tables. No seed statements.
+- `/finance`: manually reconcile account balances and debts, maintain expected income/payment events and upload local CSV.
+- `POST /api/finance/import`: owner authentication, same-origin write token, 150-record cap, strict shape validation, preview without writes, SHA-256 fingerprint deduplication, conflict-safe insert.
+- `GET/POST /api/finance/ledger`: owner-only reads and upsert by account label / creditor / event label+date; responses cannot be cached.
+- Old bank UX links to /finance and explicitly warns that its legacy case-study data is not reconciled.
+
+## Before merge (required)
+1. **Security:** review RLS in an isolated Supabase environment. Confirm unauthorized/anonymous users cannot read or write; verify production `OAKHAVEN_OWNER_USER_ID` still matches the intended owner.
+2. **Data hygiene:** existing older code contains a hardcoded example dataset; this PR **does not remove it yet**, to avoid breaking historical tests/old UI. Before enabling the new ledger in production, decide on secure legacy-data retirement and cross-module synchronization. Do not treat legacy bank balances as reconciled.
+3. **Migration:** apply the SQL using Supabase SQL Editor only after review, *before* deploying code. Back up schema. Never upload personal movements to GitHub.
+4. **Test:** `npm test`, `npx tsc --noEmit`, `npm run build`, isolated database tests for RLS, CSV preview/commit, duplicate import twice, CSRF, session expiry, and per-owner isolation. Connector edits did not execute this suite.
+5. **User acceptance:** provide the private CSV file through the chat (not GitHub); review its 130 records locally, confirm 'opening balance' rows are not income, check 14 later records, inspect duplicates, and *then* explicitly authorize the browser import.
+6. **Financial accuracy:** current balance must be reconciled per account. Future investments, savings payouts and salary events stay 'expected' until paid; do not credit them to cash today. Loan principal and currently-due installments must not be added twice; settled debts require zero amount due.
+7. **Reliability:** verify the deployment process contains no automatic PR preview against real production Supabase before authorizing rollout.
+
+## CSV columns
+`Fecha,Tipo,Categoría,Monto,Descripción,Método de Pago`, UTF-8 with header, up to 150 rows. Types: `Ingreso`, `Gasto`, `Saldo inicial`, `Transferencia`. Existing old records are **not** migrated by this code; the ledger starts empty. Fingerprint matches transaction time, type, category, amount, description, payment method (not raw CSV ID). Inspect collision warnings before saving.
+
+## Open limitations / Release blockers
+- No automatic synchronization with legacy `player_treasury`, Debt Bosses or GP/XP. This is deliberate to avoid double-counting and unintended rewards.
+- The old dashboard still contains hardcoded sample records and localStorage balances. These need a separate audited retirement plan.
+- CSV import currently does not support spreadsheets directly; convert to the private CSV file; it is **never stored in this repository**.
+- Persistence requires the SQL migration. Until then, API returns 503 (fail closed).
+- Changes have not been executed against user's financial data or deployed.
+
+## Audit follow-up
+- CI first run: TypeScript passed; six auth tests inherited private-mode environment; one legacy test required a workstation-only .env.local. Test fixtures are isolated and the versioned environment template is checked instead.
+- The preview is HMAC-bound to the authenticated owner, canonical rows and a ten-minute expiry; explicit confirmation is required server-side. The signing secret is never returned, and is not used to bypass RLS.
+- Actual streamed payload byte limits, strict amounts/dates and known types, no silent rounding; preview identifies exact-match omissions. Equal-looking legitimate transactions require manual reconciliation; edited descriptions/categories can still produce different fingerprints.
+- Tables use normalized case-insensitive label keys, prevent old account snapshots replacing newer ones, and enforce settled-debt consistency. Direct transaction update/delete is not granted to authenticated roles. Account snapshots are independent from transaction history; marking an event received does not credit or debit a balance.
+- Database migration tests use PGlite in memory, synthetic owners and 130 fake entries, not the production database. Run the complete CI and verify live Supabase RLS in a separate test project before release.
+- This migration is still a never-applied draft; if any older draft version was applied elsewhere, inspect schema differences instead of assuming CREATE TABLE IF NOT EXISTS changes existing columns.
+- Legacy bank fixtures/hardcoded personal history remain a release blocker. Do not deploy until retired from real UI and identity-scoped data paths. No real financial records are part of these changes.
+
+## Subsequent integration and migration fix
+- CI run 2: 357/358 passed; the remaining in-memory migration failed with SQLSTATE 42601. Removed the accidentally duplicated SQL fragment and restored the fingerprint check.
+- The village Bank, classic finance tab and standalone finance page now share PrivateFinancePanel. No legacy on-screen financial case study is used in these entry points; state payloads no longer inject the historical movement fixture. Existing databases are untouched. Legacy GP/debt-boss operations are not integrated with the private ledger; the old financial tab actions were withheld pending reconciliation. A conservative reserve simulator excludes forecasts and warns about overlapping obligations.
+- The old historical dataset still exists in git history and demo/test modules, and other legacy routes may still expose old financial assumptions. Before release, review all remaining consumers, retire private historical fixtures safely, and verify real Supabase in a separate test project. Do not deploy from this PR without explicit authorization.
+
+## Cashflow and village acceptance
+- CI #3 verified 358/359 tests, including the PGlite migration, RLS and duplicate import. Restored LivingInteriorRoom for the bank to satisfy the remaining village acceptance invariant, suppressing legacy specialist/library tools only there.
+- Shared panel now includes a date-scoped forecast, essential reserve, conservative and expected-income scenarios, peak shortfall, overdue/undated obligations, and outflows-before-inflows on identical dates. Future expenses are excluded unless explicitly confirmed as additional to debt installments and reserve. This is not automated reconciliation or a GP spending permission system.
+- No actual GP redemption authorization is implemented yet. Existing game economy outside the ledger must be audited before mapping any GP to actual cash. Do not claim automatic account updates from imported history or event status. No deployment or migration was performed.
+
+## Guardian safety boundary (next draft)
+- CI #4 verified 362/362 tests and successful Next.js build (38/38 pages) for commit 6702760. This is a prior green baseline, not approval of the following changes.
+- Added a fail-closed HTTP 409 hold for legacy monetary handlers (quick expense, receipt scan, omni expense, boss counterattack, wishlist redemption, debt settlement, limit break, legacy backup import, and purchase tracking that charges the old treasury). The normal habit branch and nonfinancial skill actions remain available. Local nonprivate development retains simulation behavior. The hold is not an authorization mechanism for spending, not a bank payment interface, and does not revoke direct legacy SQL access; direct DB/RPC paths and backup/recovery UX still require review before release. Existing GP and XP are not reset by this change.
+- The shared Bank shows the hold explicitly. No automatic financial reward eligibility is claimed. Safe activation requires an atomic owner-scoped real-cash reservation/redemption design, actual Supabase test project validation, full legacy consumer audit, and separate deployment approval. No personal data added and no migration applied.
+
+## Persistent reserves and mobile registration
+- Added one owner-scoped reserve record with essentials, emergency buffer and horizon. RLS and nonnegative database constraints apply. The shared panel restores saved configuration; simulations do not change it without explicit save. No allowance or redemption is authorized by this amount.
+- Mobile-friendly manual browser entry stages a single actual income/expense for the same authenticated preview and confirmation used by CSV. Preview signature binds source, owner and rows. Identical canonical fingerprints deduplicate across sources, but different timestamps or descriptions still require reconciliation. Future entries belong in the calendar. Manual entries do not update account snapshots automatically, execute bank payments, update debts or award GP. Native Apple Shortcuts integration remains pending.
+- Synthetic PGlite coverage includes reserve upsert, foreign-owner rejection, negative value rejection and cross-source duplicate conflict. SQL migration remains unapplied, production unchanged. Validate all new code in CI and then a separate Supabase test project.
+
+## Atomic account posting (draft)
+- Fixed mismatched preview/commit signing keys; both use the same source, account and revision scope. Manual entries can optionally update a chosen internally reconciled account only after explicit confirmation that the real movement is not already reflected. Historic CSV remains history-only. A database RPC locks the account, checks ownership and revision, prevents negative balances, and inserts the movement and adjusts the snapshot in one transaction. A duplicate or retry never applies the balance delta again. No real bank operations, GP, or debt updates are performed. Manual date and time must be actual and not precede the reconciliation date. The user is still responsible for the completeness of the reconciled account; date-only snapshots cannot prove all movements were captured.
+- Tests cover synthetic positive and negative balance cases, duplicate replay, stale preview, foreign account and rollback. The new RPC is SECURITY INVOKER and relies on RLS; it is not an authorization boundary for arbitrary authenticated direct database changes. Direct access policies, live Supabase integration, legacy fixture retirement, and reward authorization remain release blockers. Never apply the draft migration to production without explicit approval.

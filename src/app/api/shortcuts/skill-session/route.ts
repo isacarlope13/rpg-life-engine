@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { legacyFinanceHeld, legacyFinanceHoldResponse, isLegacyFinancialSkillAction } from "@/lib/finance/guardian";
 import {
   AgileMethodology,
   BookComplexity,
@@ -194,6 +195,7 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    if (legacyFinanceHeld(authCtx.mode) && isLegacyFinancialSkillAction(body)) return legacyFinanceHoldResponse();
 
     if (body.action === "new_scramble") {
       return NextResponse.json({

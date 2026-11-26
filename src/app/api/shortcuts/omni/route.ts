@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { legacyFinanceHeld, legacyFinanceHoldResponse } from "@/lib/finance/guardian";
 import { parseExpenseWithGemini } from "@/lib/gemini";
 import { requireShortcutUser } from "@/lib/request-auth";
 import type { ExpenseCategory, SkillDomain } from "@/types/rpg";
@@ -155,6 +156,8 @@ export async function POST(req: Request) {
         { status: 201 }
       );
     }
+
+    if (legacyFinanceHeld(authCtx.mode)) return legacyFinanceHoldResponse();
 
     // FLUJO 2: Es un gasto, pago fijo o abono a deuda (SMS, Apple Pay, Voz o Botón)
     const aiParsed = await parseExpenseWithGemini(rawText);
