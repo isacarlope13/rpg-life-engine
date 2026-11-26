@@ -34,6 +34,7 @@ import {
   extractBookSpecsDeterministic,
   extractCubeSpecsDeterministic,
 } from "./gemini.ts";
+import { resolveCanonicalTreasury } from "@/lib/canonical-treasury";
 import {
   applyPersistedCollectionsToStore,
   type PersistedCollectionsPayload,
@@ -288,29 +289,24 @@ export async function buildSupabaseEngineState(params: {
       // Si user_skills aún no existe, conserva userStore.userSkills
     }
 
-    engineMirror.billing_period = String(treasury.billing_period);
-    engineMirror.monthly_income_cop = Number(treasury.monthly_income_cop);
-    engineMirror.fixed_costs_budget_cop = Number(
-      treasury.fixed_costs_budget_cop
-    );
-    engineMirror.fixed_costs_spent_cop = Number(treasury.fixed_costs_spent_cop);
-    engineMirror.variable_ops_budget_cop = Number(
-      treasury.variable_ops_budget_cop
-    );
-    engineMirror.variable_ops_spent_cop = Number(
-      treasury.variable_ops_spent_cop
-    );
-    engineMirror.vault_cap_gp = Number(treasury.vault_cap_gp);
-    engineMirror.vault_remaining_gp = Number(treasury.vault_remaining_gp);
-    engineMirror.wallet_gp = Number(treasury.wallet_gp);
-    engineMirror.total_penalty_gp = Number(treasury.total_penalty_gp);
-    engineMirror.debt_strategy = (treasury.debt_strategy ||
-      "snowball") as DebtStrategy;
-    engineMirror.player_level = Number(treasury.player_level);
-    engineMirror.current_xp = Number(treasury.current_xp);
-    engineMirror.current_streak_days = Number(treasury.current_streak_days);
-    engineMirror.streak_multiplier = Number(treasury.streak_multiplier);
-    engineMirror.aegis_shields = Number(treasury.aegis_shields);
+    // Fuente canónica única: player_treasury siempre prevalece sobre cualquier snapshot de profiles.collections_state
+    const canonical = resolveCanonicalTreasury(treasury);
+    engineMirror.billing_period = canonical.billing_period;
+    engineMirror.monthly_income_cop = canonical.monthly_income_cop;
+    engineMirror.fixed_costs_budget_cop = canonical.fixed_costs_budget_cop;
+    engineMirror.fixed_costs_spent_cop = canonical.fixed_costs_spent_cop;
+    engineMirror.variable_ops_budget_cop = canonical.variable_ops_budget_cop;
+    engineMirror.variable_ops_spent_cop = canonical.variable_ops_spent_cop;
+    engineMirror.vault_cap_gp = canonical.vault_cap_gp;
+    engineMirror.vault_remaining_gp = canonical.vault_remaining_gp;
+    engineMirror.wallet_gp = canonical.wallet_gp;
+    engineMirror.total_penalty_gp = canonical.total_penalty_gp;
+    engineMirror.debt_strategy = canonical.debt_strategy as DebtStrategy;
+    engineMirror.player_level = canonical.player_level;
+    engineMirror.current_xp = canonical.current_xp;
+    engineMirror.current_streak_days = canonical.current_streak_days;
+    engineMirror.streak_multiplier = canonical.streak_multiplier;
+    engineMirror.aegis_shields = canonical.aegis_shields;
 
     if (Array.isArray(bossesRes.data)) {
       engineMirror.bosses = bossesRes.data.map(
