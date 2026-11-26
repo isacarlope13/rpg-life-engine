@@ -107,6 +107,14 @@ export function buildSafeTreasuryPatch(params: {
   const safeVaultCap = Math.max(0, Math.round(params.vaultCap));
 
   if (params.existingTreasury) {
+    const existingCap = Math.max(0, Math.round(Number(params.existingTreasury.vault_cap_gp) || 0));
+    const existingRemaining = Math.max(
+      0,
+      Math.round(Number(params.existingTreasury.vault_remaining_gp) || 0)
+    );
+    // Nunca sobreescribir vault_cap_gp a 0 cuando ya existe capacidad o saldo en bóveda
+    const effectiveVaultCap =
+      safeVaultCap > 0 ? safeVaultCap : Math.max(existingCap, existingRemaining);
     return {
       mode: "edit",
       patch: {
@@ -115,7 +123,7 @@ export function buildSafeTreasuryPatch(params: {
         monthly_income_cop: params.monthlyIncome,
         fixed_costs_budget_cop: params.totalFixed,
         variable_ops_budget_cop: params.variableOps,
-        vault_cap_gp: safeVaultCap,
+        vault_cap_gp: effectiveVaultCap,
         debt_strategy: params.debtStrategy,
       },
     };
