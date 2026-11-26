@@ -124,36 +124,39 @@ function MiniMatrixPreview({
   size?: number;
   label: string;
 }) {
-  const height = matrix.length || 1;
-  const width = matrix[0]?.length || 1;
-  const cell = Math.max(2, Math.floor(size / Math.max(width, height)));
-  const svgW = width * cell;
-  const svgH = height * cell;
+  const height = Math.max(1, matrix.length || 1);
+  const width = Math.max(1, matrix[0]?.length || 1);
 
   return (
-    <svg
-      width={svgW}
-      height={svgH}
-      viewBox={`0 0 ${svgW} ${svgH}`}
-      role="img"
-      aria-label={label}
-      className="rounded border border-[#3A2E2B]/40 bg-[#FFFDF8] shrink-0"
+    <div
+      style={{ width: size, height: size }}
+      className="shrink-0 overflow-hidden rounded border border-[#3A2E2B]/40 bg-[#FFFDF8] flex items-center justify-center"
     >
-      {matrix.map((row, r) =>
-        row.map((val, c) =>
-          val === 1 ? (
-            <rect
-              key={`${r}-${c}`}
-              x={c * cell}
-              y={r * cell}
-              width={cell}
-              height={cell}
-              fill="#3A2E2B"
-            />
-          ) : null
-        )
-      )}
-    </svg>
+      <svg
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label={label}
+        className="block max-w-full max-h-full"
+      >
+        {matrix.map((row, r) =>
+          row.map((val, c) =>
+            val === 1 ? (
+              <rect
+                key={`${r}-${c}`}
+                x={c}
+                y={r}
+                width={1}
+                height={1}
+                fill="#3A2E2B"
+              />
+            ) : null
+          )
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -171,6 +174,10 @@ export function FiletCrochetStudio({
   const [studioMode, setStudioMode] = useState<
     "alphabet" | "composer" | "backups" | "digitizer" | "guided" | "export"
   >(initialStudioMode);
+  const [incomingPattern, setIncomingPattern] = useState<{
+    title: string;
+    matrix: BinaryMatrix;
+  } | null>(null);
 
   useEffect(() => {
     setStudioMode(initialStudioMode);
@@ -656,10 +663,10 @@ export function FiletCrochetStudio({
             </span>
             <h3 className="text-base sm:text-lg font-black text-[#3A2E2B] flex items-center gap-2">
               <Grid3X3 className="h-5 w-5 text-[#314C3C]" />
-              Filet Crochet Studio — Editor de Matrices y Alfabetos
+              Filet Crochet Studio — Patrones, Alfabetos y Digitalizador
             </h3>
             <p className="text-xs text-[#795548]">
-              Crea letras manuales en cuadrícula binaria (0 = calada, 1 = llena), transforma copias sin alterar la matriz original y guarda de forma privada.
+              Crea o digitaliza patrones desde fotos y revistas antiguas, obtén instrucciones vuelta por vuelta y teje a tu ritmo con Clara.
             </p>
           </div>
 
@@ -912,6 +919,8 @@ export function FiletCrochetStudio({
           activeProject={activeProject}
           onPersistWorkspace={persistWorkspace}
           onJumpToAlphabetEditor={() => setStudioMode("alphabet")}
+          incomingPattern={incomingPattern}
+          onConsumeIncomingPattern={() => setIncomingPattern(null)}
           onCreateProjectFromPattern={
             onCreateProjectFromPattern
               ? async (params) => {
@@ -946,6 +955,10 @@ export function FiletCrochetStudio({
           workspace={workspace}
           onPersistWorkspace={persistWorkspace}
           onJumpToComposer={() => setStudioMode("composer")}
+          onSendPatternToComposer={({ title, matrix }) => {
+            setIncomingPattern({ title, matrix: cloneBinaryMatrix(matrix) });
+            setStudioMode("composer");
+          }}
         />
       )}
 
@@ -989,7 +1002,7 @@ export function FiletCrochetStudio({
                 return (
                   <div
                     key={g.id}
-                    className={`rounded-2xl border-2 p-2 flex items-center justify-between gap-2 transition-colors ${
+                    className={`rounded-2xl border-2 p-2 flex items-center justify-between gap-2 overflow-hidden min-w-0 transition-colors ${
                       selected
                         ? "border-[#3A2E2B] bg-[#F4EEDC] ring-2 ring-[#314C3C]"
                         : "border-[#3A2E2B]/30 bg-[#FFFDF8] hover:bg-[#F4EEDC]/50"

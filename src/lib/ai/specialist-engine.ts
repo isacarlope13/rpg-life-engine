@@ -28,6 +28,7 @@ import {
   buildResourceContextFromMemory,
   estimateCrochetMaterials,
   explainCrochetInstruction,
+  explainHistoricalFiletPattern,
   generateStudyQuizFromDocument,
   getActiveCrochetProjects,
   getActiveStudySubjects,
@@ -432,11 +433,16 @@ export async function askBuildingSpecialist(params: {
         `🧶 **[Tus registros]** En "${activeProj.name}" llevas **${done}/${target} vueltas** (${Math.round((done / Math.max(1, target)) * 100)}%). Tu siguiente vuelta es la **#${done + 1}**.`
       );
     }
-    if (/(explica|abreviatura|punto|\bpb\b|\bpa\b|\bcad\b|\baum\b|\bdism\b|\bam\b|sc|dc)/i.test(cleanQuestion)) {
+    if (/(explica|abreviatura|punto|\bpb\b|\bpa\b|\bcad\b|\baum\b|\bdism\b|\bam\b|sc|dc|sp|bl|lacet|picot|mesh)/i.test(cleanQuestion)) {
       const exp = explainCrochetInstruction(cleanQuestion);
       extraTools.push("explainCrochetInstruction");
       extraLines.push(`📖 **[Conocimiento general de crochet]**\n${exp.stepExplanation}`);
       if (exp.estimatedStitchesHint) extraLines.push(`💡 ${exp.estimatedStitchesHint}`);
+    }
+    const historicalFiletGuide = explainHistoricalFiletPattern(cleanQuestion);
+    if (historicalFiletGuide) {
+      extraTools.push("explainHistoricalFiletPattern");
+      extraLines.push(historicalFiletGuide);
     }
     if (/(hilo|lana|ovillo|material|cu[aá]nto)/i.test(cleanQuestion)) {
       extraLines.push(
