@@ -273,3 +273,157 @@ export function buildRowanDecisionRecommendation(
     accessedFinancialData: false,
   };
 }
+
+// ============================================================================
+// TARJETA DE DECISIÓN DIARIA DETERMINISTA DE ROWAN (ENERGÍA, CARGA Y DESCANSO)
+// ============================================================================
+
+export type RowanEnergyLevel = "low" | "medium" | "high";
+
+export interface RowanDailyPriorityItem {
+  id: string;
+  title: string;
+  domain: string;
+  buildingId: string;
+  estimatedMinutes: number;
+  urgency: "high" | "normal" | "gentle";
+  reason: string;
+}
+
+export interface RowanDailyDecisionInput {
+  energyLevel: RowanEnergyLevel;
+  quests: Array<{ code: string; title: string; domain?: string; estimated_minutes?: number }>;
+  knittingProjects: Array<{ id: string; name: string; status?: string; completed_rows?: number; total_rows_target?: number }>;
+  readingBooks: Array<{ id: string; title: string; status?: string; current_page?: number; total_pages?: number }>;
+  recentSessionsCount?: number;
+  streakDays?: number;
+}
+
+export interface RowanDailyDecisionBrief {
+  energyLevel: RowanEnergyLevel;
+  capacityMinutes: number;
+  plannedMinutes: number;
+  loadRatioPct: number;
+  isOverplanned: boolean;
+  focusBlockMinutes: number;
+  restBreakMinutes: number;
+  priorities: RowanDailyPriorityItem[];
+  restRecommendation: string;
+  rescheduleProposal: string | null;
+  summaryReason: string;
+  usedGemini: false;
+  accessedFinancialData: false;
+}
+
+const DOMAIN_TO_BUILDING: Record<string, string> = {
+  knitting: "atelier",
+  crochet: "atelier",
+  reading: "library",
+  study: "study_hall",
+  work: "office",
+  rubik: "workshop",
+  gym: "gym",
+  general: "town_hall",
+};
+
+/**
+ * Genera una Tarjeta de Decisión Diaria 100% determinista y explicable.
+ * - Ajusta bloques de concentración y capacidad según energía disponible (low / medium / high).
+ * - Detecta sobreplanificación y propone reprogramación sin mutar agendas externas.
+ * - Cero llamadas a modelos pagos (`usedGemini: false`) y cero mezcla con COP.
+ */
+export function buildRowanDailyDecisionBrief(
+  input: RowanDailyDecisionInput
+): RowanDailyDecisionBrief {
+  const energy = input.energyLevel;
+  const capacityMinutes = energy === "low" ? 60 : energy === "medium" ? 150 : 240;
+  const focusBlockMinutes = energy === "low" ? 15 : energy === "medium" ? 25 : 45;
+  const restBreakMinutes = energy === "low" ? 10 : energy === "medium" ? 5 : 10;
+
+  const candidates: RowanDailyPriorityItem[] = [];
+
+  // 1. Misiones activas (máx. 3 candidatas reales)
+  for (const q of input.quests.slice(0, 4)) {
+    const dom = (q.domain || "general").toLowerCase();
+    const est = Math.max(10, Math.min(60, Number(q.estimated_minutes) || focusBlockMinutes));
+    candidates.push({
+      id: `quest:${q.code}`,
+      title: q.title,
+      domain: dom,
+      buildingId: DOMAIN_TO_BUILDING[dom] || "town_hall",
+      estimatedMinutes: est,
+      urgency: "high",
+      reason: "Compromiso activo en tu tablero de hoy.",
+    });
+  }
+
+  // 2. Proyecto activo de tejido / Atelier (si existe en curso)
+  const activeKnit = input.knittingProjects.find((p) => p.status === "in_progress");
+  if (activeKnit) {
+    const done = Number(activeKnit.completed_rows || 0);
+    const total = Number(activeKnit.total_rows_target || 50);
+    candidates.push({
+      id: `knit:${activeKnit.id}`,
+      title: `Avanzar "${activeKnit.name}"`,
+      domain: "knitting",
+      buildingId: "atelier",
+      estimatedMinutes: energy === "low" ? 15 : 25,
+      urgency: energy === "low" ? "gentle" : "normal",
+      reason: `Proyecto en curso (${done}/${total} vueltas); excelente bloque creativo sin presión.`,
+    });
+  }
+
+  // 3. Libro en lectura (si existe)
+  const activeBook = input.readingBooks.find(
+    (b) => b.status === "reading" || b.status === "in_progress"
+  );
+  if (activeBook) {
+    candidates.push({
+      id: `book:${activeBook.id}`,
+      title: `Leer "${activeBook.title}"`,
+      domain: "reading",
+      buildingId: "library",
+      estimatedMinutes: 15,
+      urgency: "gentle",
+      reason: "Lectura ligera ideal para cerrar el día o recuperar foco.",
+    });
+  }
+
+  const totalPlanned = candidates.reduce((acc, item) => acc + item.estimatedMinutes, 0);
+  const maxVisible = energy === "low" ? 2 : 3;
+  const priorities = candidates.slice(0, maxVisible);
+  const loadRatioPct = Math.min(200, Math.round((totalPlanned / Math.max(1, capacityMinutes)) * 100));
+  const isOverplanned = totalPlanned > capacityMinutes;
+
+  const rescheduleProposal = isOverplanned
+    ? `Detecté ${totalPlanned} min de compromisos frente a tu capacidad estimada de ${capacityMinutes} min (${loadRatioPct}%). Te sugiero conservar solo las primeras ${maxVisible} prioridades hoy y mover ${Math.max(1, candidates.length - maxVisible)} pendiente(s) a mañana.`
+    : null;
+
+  const restRecommendation =
+    energy === "low"
+      ? `Energía baja: prioriza bloques suaves de ${focusBlockMinutes} min con pausas reales de ${restBreakMinutes} min sin pantallas.`
+      : energy === "medium"
+      ? `Energía estable: alterna bloques de ${focusBlockMinutes} min de foco con ${restBreakMinutes} min de descanso activo.`
+      : `Energía alta: aprovecha bloques profundos de ${focusBlockMinutes} min al inicio y protege pausas de ${restBreakMinutes} min para no agotarte.`;
+
+  const summaryReason =
+    priorities.length === 0
+      ? "No hay pendientes sobrecargados hoy; elige un bloque breve de descanso o creatividad en el edificio que prefieras."
+      : `Priorización determinista basada en tus ${candidates.length} compromiso(s) reales y tu nivel de energía actual (${energy}).`;
+
+  return {
+    energyLevel: energy,
+    capacityMinutes,
+    plannedMinutes: totalPlanned,
+    loadRatioPct,
+    isOverplanned,
+    focusBlockMinutes,
+    restBreakMinutes,
+    priorities,
+    restRecommendation,
+    rescheduleProposal,
+    summaryReason,
+    usedGemini: false,
+    accessedFinancialData: false,
+  };
+}

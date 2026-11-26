@@ -41,6 +41,7 @@ import {
   CozyProgress,
   CozyEmptyState,
 } from "@/components/cozy/ui";
+import { RowanDailyDecisionCard } from "@/components/cozy/rowan-daily-decision-card";
 import { triggerHaptic } from "@/lib/offline-sync";
 import { safeLocalStorage } from "@/lib/storage-safe";
 
@@ -390,6 +391,18 @@ export function BentoDailyDashboard({
           </div>
         </section>
       )}
+
+      {/* =========================================================================
+          TARJETA DE DECISIÓN DIARIA DETERMINISTA DE ROWAN
+         ========================================================================= */}
+      <RowanDailyDecisionCard
+        quests={quests}
+        knittingProjects={knittingProjects}
+        readingBooks={readingBooks}
+        streakDays={streakDays}
+        recentSessionsCount={recentSessions.length}
+        onOpenBuilding={onOpenBuilding}
+      />
 
       {/* =========================================================================
           GRID BENTO MODULAR ADAPTATIVO
