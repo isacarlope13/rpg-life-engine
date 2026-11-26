@@ -81,6 +81,7 @@ import { CompanionsModal } from "@/components/cozy/companions-modal";
 import { CozySoundscapeModal } from "@/components/cozy/cozy-soundscape-modal";
 import { VillageQuestsModal } from "@/components/cozy/village-quests-modal";
 import { CozyQuickCaptureModal } from "@/components/cozy/cozy-quick-capture-modal";
+import { DeviceHubModal } from "@/components/cozy/device-hub-modal";
 import {
   queueOfflineAction,
   processOfflineQueue,
@@ -155,6 +156,7 @@ export function CozyRpgDashboard() {
   const [isSoundscapeOpen, setIsSoundscapeOpen] = useState(false);
   const [isVillageQuestsOpen, setIsVillageQuestsOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [isDeviceHubOpen, setIsDeviceHubOpen] = useState(false);
   const [isCompanionsOpen, setIsCompanionsOpen] = useState(false);
   const { notesList, quickNote, setQuickNote, addNote, removeNote, notesError } = useOwnedNotes(state?.user?.id);
 
@@ -468,6 +470,17 @@ export function CozyRpgDashboard() {
               offlineQueueCount={offlineQueueCount}
               onSyncNow={handleManualSync}
             />
+
+            {/* Acceso directo real a OakHaven Ink, Wrist / Atajos de iOS y Portabilidad */}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsDeviceHubOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#3A2E2B] bg-[#FFFDF8] px-3.5 py-1.5 text-xs font-black text-[#3A2E2B] shadow-[0_3px_0_#3A2E2B] hover:bg-[#E7D69C] transition-colors cursor-pointer"
+              >
+                ✍️ Ink (S Pen) · ⌚ Wrist &amp; Atajos · 📦 Portabilidad
+              </button>
+            </div>
 
             {/* ===================================================================
                 VISTA 1: PUEBLO VIVO INTERACTIVO (MAPA DE EDIFICIOS & TIER VISUAL)
@@ -1023,6 +1036,22 @@ export function CozyRpgDashboard() {
         isOpen={isQuickCaptureOpen}
         onClose={() => setIsQuickCaptureOpen(false)}
         onSuccess={fetchState}
+      />
+
+      {/* CENTRO DE DISPOSITIVOS: OAKHAVEN INK, WRIST/ATAJOS Y PORTABILIDAD */}
+      <DeviceHubModal
+        isOpen={isDeviceHubOpen}
+        onClose={() => setIsDeviceHubOpen(false)}
+        walletGp={walletGp}
+        vaultRemainingGp={vaultGp}
+        vaultCapGp={state?.vault_cap_gp ?? 0}
+        currentXp={currentXp}
+        playerLevel={playerLevel}
+        streakDays={streakDays}
+        knittingProjects={knittingProjects}
+        readingBooks={readingBooks}
+        quests={quests}
+        notesList={notesList}
       />
     </div>
     </SessionIdentityProvider>
