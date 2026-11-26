@@ -1,13 +1,92 @@
 /**
  * ============================================================================
- * OAKHAVEN WRIST & iOS SHORTCUTS — CONTRATO DE CAPTURA RÁPIDA OFFLINE-FIRST
+ * OAKHAVEN WRIST & iOS SHORTCUTS — CONTRATO DE CAPTURA RÁPIDA Y TOKENS SCOPED
  * ============================================================================
- * Define acciones de baja fricción para Apple Watch, iPhone Shortcuts y Galaxy Tab
- * con idempotencia estricta, límites de payload y prohibición de mutaciones
- * directas de GP, XP o dinero real COP desde el cliente.
+ * Distingue explícitamente:
+ *  1) Integración vía Atajos de iOS (HTTP autenticado con token personal revocable,
+ *     disponible hoy en iPhone y Apple Watch mediante Siri/Shortcuts).
+ *  2) Futura app nativa de Apple Watch (WatchKit/SwiftUI con cola offline local).
+ *
+ * Nunca genera tokens productivos automáticamente ni permite mutar GP/XP/COP
+ * directamente desde el cliente.
  */
 
 export type QuickDeviceSource = "apple_watch" | "ios_shortcut" | "galaxy_tab" | "windows_web";
+
+export type DeviceIntegrationChannel =
+  | "ios_shortcuts_http"
+  | "apple_watch_native_companion";
+
+export type PersonalTokenScope =
+  | "read:summary"
+  | "write:quick_capture"
+  | "write:timer";
+
+export interface DeviceChannelCapability {
+  channel: DeviceIntegrationChannel;
+  label: string;
+  requiresNativeApp: boolean;
+  supportedActions: QuickCaptureActionType[];
+  offlineQueueSupported: boolean;
+  notes: string;
+}
+
+export const DEVICE_CHANNEL_CAPABILITIES: Record<DeviceIntegrationChannel, DeviceChannelCapability> = {
+  ios_shortcuts_http: {
+    channel: "ios_shortcuts_http",
+    label: "Atajos de iOS (iPhone + Apple Watch vía Siri/Shortcuts)",
+    requiresNativeApp: false,
+    supportedActions: [
+      "quick_habit",
+      "quick_timer_start",
+      "quick_timer_stop",
+      "quick_note",
+      "quick_crochet_row",
+    ],
+    offlineQueueSupported: false,
+    notes: "Opera hoy sobre endpoints HTTPS con token personal revocable de alcance limitado.",
+  },
+  apple_watch_native_companion: {
+    channel: "apple_watch_native_companion",
+    label: "App Nativa Apple Watch (WatchOS Companion — futuro)",
+    requiresNativeApp: true,
+    supportedActions: [
+      "quick_habit",
+      "quick_timer_start",
+      "quick_timer_stop",
+      "quick_crochet_row",
+    ],
+    offlineQueueSupported: true,
+    notes: "Requiere proyecto SwiftUI/WatchConnectivity independiente; comparte el mismo contrato idempotente.",
+  },
+};
+
+export interface PersonalDeviceTokenMetadata {
+  id: string;
+  label: string;
+  channel: DeviceIntegrationChannel;
+  scopes: PersonalTokenScope[];
+  createdAt: string;
+  expiresAt?: string;
+  revokedAt?: string | null;
+}
+
+export function isScopedDeviceTokenAuthorized(
+  token: PersonalDeviceTokenMetadata,
+  requiredScope: PersonalTokenScope,
+  nowIso = new Date().toISOString()
+): { allowed: boolean; reason?: string } {
+  if (token.revokedAt) {
+    return { allowed: false, reason: "Token revocado por el propietario." };
+  }
+  if (token.expiresAt && new Date(token.expiresAt).getTime() <= new Date(nowIso).getTime()) {
+    return { allowed: false, reason: "Token expirado." };
+  }
+  if (!token.scopes.includes(requiredScope)) {
+    return { allowed: false, reason: `Alcance insuficiente: requiere "${requiredScope}".` };
+  }
+  return { allowed: true };
+}
 
 export type QuickCaptureActionType =
   | "quick_habit"
@@ -25,6 +104,16 @@ export interface QuickCaptureEvent {
   durationMinutes?: number;
   projectId?: string;
   capturedAt: string;
+}
+
+export interface WristReadOnlySummary {
+  walletGp: number;
+  currentXp: number;
+  playerLevel: number;
+  streakDays: number;
+  pendingQuestsCount: number;
+  activeTimerLabel: string | null;
+  generatedAt: string;
 }
 
 const FORBIDDEN_CLIENT_FIELDS = [
