@@ -68,6 +68,69 @@ export interface GridCalibrationParams {
   innerSampleMarginRatio: number;
 }
 
+export type DigitizerPatternStyle =
+  | "modern_solid"
+  | "vintage_cross_x"
+  | "lace_photo_inverted";
+
+export interface DigitizerStylePreset {
+  id: DigitizerPatternStyle;
+  label: string;
+  shortHint: string;
+  contrast: number;
+  threshold: number;
+  invert: boolean;
+  ambiguityBand: number;
+  fillRatioThreshold: number;
+  innerSampleMarginRatio: number;
+}
+
+/**
+ * Presets deterministas para todos los estilos de gráficos de Filet Crochet,
+ * desde patrones modernos en blanco y negro hasta revistas históricas de
+ * Antique Pattern Library (Priscilla, DMC, Kirchmaier, Anne Orr, Richardson)
+ * y fotografías de encaje terminado.
+ */
+export const DIGITIZER_STYLE_PRESETS: Record<DigitizerPatternStyle, DigitizerStylePreset> = {
+  modern_solid: {
+    id: "modern_solid",
+    label: "Gráfico blanco y negro",
+    shortHint: "Cuadros negros llenos y blancos vacíos (patrones modernos o impresos nítidos).",
+    contrast: 20,
+    threshold: 145,
+    invert: false,
+    ambiguityBand: 0.14,
+    fillRatioThreshold: 0.5,
+    innerSampleMarginRatio: 0.24,
+  },
+  vintage_cross_x: {
+    id: "vintage_cross_x",
+    label: "Revista antigua con cruces (X)",
+    shortHint: "Libros antiguos (Priscilla, DMC, Antique Pattern Library) donde el cuadro lleno tiene una X o tramado.",
+    contrast: 45,
+    threshold: 140,
+    invert: false,
+    ambiguityBand: 0.08,
+    fillRatioThreshold: 0.24,
+    innerSampleMarginRatio: 0.28,
+  },
+  lace_photo_inverted: {
+    id: "lace_photo_inverted",
+    label: "Foto de tejido real",
+    shortHint: "Fotografía de un mantel o carpeta ya tejida (hilo claro sobre fondo oscuro).",
+    contrast: 35,
+    threshold: 135,
+    invert: true,
+    ambiguityBand: 0.12,
+    fillRatioThreshold: 0.45,
+    innerSampleMarginRatio: 0.22,
+  },
+};
+
+export function getPresetForPatternStyle(style: DigitizerPatternStyle): DigitizerStylePreset {
+  return DIGITIZER_STYLE_PRESETS[style] ?? DIGITIZER_STYLE_PRESETS.modern_solid;
+}
+
 export interface ImageProcessingParams {
   /** Ajuste de contraste (-100..100, 0 = sin cambio). */
   contrast: number;
@@ -75,8 +138,12 @@ export interface ImageProcessingParams {
   threshold: number;
   /** Invierte blanco/negro antes de umbralizar (útil para gráficos con fondo oscuro y trazo claro). */
   invert: boolean;
-  /** Semiancho alrededor de 0.50 de proporción oscura considerado ambiguo (ej. 0.15 => [0.35, 0.65]). */
+  /** Semiancho alrededor de fillRatioThreshold considerado ambiguo (ej. 0.14 => [0.36, 0.64]). */
   ambiguityBand: number;
+  /** Estilo de gráfico seleccionado para principiantes y láminas vintage. */
+  patternStyle?: DigitizerPatternStyle;
+  /** Proporción mínima de tinta interior para marcar celda como llena (0.15..0.80; por defecto 0.50, o ~0.24 para X vintage). */
+  fillRatioThreshold?: number;
 }
 
 export interface DigitizedCellAnalysis {
@@ -510,13 +577,30 @@ export function detectGridLinesAssisted(
     colDarkRatio[x] = colDarkRatio[x] / Math.max(1, height);
   }
 
-  // Una línea de cuadrícula atraviesa prácticamente todo el ancho/alto de la región (>= 82 %)
-  const lineThreshold = 0.82;
-  const vLines = findPeriodicLinePositions(colDarkRatio, lineThreshold);
-  const hLines = findPeriodicLinePositions(rowDarkRatio, lineThreshold);
+  // Una línea de cuadrícula atraviesa gran parte del ancho/alto de la región.
+  // En escaneos antiguos (Priscilla / Antique Pattern Library) las líneas pueden estar
+  // ligeramente cortadas o tenues, así que probamos 0.82 y, si faltan líneas, bajamos a 0.60 y 0.46.
+  const candidateThresholds = [0.82, 0.6, 0.46];
+  let lineThreshold = 0.82;
+  let vLines: number[] = [];
+  let hLines: number[] = [];
+  let estCellW = 0;
+  let estCellH = 0;
 
-  const estCellW = medianPositiveGap(vLines);
-  const estCellH = medianPositiveGap(hLines);
+  for (const cand of candidateThresholds) {
+    const cv = findPeriodicLinePositions(colDarkRatio, cand);
+    const ch = findPeriodicLinePositions(rowDarkRatio, cand);
+    const cw = medianPositiveGap(cv);
+    const chGap = medianPositiveGap(ch);
+    if (cw >= 4 && chGap >= 4 && cv.length >= 2 && ch.length >= 2) {
+      lineThreshold = cand;
+      vLines = cv;
+      hLines = ch;
+      estCellW = cw;
+      estCellH = chGap;
+      break;
+    }
+  }
 
   if (estCellW < 4 || estCellH < 4 || vLines.length < 2 || hLines.length < 2) {
     return {
@@ -633,6 +717,10 @@ export function digitizeCalibratedGrid(
   const marginRatio = Math.max(0, Math.min(0.4, calibration.innerSampleMarginRatio));
   const ambiguityBand = Math.max(0.02, Math.min(0.45, processing.ambiguityBand));
   const threshold = Math.max(0, Math.min(255, processing.threshold));
+  const fillRatioThreshold = Math.max(
+    0.12,
+    Math.min(0.85, processing.fillRatioThreshold ?? 0.5)
+  );
 
   const gray = toGrayscaleLuminance(regionImage, {
     contrast: processing.contrast,
@@ -692,8 +780,8 @@ export function digitizeCalibratedGrid(
 
       const darkRatio = sampledCount > 0 ? darkCount / sampledCount : 0;
       const meanLuminance = sampledCount > 0 ? lumSum / sampledCount : 255;
-      const classified: FiletCell = darkRatio >= 0.5 ? 1 : 0;
-      const distanceFromBoundary = Math.abs(darkRatio - 0.5);
+      const classified: FiletCell = darkRatio >= fillRatioThreshold ? 1 : 0;
+      const distanceFromBoundary = Math.abs(darkRatio - fillRatioThreshold);
       const ambiguous = sampledCount === 0 || distanceFromBoundary <= ambiguityBand;
       const confidence = Number(Math.min(1, distanceFromBoundary * 2).toFixed(2));
 

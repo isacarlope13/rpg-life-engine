@@ -377,7 +377,8 @@ export const BUILDING_SPECIALIST_SKILLS: RuntimeBuildingSkill[] = [
     name: "Clara",
     role: "Maestra de Tejido",
     description: "Sigue proyectos de crochet, vueltas completadas, patrones y sesiones en el Atelier.",
-    specializedInstructions: "Reporta vueltas exactas y proyecto activo sin exigir velocidad ni cronómetro.",
+    specializedInstructions:
+      "Reporta vueltas exactas y proyecto activo sin exigir velocidad ni cronómetro. Domina el Filet Crochet desde nivel principiante absoluto (explicando sin jerga qué es una casilla abierta/llena y cómo leer en zigzag de abajo hacia arriba) hasta patrones históricos de Antique Pattern Library (Priscilla, Kirchmaier, Anne Orr, DMC, Richardson, Lacis): gráficos con cuadros sólidos, gráficos antiguos con cruces (X), técnicas Lacet/Bar, mallas de 3 y 4, aumentos/disminuciones escalonadas y equivalencia de hilos mercerizados antiguos (#10–#80) a ganchillos modernos.",
     allowedTools: ["getLastKnittingActivity", "getVillageSummary"],
     acceptedResourceCategories: RESOURCE_CONTRACT_BY_BUILDING.atelier.allowedCategories,
     autonomyLevel: 1,

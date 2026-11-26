@@ -103,7 +103,9 @@ export type NavItem =
 
 interface EngineStateData {
   wallet_gp: number;
-  vault_gp: number;
+  vault_gp?: number;
+  vault_cap_gp?: number;
+  vault_remaining_gp?: number;
   player_level: number;
   current_xp: number;
   current_streak_days: number;
@@ -381,7 +383,7 @@ export function CozyRpgDashboard() {
   const WeatherIcon = activeWeather.icon;
 
   const walletGp = state?.wallet_gp || 0;
-  const vaultGp = state?.vault_gp || 0;
+  const vaultGp = state?.vault_remaining_gp ?? state?.vault_gp ?? 0;
   const playerLevel = state?.player_level || 1;
   const currentXp = state?.current_xp || 0;
   const streakDays = state?.current_streak_days || 0;
@@ -529,7 +531,23 @@ export function CozyRpgDashboard() {
           role="dialog"
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-[#3A2E2B]/80 backdrop-blur-sm animate-in fade-in"
-          onClick={() => setActiveBuildingModal(null)}
+          onPointerDown={(e) => {
+            if (e.target === e.currentTarget) {
+              (e.currentTarget as HTMLDivElement).dataset.backdropPress = "1";
+            } else {
+              delete (e.currentTarget as HTMLDivElement).dataset.backdropPress;
+            }
+          }}
+          onClick={(e) => {
+            const startedOnBackdrop =
+              (e.currentTarget as HTMLDivElement).dataset.backdropPress === "1";
+            delete (e.currentTarget as HTMLDivElement).dataset.backdropPress;
+            // En el Atelier evitamos cierre accidental por clic/arrastre en el fondo para no perder ediciones del Digitalizador
+            if (activeBuildingModal === "atelier") return;
+            if (startedOnBackdrop && e.target === e.currentTarget) {
+              setActiveBuildingModal(null);
+            }
+          }}
         >
           <div
             className="w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-3xl border-4 border-[#3A2E2B] bg-[#1a1715] p-5 sm:p-7 shadow-[0_12px_0_#3A2E2B] space-y-4"
@@ -794,7 +812,7 @@ export function CozyRpgDashboard() {
                   skillLevel={state?.skill_summaries?.find((s) => s.domain === "work")?.level || 1}
                   totalGpEarned={state?.skill_summaries?.find((s) => s.domain === "work")?.total_gp_earned || 0}
                   walletGp={state?.wallet_gp || 0}
-                  vaultGp={state?.vault_gp || 0}
+                  vaultGp={state?.vault_remaining_gp ?? state?.vault_gp ?? 0}
                   vaultCapGp={400000}
                   aegisShields={state?.aegis_shields || 1}
                   onRefreshState={fetchState}

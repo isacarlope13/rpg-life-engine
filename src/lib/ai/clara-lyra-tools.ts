@@ -46,7 +46,44 @@ export const CROCHET_ABBREVIATIONS: Record<string, string> = {
   dec: "Decrease / disminución.",
   blo: "Back Loop Only (tomar solo la hebra trasera para efecto canalé).",
   flo: "Front Loop Only (tomar solo la hebra delantera).",
+  tr: "Treble crochet / punto alto doble (común en encajes antiguos).",
+  sl: "Slip stitch / punto deslizado (para desplazarse por bordes escalonados en filet).",
+  sp: "Space / casilla abierta (1 punto alto + 1 o 2 cadenetas al aire + 1 punto alto).",
+  bl: "Block / casilla llena (puntos altos seguidos rellenando la ventanita).",
+  mesh: "Malla o cuadrito individual del gráfico de filet crochet (puede ser abierto o lleno).",
+  lacet: "Punto Lacet (técnica clásica de revistas antiguas como Priscilla/DMC: 1 pa, 3 cad, 1 pb en medio, 3 cad, 1 pa; ocupa 2 cuadritos).",
+  bar: "Barra sobre Lacet (1 pa, 5 cad, 1 pa sobre un lacet de la vuelta anterior; forma el encaje clásico de Antique Pattern Library).",
+  picot: "Piquito decorativo de 3–4 cadenetas cerradas con punto deslizado en el borde del encaje.",
 };
+
+/**
+ * Conocimiento guiado de Filet Crochet desde nivel principiante absoluto hasta
+ * láminas históricas de Antique Pattern Library (Priscilla, Kirchmaier 1912,
+ * Anne Orr / J. & P. Coats, DMC, Richardson, Lacis / Opus Filatorium).
+ */
+export function explainHistoricalFiletPattern(question: string): string | null {
+  const q = (question || "").toLowerCase();
+  if (
+    !/(filet|cuadr|malla|gr[aá]fico|antigu|vintage|priscilla|dmc|kirchmaier|anne orr|lacis|lacet|cruc|principiante|no s[eé]|empezar|leer patr[oó]n)/i.test(
+      q
+    )
+  ) {
+    return null;
+  }
+
+  const lines: string[] = [
+    "🧶 **Guía clara de Filet Crochet (de cero a láminas históricas):**",
+    "• **La idea básica (sin tecnicismos):** Imagina una hoja cuadriculada. Cada **cuadro vacío** es una ventanita abierta (hilo con hueco) y cada **cuadro lleno** es un cuadrito tapado con puntos altos. Juntando huecos y bloques aparece el dibujo.",
+    "• **Cómo se lee cualquier gráfico:** Siempre se teje **de abajo hacia arriba** en zigzag: la **Vuelta 1 (impar)** se lee de **derecha a izquierda**, la **Vuelta 2 (par)** de **izquierda a derecha**, y así alternando.",
+    "• **Cómo reconocer gráficos modernos vs. antiguos (Antique Pattern Library):**",
+    "  1. *Gráfico moderno:* cuadros negros sólidos = llenos, cuadros blancos = vacíos.",
+    "  2. *Revistas antiguas (Priscilla 1911, DMC, Kirchmaier 1912, Anne Orr):* los cuadros llenos suelen marcarse con una **X** o sombreado cruzado dentro de la casilla, y a veces usan **Lacet / Bar** (arcos calados de 2 casillas).",
+    "  3. *Foto de encaje real:* el hilo blanco tupido es cuadro lleno y el fondo oscuro que se ve a través del hueco es cuadro vacío.",
+    "• **Malla de 3 vs. Malla de 4:** En malla de 3 cada cuadro avanza 2 puntos (`1 pa + 1 cad`, más ligero); en malla de 4 avanza 3 puntos (`1 pa + 2 cad`, más abierto y clásico en manteles antiguos).",
+    "• **Hilos antiguos a agujas modernas:** Hilo mercerizado `#10` ≈ ganchillo `1.5–1.75 mm`; `#20–#30` ≈ `1.0–1.25 mm`; `#50–#80` (encaje muy fino) ≈ `0.6–0.75 mm`. Si estás empezando, practica primero con algodón grueso (`3.0–3.5 mm`) para ver cada cuadrito con facilidad.",
+  ];
+  return lines.join("\n");
+}
 
 export function explainCrochetInstruction(instructionText: string): {
   detectedAbbreviations: Array<{ code: string; meaning: string }>;

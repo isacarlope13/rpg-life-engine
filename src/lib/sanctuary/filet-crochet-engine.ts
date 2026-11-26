@@ -19,7 +19,7 @@ export type BinaryMatrix = FiletCell[][];
 import type { HistoricalGlyphProvenance } from "./filet-digitizer-engine.ts";
 
 export const FILET_MIN_DIM = 1;
-export const FILET_MAX_GLYPH_DIM = 64;
+export const FILET_MAX_GLYPH_DIM = 160;
 export const FILET_MAX_PATTERN_DIM = 200;
 export const FILET_DEFAULT_HISTORY_DEPTH = 50;
 
