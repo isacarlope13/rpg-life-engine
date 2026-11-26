@@ -38,6 +38,7 @@ import {
   type MatrixHistoryState,
 } from "@/lib/sanctuary/filet-crochet-engine";
 import {
+  DIGITIZER_STYLE_PRESETS,
   autoSuggestThresholdOtsu,
   buildConfirmedHistoricalGlyph,
   clampRegionToImage,
@@ -48,10 +49,12 @@ import {
   detectGridLinesAssisted,
   digitizeCalibratedGrid,
   extractRegionRGBA,
+  getPresetForPatternStyle,
   rotateRGBAOrthogonal,
   toGrayscaleLuminance,
   validateHistoricalDocumentInput,
   type DigitizationResult,
+  type DigitizerPatternStyle,
   type DigitizerRegionRect,
   type GridCalibrationParams,
   type HistoricalDocumentMime,
@@ -73,6 +76,7 @@ interface FiletHistoricalDigitizerProps {
   workspace: FiletStudioWorkspace;
   onPersistWorkspace: (next: FiletStudioWorkspace, silent?: boolean) => void;
   onJumpToComposer?: () => void;
+  onSendPatternToComposer?: (params: { title: string; matrix: BinaryMatrix }) => void;
 }
 
 const VIEW_ZOOMS = [25, 50, 75, 100, 125, 150, 200, 250, 300] as const;
@@ -130,14 +134,17 @@ export function FiletHistoricalDigitizer({
   workspace,
   onPersistWorkspace,
   onJumpToComposer,
+  onSendPatternToComposer,
 }: FiletHistoricalDigitizerProps) {
   // Biblioteca de documentos históricos aislada por propietario
   const [documents, setDocuments] = useState<HistoricalDocumentRecord[]>(() =>
     readHistoricalDocumentsSafe(sessionOwner)
   );
   const [selectedDocId, setSelectedDocId] = useState<string>("");
-  const [uploadToPrivateAtelier, setUploadToPrivateAtelier] = useState<boolean>(true);
+  const [uploadToPrivateAtelier, setUploadToPrivateAtelier] = useState<boolean>(false);
   const [importing, setImporting] = useState<boolean>(false);
+  const [patternStyle, setPatternStyle] = useState<DigitizerPatternStyle>("modern_solid");
+  const [directPatternTitle, setDirectPatternTitle] = useState<string>("");
 
   // Estado de página / imagen original (NUNCA se muta el buffer original)
   const pdfHandleRef = useRef<LoadedLocalPdfHandle | null>(null);
@@ -182,8 +189,8 @@ export function FiletHistoricalDigitizer({
   const [explicitReviewConfirmed, setExplicitReviewConfirmed] = useState<boolean>(false);
   const [savedCountInSession, setSavedCountInSession] = useState<number>(0);
 
-  // Panel móvil (Bloque 6)
-  const [mobilePanel, setMobilePanel] = useState<"docs" | "canvas" | "review">("canvas");
+  // Panel móvil (Bloque 6): abre en Paso 1 ("docs") si aún no hay imagen cargada
+  const [mobilePanel, setMobilePanel] = useState<"docs" | "canvas" | "review">("docs");
   const [notice, setNotice] = useState<{
     type: "success" | "warning" | "error";
     message: string;
@@ -336,6 +343,7 @@ export function FiletHistoricalDigitizer({
       let widthPx: number | undefined;
       let heightPx: number | undefined;
       let previewDataUrl: string | undefined;
+      let decodedImageRGBA: RGBAImageData | null = null;
 
       if (baseValidation.normalizedMime === "application/pdf") {
         if (pdfHandleRef.current) {
@@ -386,12 +394,19 @@ export function FiletHistoricalDigitizer({
         }
         widthPx = decoded.rgba.width;
         heightPx = decoded.rgba.height;
+        decodedImageRGBA = decoded.rgba;
         previewDataUrl = decoded.dataUrl.length <= 450_000 ? decoded.dataUrl : undefined;
         setTotalPages(1);
         setCurrentPage(1);
         setThumbnails([{ page: 1, dataUrl: decoded.dataUrl }]);
         setPageOriginalRGBA(decoded.rgba);
         setWorkRotationDeg(0);
+        // Ajustar zoom automáticamente para que la imagen completa sea visible sin esfuerzo
+        const fitPct = Math.min(100, Math.max(25, Math.floor((420 / Math.max(1, decoded.rgba.width)) * 100)));
+        const nearestZoom = VIEW_ZOOMS.reduce((best, z) =>
+          Math.abs(z - fitPct) < Math.abs(best - fitPct) ? z : best
+        );
+        setViewZoomPct(nearestZoom);
         const initReg: DigitizerRegionRect = {
           x: 0,
           y: 0,
@@ -444,18 +459,20 @@ export function FiletHistoricalDigitizer({
         addedAt: new Date().toISOString(),
       };
 
-      if (pageOriginalRGBA && baseValidation.normalizedMime !== "application/pdf") {
-        originalImageByDocRef.current.set(newDoc.id, pageOriginalRGBA);
+      if (decodedImageRGBA && baseValidation.normalizedMime !== "application/pdf") {
+        originalImageByDocRef.current.set(newDoc.id, decodedImageRGBA);
       }
 
       const nextDocs = [newDoc, ...documents.filter((d) => d.id !== newDoc.id)];
       setDocuments(nextDocs);
       setSelectedDocId(newDoc.id);
+      setDirectPatternTitle(newDoc.title);
+      setMobilePanel("canvas");
       saveHistoricalDocumentsSafe(sessionOwner, nextDocs);
 
       setNotice({
         type: "success",
-        message: `Documento "${newDoc.title}" importado (${pageCount} pág.) conservando el original sin modificar.`,
+        message: `¡Listo! "${newDoc.title}" cargado (${pageCount} pág.). Ahora encuadra el dibujo en el Paso 2 y pulsa "Detectar cuadrícula automáticamente".`,
       });
     } catch (err) {
       setNotice({
@@ -465,6 +482,109 @@ export function FiletHistoricalDigitizer({
     } finally {
       setImporting(false);
     }
+  };
+
+  // Seleccionar documento de la lista sin dejar "elementos fantasma" (Bug #2 fix)
+  const handleSelectDocument = async (doc: HistoricalDocumentRecord) => {
+    setSelectedDocId(doc.id);
+    setDirectPatternTitle(doc.title);
+    const cached = originalImageByDocRef.current.get(doc.id);
+    if (cached) {
+      setPageOriginalRGBA(cached);
+      setWorkRotationDeg(0);
+      setMobilePanel("canvas");
+      return;
+    }
+    if (doc.previewDataUrl) {
+      try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const el = new window.Image();
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("No se pudo restaurar la vista previa."));
+          el.src = doc.previewDataUrl!;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const rgba: RGBAImageData = {
+            width: canvas.width,
+            height: canvas.height,
+            data: new Uint8ClampedArray(imageData.data),
+          };
+          originalImageByDocRef.current.set(doc.id, rgba);
+          setPageOriginalRGBA(rgba);
+          setWorkRotationDeg(0);
+          setMobilePanel("canvas");
+          return;
+        }
+      } catch {
+        // continúa al aviso amigable
+      }
+    }
+    setNotice({
+      type: "warning",
+      message: `"${doc.title}" pertenece a una sesión anterior y su imagen ya no está en memoria. Vuelve a subir el archivo con el botón verde para editarlo.`,
+    });
+  };
+
+  const handleRemoveDocument = (docId: string) => {
+    const nextDocs = documents.filter((d) => d.id !== docId);
+    setDocuments(nextDocs);
+    if (selectedDocId === docId) setSelectedDocId(nextDocs[0]?.id || "");
+    saveHistoricalDocumentsSafe(sessionOwner, nextDocs);
+  };
+
+  // Aplicar preset amigable para principiantes y revistas históricas (Antique Pattern Library)
+  const handleSelectPatternStyle = (style: DigitizerPatternStyle) => {
+    setPatternStyle(style);
+    const preset = getPresetForPatternStyle(style);
+    setManualOnlyMode(false);
+    setCalibration((prev) => ({
+      ...prev,
+      innerSampleMarginRatio: preset.innerSampleMarginRatio,
+    }));
+    let suggestedThreshold = preset.threshold;
+    if (croppedRegionRGBA) {
+      const gray = toGrayscaleLuminance(croppedRegionRGBA, {
+        contrast: preset.contrast,
+        invert: preset.invert,
+      });
+      suggestedThreshold = autoSuggestThresholdOtsu(gray);
+    }
+    setProcessing({
+      contrast: preset.contrast,
+      threshold: suggestedThreshold,
+      invert: preset.invert,
+      ambiguityBand: preset.ambiguityBand,
+      patternStyle: preset.id,
+      fillRatioThreshold: preset.fillRatioThreshold,
+    });
+    setNotice({
+      type: "success",
+      message: `Estilo "${preset.label}" aplicado automáticamente. ${preset.shortHint}`,
+    });
+  };
+
+  const handleFitView = () => {
+    if (!workingPageRGBA) return;
+    const fitPct = Math.min(100, Math.max(25, Math.floor((420 / Math.max(1, workingPageRGBA.width)) * 100)));
+    const nearest = VIEW_ZOOMS.reduce((best, z) =>
+      Math.abs(z - fitPct) < Math.abs(best - fitPct) ? z : best
+    );
+    setViewZoomPct(nearest);
+  };
+
+  const handleSendDirectToComposer = () => {
+    if (!onSendPatternToComposer || editHistory.present.length === 0) return;
+    const title = (directPatternTitle || selectedDoc?.title || "Mi Patrón Digitalizado").trim();
+    onSendPatternToComposer({
+      title,
+      matrix: cloneBinaryMatrix(editHistory.present),
+    });
   };
 
   // Detección asistida de líneas + umbral Otsu sobre la región actual
@@ -706,44 +826,61 @@ export function FiletHistoricalDigitizer({
                 onChange={(e) => setUploadToPrivateAtelier(e.target.checked)}
                 className="mt-0.5"
               />
-              <span>Guardar original sin modificar en Carpeta Privada del Atelier (/api/resources)</span>
+              <span>Guardar también una copia privada de esta foto en mi Atelier (opcional)</span>
             </label>
 
             <p className="text-[10px] text-[#795548]">
-              Límites seguros: máx. 5 MB, 4096px / 16 MP, 60 páginas PDF. Procesamiento 100 % local sin IA externa ni OCR.
+              Paso 1: Sube una foto o PDF de cualquier gráfico (hasta 5 MB y 160×160 cuadros). Todo se procesa en tu equipo de forma privada.
             </p>
 
             {/* Lista de documentos */}
             <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
               {documents.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-[#3A2E2B]/30 bg-[#F4EEDC]/60 p-2.5 text-[11px] text-[#795548]">
-                  Importa una lámina o PDF histórico de Filet Crochet para empezar.
+                  Sube una foto o PDF de tu gráfico de crochet para empezar.
                 </p>
               ) : (
-                documents.map((doc) => (
-                  <button
-                    key={doc.id}
-                    type="button"
-                    onClick={() => setSelectedDocId(doc.id)}
-                    className={`w-full rounded-xl border-2 p-2 text-left text-[11px] cursor-pointer ${
-                      doc.id === selectedDocId
-                        ? "border-[#3A2E2B] bg-[#F4EEDC] font-black text-[#3A2E2B]"
-                        : "border-[#3A2E2B]/25 bg-[#FFFDF8] text-[#5C381E]"
-                    }`}
-                  >
-                    <span className="flex items-center gap-1 truncate">
-                      {doc.mimeType === "application/pdf" ? (
-                        <FileText className="h-3.5 w-3.5 shrink-0 text-[#C88973]" />
-                      ) : (
-                        <FileImage className="h-3.5 w-3.5 shrink-0 text-[#314C3C]" />
-                      )}
-                      <span className="truncate">{doc.title}</span>
-                    </span>
-                    <span className="text-[10px] text-[#795548] block">
-                      {doc.pageCount} pág. · {Math.max(1, Math.round(doc.sizeBytes / 1024))} KB
-                    </span>
-                  </button>
-                ))
+                documents.map((doc) => {
+                  const hasLoadedImage =
+                    originalImageByDocRef.current.has(doc.id) || Boolean(doc.previewDataUrl);
+                  return (
+                    <div
+                      key={doc.id}
+                      className={`w-full rounded-xl border-2 p-2 text-left text-[11px] flex items-center justify-between gap-1.5 ${
+                        doc.id === selectedDocId
+                          ? "border-[#3A2E2B] bg-[#F4EEDC] font-black text-[#3A2E2B]"
+                          : "border-[#3A2E2B]/25 bg-[#FFFDF8] text-[#5C381E]"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void handleSelectDocument(doc)}
+                        className="min-w-0 flex-1 text-left cursor-pointer"
+                      >
+                        <span className="flex items-center gap-1 truncate">
+                          {doc.mimeType === "application/pdf" ? (
+                            <FileText className="h-3.5 w-3.5 shrink-0 text-[#C88973]" />
+                          ) : (
+                            <FileImage className="h-3.5 w-3.5 shrink-0 text-[#314C3C]" />
+                          )}
+                          <span className="truncate">{doc.title}</span>
+                        </span>
+                        <span className="text-[10px] text-[#795548] block">
+                          {doc.pageCount} pág. · {Math.max(1, Math.round(doc.sizeBytes / 1024))} KB
+                          {!hasLoadedImage ? " · Volver a subir" : ""}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDocument(doc.id)}
+                        aria-label={`Quitar ${doc.title} de la lista`}
+                        className="rounded-md px-1.5 py-0.5 text-[10px] font-black text-[#795548] hover:text-red-700 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
 
@@ -869,6 +1006,15 @@ export function FiletHistoricalDigitizer({
                 </span>
                 <button
                   type="button"
+                  aria-label="Ajustar imagen a la pantalla"
+                  disabled={!workingPageRGBA}
+                  onClick={handleFitView}
+                  className="rounded-lg border border-[#3A2E2B] bg-[#E7D69C] px-2 py-1 text-[10px] font-black text-[#3A2E2B] disabled:opacity-40 cursor-pointer"
+                >
+                  Ajustar
+                </button>
+                <button
+                  type="button"
                   aria-label="Acercar página"
                   disabled={zoomIdx >= VIEW_ZOOMS.length - 1}
                   onClick={() =>
@@ -971,35 +1117,40 @@ export function FiletHistoricalDigitizer({
               </div>
             )}
 
-            {/* Ajuste manual preciso de bordes de la región */}
-            <div className="grid grid-cols-4 gap-1.5 text-[10px] font-bold text-[#5C381E]">
-              {(
-                [
-                  { key: "x", label: "Región X" },
-                  { key: "y", label: "Región Y" },
-                  { key: "width", label: "Ancho px" },
-                  { key: "height", label: "Alto px" },
-                ] as const
-              ).map((f) => (
-                <label key={f.key} className="space-y-0.5">
-                  <span>{f.label}</span>
-                  <input
-                    type="number"
-                    value={region[f.key]}
-                    onChange={(e) => {
-                      const val = Number(e.target.value) || 0;
-                      const next = { ...region, [f.key]: val };
-                      setRegion(
-                        workingPageRGBA
-                          ? clampRegionToImage(next, workingPageRGBA.width, workingPageRGBA.height)
-                          : next
-                      );
-                    }}
-                    className="w-full rounded-lg border border-[#3A2E2B] bg-[#F4EEDC] px-1.5 py-1 font-mono font-bold text-[#3A2E2B]"
-                  />
-                </label>
-              ))}
-            </div>
+            {/* Ajuste manual preciso de bordes de la región (oculto en desplegable para principiantes) */}
+            <details className="rounded-xl border border-[#3A2E2B]/20 bg-[#F4EEDC]/50 p-2 text-[10px] font-bold text-[#5C381E]">
+              <summary className="cursor-pointer font-black text-[#3A2E2B]">
+                Ajuste fino del recorte en píxeles (opcional)
+              </summary>
+              <div className="grid grid-cols-4 gap-1.5 mt-2">
+                {(
+                  [
+                    { key: "x", label: "Inicio X" },
+                    { key: "y", label: "Inicio Y" },
+                    { key: "width", label: "Ancho px" },
+                    { key: "height", label: "Alto px" },
+                  ] as const
+                ).map((f) => (
+                  <label key={f.key} className="space-y-0.5">
+                    <span>{f.label}</span>
+                    <input
+                      type="number"
+                      value={region[f.key]}
+                      onChange={(e) => {
+                        const val = Number(e.target.value) || 0;
+                        const next = { ...region, [f.key]: val };
+                        setRegion(
+                          workingPageRGBA
+                            ? clampRegionToImage(next, workingPageRGBA.width, workingPageRGBA.height)
+                            : next
+                        );
+                      }}
+                      className="w-full rounded-lg border border-[#3A2E2B] bg-[#FFFDF8] px-1.5 py-1 font-mono font-bold text-[#3A2E2B]"
+                    />
+                  </label>
+                ))}
+              </div>
+            </details>
           </div>
         </div>
 
@@ -1041,9 +1192,37 @@ export function FiletHistoricalDigitizer({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 text-[10px] font-bold text-[#5C381E]">
+            {/* Paso guiado para principiantes: 1 clic según el tipo de lámina (moderna, Priscilla/DMC con X, o foto de tejido) */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-black uppercase text-[#795548] block">
+                ¿Cómo es tu imagen? (Elige 1 opción)
+              </span>
+              <div className="grid grid-cols-1 gap-1.5">
+                {(
+                  Object.values(DIGITIZER_STYLE_PRESETS) as Array<
+                    (typeof DIGITIZER_STYLE_PRESETS)[DigitizerPatternStyle]
+                  >
+                ).map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleSelectPatternStyle(preset.id)}
+                    className={`rounded-xl border-2 px-2.5 py-1.5 text-left transition-colors cursor-pointer ${
+                      patternStyle === preset.id && !manualOnlyMode
+                        ? "border-[#3A2E2B] bg-[#E7D69C] text-[#3A2E2B]"
+                        : "border-[#3A2E2B]/25 bg-[#F4EEDC]/70 text-[#5C381E] hover:bg-[#F4EEDC]"
+                    }`}
+                  >
+                    <span className="block text-[11px] font-black">{preset.label}</span>
+                    <span className="block text-[9px] leading-tight opacity-85">{preset.shortHint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5 text-[10px] font-bold text-[#5C381E]">
               <label>
-                Filas
+                Cuadros de alto (Filas)
                 <input
                   type="number"
                   min={FILET_MIN_DIM}
@@ -1061,7 +1240,7 @@ export function FiletHistoricalDigitizer({
                 />
               </label>
               <label>
-                Columnas
+                Cuadros de ancho (Columnas)
                 <input
                   type="number"
                   min={FILET_MIN_DIM}
@@ -1078,126 +1257,134 @@ export function FiletHistoricalDigitizer({
                   className="w-full rounded-lg border border-[#3A2E2B] bg-[#F4EEDC] px-1.5 py-1 font-mono text-[#3A2E2B]"
                 />
               </label>
-              <label>
-                Rotación (°)
-                <input
-                  type="number"
-                  step={0.5}
-                  min={-15}
-                  max={15}
-                  value={calibration.rotationDeg}
-                  onChange={(e) =>
-                    setCalibration((p) => ({ ...p, rotationDeg: Number(e.target.value) || 0 }))
-                  }
-                  className="w-full rounded-lg border border-[#3A2E2B] bg-[#F4EEDC] px-1.5 py-1 font-mono text-[#3A2E2B]"
-                />
-              </label>
-              <label>
-                Desp. X
-                <input
-                  type="number"
-                  step={1}
-                  value={calibration.offsetX}
-                  onChange={(e) =>
-                    setCalibration((p) => ({ ...p, offsetX: Number(e.target.value) || 0 }))
-                  }
-                  className="w-full rounded-lg border border-[#3A2E2B] bg-[#F4EEDC] px-1.5 py-1 font-mono text-[#3A2E2B]"
-                />
-              </label>
-              <label>
-                Desp. Y
-                <input
-                  type="number"
-                  step={1}
-                  value={calibration.offsetY}
-                  onChange={(e) =>
-                    setCalibration((p) => ({ ...p, offsetY: Number(e.target.value) || 0 }))
-                  }
-                  className="w-full rounded-lg border border-[#3A2E2B] bg-[#F4EEDC] px-1.5 py-1 font-mono text-[#3A2E2B]"
-                />
-              </label>
-              <label>
-                Opacidad ({Math.round(calibration.gridOpacity * 100)}%)
-                <input
-                  type="range"
-                  min={0.1}
-                  max={1}
-                  step={0.05}
-                  value={calibration.gridOpacity}
-                  onChange={(e) =>
-                    setCalibration((p) => ({ ...p, gridOpacity: Number(e.target.value) }))
-                  }
-                  className="w-full"
-                />
-              </label>
             </div>
 
-            {!manualOnlyMode && (
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#3A2E2B]/15 text-[10px] font-bold text-[#5C381E]">
+            <details className="rounded-xl border border-[#3A2E2B]/20 bg-[#F4EEDC]/40 p-2 text-[10px] font-bold text-[#5C381E]">
+              <summary className="cursor-pointer font-black text-[#3A2E2B]">
+                Ajustes avanzados de imagen y cuadrícula (opcional)
+              </summary>
+              <div className="grid grid-cols-3 gap-1.5 mt-2">
                 <label>
-                  Contraste ({processing.contrast})
+                  Rotación (°)
                   <input
-                    type="range"
-                    min={-80}
-                    max={80}
-                    value={processing.contrast}
+                    type="number"
+                    step={0.5}
+                    min={-15}
+                    max={15}
+                    value={calibration.rotationDeg}
                     onChange={(e) =>
-                      setProcessing((p) => ({ ...p, contrast: Number(e.target.value) }))
+                      setCalibration((p) => ({ ...p, rotationDeg: Number(e.target.value) || 0 }))
                     }
-                    className="w-full"
+                    className="w-full rounded-lg border border-[#3A2E2B] bg-[#FFFDF8] px-1.5 py-1 font-mono text-[#3A2E2B]"
                   />
                 </label>
                 <label>
-                  <span className="flex justify-between">
-                    <span>Umbral ({processing.threshold})</span>
-                    <button
-                      type="button"
-                      onClick={handleApplyOtsu}
-                      className="text-[#314C3C] underline cursor-pointer"
-                    >
-                      Otsu
-                    </button>
-                  </span>
+                  Mover X
                   <input
-                    type="range"
-                    min={10}
-                    max={245}
-                    value={processing.threshold}
+                    type="number"
+                    step={1}
+                    value={calibration.offsetX}
                     onChange={(e) =>
-                      setProcessing((p) => ({ ...p, threshold: Number(e.target.value) }))
+                      setCalibration((p) => ({ ...p, offsetX: Number(e.target.value) || 0 }))
                     }
-                    className="w-full"
+                    className="w-full rounded-lg border border-[#3A2E2B] bg-[#FFFDF8] px-1.5 py-1 font-mono text-[#3A2E2B]"
                   />
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={processing.invert}
-                    onChange={(e) =>
-                      setProcessing((p) => ({ ...p, invert: e.target.checked }))
-                    }
-                  />
-                  <Contrast className="h-3 w-3" /> Invertir B/N
                 </label>
                 <label>
-                  Margen interior ({Math.round(calibration.innerSampleMarginRatio * 100)}%)
+                  Mover Y
+                  <input
+                    type="number"
+                    step={1}
+                    value={calibration.offsetY}
+                    onChange={(e) =>
+                      setCalibration((p) => ({ ...p, offsetY: Number(e.target.value) || 0 }))
+                    }
+                    className="w-full rounded-lg border border-[#3A2E2B] bg-[#FFFDF8] px-1.5 py-1 font-mono text-[#3A2E2B]"
+                  />
+                </label>
+                <label className="col-span-3">
+                  Visibilidad de guía roja ({Math.round(calibration.gridOpacity * 100)}%)
                   <input
                     type="range"
-                    min={0.05}
-                    max={0.38}
-                    step={0.02}
-                    value={calibration.innerSampleMarginRatio}
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    value={calibration.gridOpacity}
                     onChange={(e) =>
-                      setCalibration((p) => ({
-                        ...p,
-                        innerSampleMarginRatio: Number(e.target.value),
-                      }))
+                      setCalibration((p) => ({ ...p, gridOpacity: Number(e.target.value) }))
                     }
                     className="w-full"
                   />
                 </label>
               </div>
-            )}
+
+              {!manualOnlyMode && (
+                <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-[#3A2E2B]/15">
+                  <label>
+                    Contraste ({processing.contrast})
+                    <input
+                      type="range"
+                      min={-80}
+                      max={80}
+                      value={processing.contrast}
+                      onChange={(e) =>
+                        setProcessing((p) => ({ ...p, contrast: Number(e.target.value) }))
+                      }
+                      className="w-full"
+                    />
+                  </label>
+                  <label>
+                    <span className="flex justify-between">
+                      <span>Oscuridad ({processing.threshold})</span>
+                      <button
+                        type="button"
+                        onClick={handleApplyOtsu}
+                        className="text-[#314C3C] underline cursor-pointer"
+                      >
+                        Auto
+                      </button>
+                    </span>
+                    <input
+                      type="range"
+                      min={10}
+                      max={245}
+                      value={processing.threshold}
+                      onChange={(e) =>
+                        setProcessing((p) => ({ ...p, threshold: Number(e.target.value) }))
+                      }
+                      className="w-full"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={processing.invert}
+                      onChange={(e) =>
+                        setProcessing((p) => ({ ...p, invert: e.target.checked }))
+                      }
+                    />
+                    <Contrast className="h-3 w-3" /> Invertir claros/oscuros
+                  </label>
+                  <label>
+                    Ignorar bordes ({Math.round(calibration.innerSampleMarginRatio * 100)}%)
+                    <input
+                      type="range"
+                      min={0.05}
+                      max={0.38}
+                      step={0.02}
+                      value={calibration.innerSampleMarginRatio}
+                      onChange={(e) =>
+                        setCalibration((p) => ({
+                          ...p,
+                          innerSampleMarginRatio: Number(e.target.value),
+                        }))
+                      }
+                      className="w-full"
+                    />
+                  </label>
+                </div>
+              )}
+            </details>
           </div>
 
           {/* Bloque 4: Revisión simultánea (Región original + Cuadrícula + Matriz editable + Ambiguas) */}
@@ -1309,10 +1496,41 @@ export function FiletHistoricalDigitizer({
               </div>
             </div>
 
-            {/* Bloque 5: Formulario de confirmación y guardado en Biblioteca Histórica */}
+            {/* Acción principal para principiantes: enviar directo como Patrón al Compositor sin inventar letras */}
+            {onSendPatternToComposer && (
+              <div className="space-y-2 pt-2 border-t border-[#3A2E2B]/15">
+                <span className="text-[10px] font-black uppercase text-[#314C3C] block">
+                  Paso final · Usar este dibujo como patrón de tejido
+                </span>
+                <input
+                  type="text"
+                  placeholder="Nombre del patrón (ej. Cenefa Priscilla)"
+                  value={directPatternTitle}
+                  onChange={(e) => setDirectPatternTitle(e.target.value)}
+                  className="w-full rounded-xl border-2 border-[#3A2E2B] bg-[#F4EEDC] px-2.5 py-1.5 text-[11px] font-bold text-[#3A2E2B]"
+                />
+                <CozyButton
+                  type="button"
+                  variant="forest"
+                  size="sm"
+                  disabled={editHistory.present.length === 0}
+                  onClick={handleSendDirectToComposer}
+                  className="w-full flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Usar directo como Patrón (Ir al Compositor ➜)
+                </CozyButton>
+              </div>
+            )}
+
+            {/* Bloque 5: Opcional — Guardar como letra dentro de un Alfabeto */}
+            <details className="pt-2 border-t border-[#3A2E2B]/15">
+              <summary className="cursor-pointer text-[10px] font-black uppercase text-[#795548]">
+                O guardar como letra en un Alfabeto (opcional)
+              </summary>
             <form
               onSubmit={handleConfirmAndSaveGlyph}
-              className="space-y-2 pt-2 border-t border-[#3A2E2B]/15 text-[11px]"
+              className="space-y-2 pt-2 text-[11px]"
             >
               <div className="grid grid-cols-2 gap-1.5">
                 <input
@@ -1423,6 +1641,7 @@ export function FiletHistoricalDigitizer({
                 Guardar Glifo y Seguir en Esta Página
               </CozyButton>
             </form>
+            </details>
           </div>
         </div>
       </div>

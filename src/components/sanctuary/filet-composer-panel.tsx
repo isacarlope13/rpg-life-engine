@@ -49,6 +49,7 @@ import {
   transformPlacedGlyph,
   undoComposerHistory,
   type ComposerHistoryState,
+  type BinaryMatrix,
   type FiletBorderStyle,
   type FiletCell,
   type FiletComposerDraft,
@@ -68,6 +69,8 @@ interface FiletComposerPanelProps {
   activeProject?: KnittingProject;
   onPersistWorkspace: (next: FiletStudioWorkspace, silent?: boolean) => void;
   onJumpToAlphabetEditor?: () => void;
+  incomingPattern?: { title: string; matrix: BinaryMatrix } | null;
+  onConsumeIncomingPattern?: () => void;
   onCreateProjectFromPattern?: (params: {
     name: string;
     linkedPattern: LinkedFiletPatternSnapshot;
@@ -81,6 +84,8 @@ export function FiletComposerPanel({
   activeProject,
   onPersistWorkspace,
   onJumpToAlphabetEditor,
+  incomingPattern,
+  onConsumeIncomingPattern,
   onCreateProjectFromPattern,
 }: FiletComposerPanelProps) {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>(
@@ -157,6 +162,43 @@ export function FiletComposerPanel({
   const [notice, setNotice] = useState<{ type: "success" | "warning" | "error"; message: string } | null>(
     null
   );
+
+  // Recibir patrón directo enviado desde el Digitalizador Histórico (sin tener que crear una letra)
+  useEffect(() => {
+    if (!incomingPattern || incomingPattern.matrix.length === 0) return;
+    const rows = Math.min(FILET_MAX_PATTERN_DIM, Math.max(FILET_MIN_DIM, incomingPattern.matrix.length));
+    const cols = Math.min(
+      FILET_MAX_PATTERN_DIM,
+      Math.max(FILET_MIN_DIM, incomingPattern.matrix[0]?.length || 1)
+    );
+    const cellOverrides: Record<string, FiletCell> = {};
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (incomingPattern.matrix[r]?.[c] === 1) {
+          cellOverrides[`${r},${c}`] = 1;
+        }
+      }
+    }
+    const nextSnapshot: FiletComposerSnapshot = {
+      canvas: {
+        ...createDefaultCanvasSpec(cols, rows),
+        width: cols,
+        height: rows,
+        borderThickness: 0,
+      },
+      placements: [],
+      cellOverrides,
+    };
+    setHistory((prev) => pushComposerHistory(prev, nextSnapshot));
+    setPatternTitle(incomingPattern.title || "Patrón Digitalizado");
+    setZoomPct(cols > 60 ? 25 : cols > 35 ? 40 : 55);
+    setMode("paint");
+    setNotice({
+      type: "success",
+      message: `Patrón "${incomingPattern.title}" (${cols}×${rows} cuadros = ${cols * rows} casillas) cargado en el Compositor con instrucciones vuelta por vuelta listas.`,
+    });
+    onConsumeIncomingPattern?.();
+  }, [incomingPattern, onConsumeIncomingPattern]);
 
   const commitSnapshot = useCallback((next: FiletComposerSnapshot) => {
     setHistory((prev) => pushComposerHistory(prev, next));

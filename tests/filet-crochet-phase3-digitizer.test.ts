@@ -2,6 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
+  FILET_MAX_GLYPH_DIM,
   compileFiletTechnicalPattern,
   composePhraseOnCanvas,
   createAlphabetCollection,
@@ -17,6 +18,7 @@ import {
   type BinaryMatrix,
 } from "../src/lib/sanctuary/filet-crochet-engine.ts";
 import {
+  DIGITIZER_STYLE_PRESETS,
   HISTORICAL_DOC_MAX_BYTES,
   HISTORICAL_DOC_MAX_DIMENSION_PX,
   HISTORICAL_DOC_MAX_PDF_PAGES,
@@ -29,12 +31,14 @@ import {
   detectGridLinesAssisted,
   digitizeCalibratedGrid,
   extractRegionRGBA,
+  getPresetForPatternStyle,
   rotateRGBAOrthogonal,
   toGrayscaleLuminance,
   validateHistoricalDocumentInput,
   type HistoricalDocumentRecord,
   type RGBAImageData,
 } from "../src/lib/sanctuary/filet-digitizer-engine.ts";
+import { explainHistoricalFiletPattern } from "../src/lib/ai/clara-lyra-tools.ts";
 import {
   readFiletStudioWorkspace,
   readHistoricalDocuments,
@@ -598,5 +602,92 @@ describe("OAKHAVEN — FILET CROCHET STUDIO FASE 3 (DIGITALIZADOR HISTÓRICO)", 
     assert.match(uiSrc, /lg:col-span-3/);
     assert.match(uiSrc, /lg:col-span-5/);
     assert.match(uiSrc, /lg:col-span-4/);
+  });
+
+  test("7. Láminas grandes (>64 cols, ej. 98×17 = 1.666 cuadros) y preset vintage con cruces (X) tipo Antique Pattern Library", () => {
+    assert.ok(FILET_MAX_GLYPH_DIM >= 160, "Debe soportar láminas históricas grandes (>64 columnas)");
+
+    // 7a. Patrón grande de 98×17 = 1.666 cuadros (como Priscilla Fig. 24/25)
+    const bigCols = 98;
+    const bigRows = 17;
+    const bigVintage: BinaryMatrix = Array.from({ length: bigRows }, (_, r) =>
+      Array.from({ length: bigCols }, (_, c) => ((r === 0 || r === bigRows - 1 || (r + c) % 3 === 0) ? 1 : 0))
+    );
+    const bigImg = renderSyntheticGridImage({ matrix: bigVintage, cellW: 8, cellH: 8, lineThickness: 1 });
+    const bigRes = digitizeCalibratedGrid(
+      bigImg,
+      {
+        ...createDefaultGridCalibration(bigImg.width, bigImg.height, bigRows, bigCols),
+        cellWidth: 8,
+        cellHeight: 8,
+      },
+      createDefaultImageProcessing()
+    );
+    assert.equal(bigRes.cols, 98);
+    assert.equal(bigRes.rows, 17);
+    assert.equal(matricesEqual(bigRes.detectedMatrix, bigVintage), true);
+
+    // 7b. Lámina vintage con cruces (X) en lugar de bloques negros sólidos (Priscilla / DMC / Kirchmaier)
+    const xMat: BinaryMatrix = [
+      [1, 0, 1, 0],
+      [0, 1, 0, 1],
+      [1, 1, 0, 0],
+    ];
+    const cellW = 16;
+    const cellH = 16;
+    const width = 4 * cellW + 1;
+    const height = 3 * cellH + 1;
+    const data = new Uint8ClampedArray(width * height * 4);
+    const paint = (x: number, y: number, lum: number) => {
+      if (x < 0 || x >= width || y < 0 || y >= height) return;
+      const i = (y * width + x) * 4;
+      data[i] = lum;
+      data[i + 1] = lum;
+      data[i + 2] = lum;
+      data[i + 3] = 255;
+    };
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) paint(x, y, 245);
+    // Líneas de cuadrícula
+    for (let c = 0; c <= 4; c++) for (let y = 0; y < height; y++) paint(c * cellW, y, 40);
+    for (let r = 0; r <= 3; r++) for (let x = 0; x < width; x++) paint(x, r * cellH, 40);
+    // Dibujar una X (dos diagonales de 2px de grosor) solo en las celdas con valor 1
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 4; c++) {
+        if (xMat[r][c] === 1) {
+          for (let k = 2; k < cellW - 2; k++) {
+            paint(c * cellW + k, r * cellH + k, 20);
+            paint(c * cellW + k + 1, r * cellH + k, 20);
+            paint(c * cellW + (cellW - 1 - k), r * cellH + k, 20);
+            paint(c * cellW + (cellW - 2 - k), r * cellH + k, 20);
+          }
+        }
+      }
+    }
+    const presetX = getPresetForPatternStyle("vintage_cross_x");
+    assert.equal(presetX.id, DIGITIZER_STYLE_PRESETS.vintage_cross_x.id);
+    const xRes = digitizeCalibratedGrid(
+      { width, height, data },
+      {
+        ...createDefaultGridCalibration(width, height, 3, 4),
+        cellWidth: cellW,
+        cellHeight: cellH,
+        innerSampleMarginRatio: presetX.innerSampleMarginRatio,
+      },
+      {
+        contrast: presetX.contrast,
+        threshold: presetX.threshold,
+        invert: presetX.invert,
+        ambiguityBand: presetX.ambiguityBand,
+        patternStyle: presetX.id,
+        fillRatioThreshold: presetX.fillRatioThreshold,
+      }
+    );
+    assert.equal(matricesEqual(xRes.detectedMatrix, xMat), true);
+
+    // 7c. Clara entiende desde principiante absoluto hasta Antique Pattern Library (Priscilla/DMC/Lacet)
+    const claraGuide = explainHistoricalFiletPattern("Soy principiante, no sé leer un gráfico antiguo de Priscilla con cruces X ni lacet");
+    assert.ok(claraGuide && claraGuide.includes("Antique Pattern Library"));
+    assert.ok(claraGuide.includes("derecha a izquierda"));
+    assert.ok(claraGuide.includes("Lacet"));
   });
 });

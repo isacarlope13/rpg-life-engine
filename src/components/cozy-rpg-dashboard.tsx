@@ -531,7 +531,23 @@ export function CozyRpgDashboard() {
           role="dialog"
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-[#3A2E2B]/80 backdrop-blur-sm animate-in fade-in"
-          onClick={() => setActiveBuildingModal(null)}
+          onPointerDown={(e) => {
+            if (e.target === e.currentTarget) {
+              (e.currentTarget as HTMLDivElement).dataset.backdropPress = "1";
+            } else {
+              delete (e.currentTarget as HTMLDivElement).dataset.backdropPress;
+            }
+          }}
+          onClick={(e) => {
+            const startedOnBackdrop =
+              (e.currentTarget as HTMLDivElement).dataset.backdropPress === "1";
+            delete (e.currentTarget as HTMLDivElement).dataset.backdropPress;
+            // En el Atelier evitamos cierre accidental por clic/arrastre en el fondo para no perder ediciones del Digitalizador
+            if (activeBuildingModal === "atelier") return;
+            if (startedOnBackdrop && e.target === e.currentTarget) {
+              setActiveBuildingModal(null);
+            }
+          }}
         >
           <div
             className="w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-3xl border-4 border-[#3A2E2B] bg-[#1a1715] p-5 sm:p-7 shadow-[0_12px_0_#3A2E2B] space-y-4"
