@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { computeSafeVaultProgressPct } from "@/lib/canonical-treasury";
 import { HabitLogShortcutRequest } from "@/types/rpg";
 import { isSupabaseConfigured, resolvePlayerTreasury } from "@/lib/supabase";
 import { requireShortcutUser, scopeIdempotencyKey } from "@/lib/request-auth";
@@ -202,12 +203,9 @@ export async function POST(req: Request) {
       idempotency_key: body.idempotency_key,
     });
 
-    const unlockPct = Number(
-      (
-        ((store.vault_cap_gp - store.vault_remaining_gp) /
-          store.vault_cap_gp) *
-        100
-      ).toFixed(1)
+    const unlockPct = computeSafeVaultProgressPct(
+      store.vault_cap_gp,
+      store.vault_remaining_gp
     );
 
     return NextResponse.json(
