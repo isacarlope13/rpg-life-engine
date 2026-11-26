@@ -109,6 +109,67 @@ body {
   animation-play-state: paused !important;
 }
 
+/* Evolución Visual Cozy RPG (inspirada en profundidad táctil, jerarquía limpia y microinteracciones suaves) */
+@keyframes oakhaven-surface-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes oakhaven-progress-sheen {
+  0% {
+    transform: translate3d(-120%, 0, 0);
+  }
+  100% {
+    transform: translate3d(220%, 0, 0);
+  }
+}
+
+.cozy-surface-enter {
+  animation: oakhaven-surface-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cozy-card-interactive {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms ease;
+}
+
+.cozy-card-interactive:hover {
+  transform: translate3d(0, -3px, 0);
+  box-shadow: 0 9px 0 0 var(--color-cozy-bark, #3A2E2B);
+}
+
+.cozy-card-interactive:active {
+  transform: translate3d(0, 1px, 0);
+  box-shadow: 0 3px 0 0 var(--color-cozy-bark, #3A2E2B);
+}
+
+.cozy-progress-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.32) 50%,
+    transparent 100%
+  );
+  animation: oakhaven-progress-sheen 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+[data-ambient-paused="true"] .cozy-progress-sheen::after {
+  animation-play-state: paused !important;
+}
+
 /* WCAG 2.1 AA — Cumplimiento de Preferencias de Movimiento Reducido */
 @media (prefers-reduced-motion: reduce) {
   *,

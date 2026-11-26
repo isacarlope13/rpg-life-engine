@@ -7,6 +7,8 @@ export interface CozyCardProps extends React.HTMLAttributes<HTMLDivElement> {
   bolts?: boolean;
   shadow?: "sm" | "md" | "lg" | "none";
   interactive?: boolean;
+  /** Suaviza la entrada inicial de la tarjeta respetando prefers-reduced-motion */
+  animateIn?: boolean;
 }
 
 const VARIANT_BG: Record<string, string> = {
@@ -28,17 +30,20 @@ export function CozyCard({
   bolts = false,
   shadow = "md",
   interactive = false,
+  animateIn = false,
   className = "",
   children,
   ...props
 }: CozyCardProps) {
   return (
     <div
-      className={`relative rounded-3xl border-4 border-[#3A2E2B] p-5 transition-transform ${
+      className={`relative rounded-3xl border-4 border-[#3A2E2B] p-5 ring-1 ring-inset ring-white/55 ${
         VARIANT_BG[variant]
       } ${SHADOW_MAP[shadow]} ${
-        interactive ? "hover:-translate-y-1 cursor-pointer" : ""
-      } ${className}`}
+        interactive
+          ? "cozy-card-interactive cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E7D69C]"
+          : "transition-shadow duration-200"
+      } ${animateIn ? "cozy-surface-enter" : ""} ${className}`}
       {...props}
     >
       {bolts && (
