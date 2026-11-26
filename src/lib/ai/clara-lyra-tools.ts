@@ -16,6 +16,12 @@ import {
 } from "./resource-query-tools.ts";
 import type { PrivateBuildingResource } from "./building-resources-engine.ts";
 import type { SpecialistProposal } from "./specialist-engine.ts";
+import {
+  buildGuidedProgressSummary,
+  formatGuidedSegmentSpeech,
+  type FiletGuidedProgressState,
+  type GuidedProgressSummary,
+} from "../sanctuary/filet-guided-engine.ts";
 
 // ============================================================================
 // CLARA — MAESTRA DE CROCHET
@@ -141,6 +147,87 @@ export function proposeCrochetProjectNote(
       note: note.trim(),
     },
     requiresConfirmation: true,
+  };
+}
+
+export interface ClaraGuidedFiletBriefing {
+  projectId: string;
+  projectName: string;
+  patternName: string;
+  patternVersionNumber: number;
+  meshSize: 3 | 4;
+  activeRowNumber: number;
+  totalRows: number;
+  directionLabel: string;
+  activeSegmentText: string;
+  nextSegmentText: string;
+  remainingCellsInRow: number;
+  remainingRowsCount: number;
+  progressPercent: number;
+  recordedMinutes: number;
+  speechSummary: string;
+  summary: GuidedProgressSummary;
+}
+
+/**
+ * Bloque 5 — Consulta determinista de Clara sobre un proyecto guiado de Filet Crochet.
+ * Lee exclusivamente del motor determinista (`filet-guided-engine.ts`); jamás inventa
+ * instrucciones ni altera contadores, GP o XP.
+ */
+export function getGuidedFiletProjectStatus(params: {
+  progress: FiletGuidedProgressState;
+  recordedMinutes?: number;
+}): ClaraGuidedFiletBriefing {
+  const summary = buildGuidedProgressSummary(params.progress);
+  const view = summary.activeRowView;
+  const recordedMinutes = Math.max(0, Math.round(params.recordedMinutes || 0));
+
+  const directionLabel = !view
+    ? "Sin fila activa"
+    : view.direction === "rtl"
+      ? "Derecha a Izquierda (←)"
+      : "Izquierda a Derecha (→)";
+
+  const activeSegmentText = !view
+    ? "Proyecto completado."
+    : view.allSegmentsCompleted
+      ? `Todos los segmentos de la vuelta ${view.rowNumber} completados (falta confirmar vuelta).`
+      : view.activeSegment
+        ? `${view.activeSegment.count} ${
+            view.activeSegment.kind === "filled" ? "cuadro(s) lleno(s)" : "cuadro(s) vacío(s)"
+          }`
+        : "Sin segmento activo.";
+
+  const nextSegmentText =
+    view?.nextSegment
+      ? `${view.nextSegment.count} ${
+          view.nextSegment.kind === "filled" ? "lleno(s)" : "vacío(s)"
+        }`
+      : view?.allSegmentsCompleted
+        ? "Confirmar vuelta"
+        : "Fin de vuelta";
+
+  const speechSummary = view
+    ? `${formatGuidedSegmentSpeech(view)} Avance total: ${summary.progressPercent} por ciento.`
+    : `Proyecto ${summary.projectName} completado al 100 por ciento.`;
+
+  return {
+    projectId: summary.projectId,
+    projectName: summary.projectName,
+    patternName: summary.patternName,
+    patternVersionNumber: summary.patternVersionNumber,
+    meshSize: summary.meshSize,
+    activeRowNumber: summary.activeRowNumber,
+    totalRows: summary.totalRows,
+    directionLabel,
+    activeSegmentText,
+    nextSegmentText,
+    remainingCellsInRow: view?.remainingCellsInRow ?? 0,
+    remainingRowsCount: summary.remainingRowsCount,
+    progressPercent: summary.progressPercent,
+    recordedMinutes,
+    speechSummary,
+    summary,
   };
 }
 

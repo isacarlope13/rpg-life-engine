@@ -162,7 +162,7 @@ export const BUILDING_LIBRARY_CONFIG: Record<string, BuildingLibraryDefinition> 
     buildingId: "atelier",
     libraryTitle: "Carpeta de Patrones",
     libraryIcon: "🧶",
-    description: "Patrones de crochet, diagramas de puntos, fotos de avance e inventario de hilados.",
+    description: "Patrones de crochet, diagramas de puntos, fotos de avance, documentos históricos e inventario de hilados.",
     maxSizeBytes: 5 * 1024 * 1024,
     resourceTypes: [
       { id: "crochet_pattern", label: "Patrón de crochet", allowedExtensions: ["pdf", "png", "jpg", "jpeg", "webp", "txt", "md"], allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain", "text/markdown"], extractableText: true },
@@ -170,6 +170,8 @@ export const BUILDING_LIBRARY_CONFIG: Record<string, BuildingLibraryDefinition> 
       { id: "progress_photo", label: "Foto de avance", allowedExtensions: ["png", "jpg", "jpeg", "webp"], allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"], extractableText: false },
       { id: "yarn_reference", label: "Referencia de lana / ovillo", allowedExtensions: ["png", "jpg", "jpeg", "webp", "txt", "md"], allowedMimeTypes: ["image/png", "image/jpeg", "image/webp", "text/plain", "text/markdown"], extractableText: true },
       { id: "material_list", label: "Lista de materiales", allowedExtensions: ["txt", "md", "csv"], allowedMimeTypes: ["text/plain", "text/markdown", "text/csv"], extractableText: true },
+      { id: "filet_crochet_studio", label: "Filet Crochet Studio (JSON)", allowedExtensions: ["json"], allowedMimeTypes: ["application/json"], extractableText: true },
+      { id: "historical_alphabet_document", label: "Documento Histórico de Alfabeto (PDF/Img)", allowedExtensions: ["pdf", "png", "jpg", "jpeg", "webp"], allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/webp"], extractableText: false },
     ],
   },
 };

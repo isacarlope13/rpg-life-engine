@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { HabitLogShortcutRequest } from "@/types/rpg";
 import { isSupabaseConfigured, resolvePlayerTreasury } from "@/lib/supabase";
 import { requireShortcutUser, scopeIdempotencyKey } from "@/lib/request-auth";
+import {
+  hasClientIdentityOverride,
+  insertServerActivityLog,
+  validateActivityRewardBounds,
+} from "@/lib/server-activity-writer";
 
 export async function POST(req: Request) {
   try {
@@ -9,7 +14,13 @@ export async function POST(req: Request) {
     if (!authCtx.ok) return authCtx.response;
     const { userId, store, db } = authCtx;
 
-    const body = (await req.json()) as HabitLogShortcutRequest;
+    const body = (await req.json()) as HabitLogShortcutRequest & Record<string, unknown>;
+    if (hasClientIdentityOverride(body, userId)) {
+      return NextResponse.json(
+        { success: false, error: "Identidad de cliente no permitida" },
+        { status: 400 }
+      );
+    }
 
     // Si viene session_payload o session_domain especializado en modo local, delega a logSkillSession
     if (!isSupabaseConfigured && body.session_domain && body.session_payload) {
@@ -72,10 +83,18 @@ export async function POST(req: Request) {
     const earnedXp =
       questCatalogMatch?.reward_xp ?? body.custom_activity?.earned_xp ?? 50;
 
+    const rewardCheck = validateActivityRewardBounds({ requestedGp, earnedXp });
+    if (!rewardCheck.ok) {
+      return NextResponse.json(
+        { success: false, error: rewardCheck.error },
+        { status: 400 }
+      );
+    }
+
     if (isSupabaseConfigured && db) {
       const treasury = await resolvePlayerTreasury(userId, db);
 
-      if (!treasury) {
+      if (!treasury || String(treasury.user_id) !== userId) {
         return NextResponse.json(
           {
             success: false,
@@ -85,60 +104,53 @@ export async function POST(req: Request) {
         );
       }
 
-      const { data: activity, error: actErr } = await db
-        .from("activity_logs")
-        .insert({
-          user_id: userId,
-          treasury_id: treasury.id,
-          domain: questDomain,
-          activity_name: questTitle,
-          requested_gp: requestedGp,
-          earned_xp: earnedXp,
-          notes: body.notes || null,
-          idempotency_key: scopeIdempotencyKey(userId, body.idempotency_key),
-        })
-        .select("*")
-        .single();
+      const scopedKey = scopeIdempotencyKey(userId, body.idempotency_key);
+      const writeRes = await insertServerActivityLog({
+        userId,
+        treasuryId: String(treasury.id),
+        treasuryUserId: String(treasury.user_id),
+        domain: questDomain,
+        activityName: questTitle,
+        requestedGp,
+        earnedXp,
+        notes: body.notes || null,
+        idempotencyKey: scopedKey,
+      });
 
-      if (actErr) {
-        // Manejo idempotente de duplicados (colisión de clave idempotente en base de datos)
-        if (
-          actErr.code === "23505" ||
-          actErr.message?.toLowerCase().includes("unique") ||
-          actErr.message?.toLowerCase().includes("duplicate")
-        ) {
-          const scopedKey = scopeIdempotencyKey(userId, body.idempotency_key);
-          const { data: existingAct } = await db
-            .from("activity_logs")
-            .select("*")
-            .eq("idempotency_key", scopedKey)
-            .maybeSingle();
-
-          if (existingAct) {
-            return NextResponse.json(
-              {
-                success: true,
-                mode: "supabase_idempotent_replay",
-                activity_log_id: existingAct.id,
-                quest_completed: {
-                  code: body.quest_code || "CUSTOM",
-                  title: existingAct.activity_name,
-                  domain: existingAct.domain,
-                  transferred_gp: existingAct.requested_gp,
-                  earned_xp: existingAct.earned_xp,
-                },
-                shortcut_tts_message: `Hábito ya registrado previamente: ${existingAct.activity_name}.`,
-              },
-              { status: 200 }
-            );
-          }
-        }
-
+      if (!writeRes.ok) {
         return NextResponse.json(
-          { success: false, error: actErr.message },
-          { status: 500 }
+          { success: false, error: writeRes.error },
+          { status: writeRes.status }
         );
       }
+
+      if (writeRes.duplicate) {
+        const existingAct = writeRes.data;
+        if (existingAct) {
+          return NextResponse.json(
+            {
+              success: true,
+              mode: "supabase_idempotent_replay",
+              activity_log_id: existingAct.id,
+              quest_completed: {
+                code: body.quest_code || "CUSTOM",
+                title: existingAct.activity_name,
+                domain: existingAct.domain,
+                transferred_gp: existingAct.requested_gp,
+                earned_xp: existingAct.earned_xp,
+              },
+              shortcut_tts_message: `Hábito ya registrado previamente: ${existingAct.activity_name}.`,
+            },
+            { status: 200 }
+          );
+        }
+        return NextResponse.json(
+          { success: false, error: "Actividad duplicada pendiente de reconciliación" },
+          { status: 409 }
+        );
+      }
+
+      const activity = writeRes.data;
 
       const { data: updatedTreasury } = await db
         .from("player_treasury")

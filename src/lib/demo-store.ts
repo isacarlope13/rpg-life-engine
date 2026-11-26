@@ -1757,24 +1757,35 @@ export class RPGEngineMemoryStore {
     technique?: "Crochet" | "Dos Agujas" | "Amigurumi" | "Telar";
     total_rows_target: number;
     yarn_details?: string;
+    linked_filet_pattern?: KnittingProject["linked_filet_pattern"];
   }): KnittingProject {
     const cleanName = (params.name || "").trim();
     if (!cleanName) {
       throw new Error("El nombre del proyecto de tejido es obligatorio.");
     }
+    const frozenLinked = params.linked_filet_pattern
+      ? {
+          ...params.linked_filet_pattern,
+          matrix: params.linked_filet_pattern.matrix.map((row) => [...row] as Array<0 | 1>),
+        }
+      : undefined;
+    const minRows = frozenLinked ? 1 : 5;
+    const targetRows = frozenLinked
+      ? frozenLinked.total_rows
+      : Math.round(params.total_rows_target || 50);
+
     const newProj: KnittingProject = {
       id: `knit-${crypto.randomUUID().slice(0, 8)}`,
       name: cleanName,
       technique: params.technique || "Crochet",
-      total_rows_target: Math.max(
-        5,
-        Math.round(params.total_rows_target || 50)
-      ),
+      total_rows_target: Math.max(minRows, targetRows),
       completed_rows: 0,
       yarn_details: (
         params.yarn_details || "Hilaza algodón / lana acrílica"
       ).trim(),
       status: "in_progress",
+      created_at: new Date().toISOString(),
+      ...(frozenLinked ? { linked_filet_pattern: frozenLinked } : {}),
     };
     this.knittingProjects.unshift(newProj);
     return newProj;
@@ -1790,6 +1801,10 @@ export class RPGEngineMemoryStore {
     }
     const target = this.knittingProjects.find((p) => p.id === projectId);
     if (!target) return undefined;
+    if (target.linked_filet_pattern && status !== "archived" &&
+        (status === "completed") !== (target.completed_rows >= target.total_rows_target)) {
+      throw new Error("El estado del proyecto Filet depende del progreso guiado.");
+    }
     target.status = status;
     return target;
   }
@@ -2315,6 +2330,7 @@ export class RPGEngineMemoryStore {
     project_id?: string;
     rows_completed?: number;
     stitches_notes?: string;
+    guided_time_only?: boolean;
     // Study
     subject?: string;
     study_method?:
@@ -2505,14 +2521,19 @@ export class RPGEngineMemoryStore {
         detailsSummary = `+${pages} páginas leídas en ${duration} min`;
       }
     } else if (params.domain === "knitting") {
-      const rows = Math.max(1, params.rows_completed || 6);
-      baseGp = Math.min(8500, 2800 + rows * 200);
-      baseXp = 65 + rows * 4;
-
       const project =
         this.knittingProjects.find((p) => p.id === params.project_id) ||
         this.knittingProjects[0];
-      if (project) {
+      const guided = params.guided_time_only || !!project?.linked_filet_pattern;
+      const rows = guided ? 0 : Math.max(1, params.rows_completed || 6);
+      baseGp = Math.min(8500, 2800 + rows * 200);
+      baseXp = 65 + rows * 4;
+      if (guided) {
+        resolvedProjectName = project?.name;
+        params = { ...params, rows_completed: undefined };
+        sessionTitle = params.title || `Tejido guiado${project ? `: ${project.name}` : ""}`;
+        detailsSummary = `${duration} min de tejido guiado`;
+      } else if (project) {
         resolvedProjectName = project.name;
         const wasDone = project.status === "completed";
         project.completed_rows = Math.min(

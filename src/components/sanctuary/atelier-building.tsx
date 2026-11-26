@@ -16,7 +16,12 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import type { KnittingProject, KnittingProjectStatus, SkillSessionRecord } from "@/types/rpg";
+import type {
+  KnittingProject,
+  KnittingProjectStatus,
+  LinkedFiletPatternSnapshot,
+  SkillSessionRecord,
+} from "@/types/rpg";
 import { useUniversalSession } from "@/lib/sanctuary/use-universal-session";
 import { useSessionIdentity } from "@/lib/sanctuary/session-identity";
 import {
@@ -35,6 +40,7 @@ import { projectAtelierProgression } from "@/lib/sanctuary/visual-village-progre
 import { VillageProgressionPanel } from "@/components/sanctuary/village-progression-panel";
 import { ResidentAssistantWidget } from "@/components/sanctuary/resident-assistant-widget";
 import { COZY_VILLAGE_RESIDENTS } from "@/lib/sanctuary/village-tiers";
+import { FiletCrochetStudio } from "@/components/sanctuary/filet-crochet-studio";
 
 interface AtelierBuildingProps {
   projects: KnittingProject[];
@@ -119,8 +125,11 @@ export function AtelierBuilding({
 }: AtelierBuildingProps) {
   const sessionOwner = useSessionIdentity();
   const [activeTab, setActiveTab] = useState<
-    "taller" | "proyectos" | "patrones" | "galeria" | "clara"
+    "taller" | "proyectos" | "patrones" | "filet" | "galeria" | "clara"
   >("taller");
+  const [filetInitialMode, setFiletInitialMode] = useState<
+    "alphabet" | "composer" | "backups" | "digitizer" | "guided"
+  >("alphabet");
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     const firstActive = projects.find((p) => p.status === "in_progress") || projects[0];
@@ -325,6 +334,15 @@ export function AtelierBuilding({
 
   const handleSaveQuickRowsWithoutTimer = async () => {
     if (sessionRows <= 0 || savingQuickRows) return;
+    // Bloque 7: proteger proyectos guiados Filet contra desincronización por contadores manuales
+    if (activeProject?.linked_filet_pattern) {
+      setNotification({
+        type: "warning",
+        message:
+          "Este proyecto está vinculado a un patrón Filet guiado. Confirma tus vueltas en Filet Studio → 5. Mesa de Tejido Guiada para conservar la trazabilidad exacta.",
+      });
+      return;
+    }
     setSavingQuickRows(true);
     triggerHaptic("medium");
     try {
@@ -574,12 +592,20 @@ export function AtelierBuilding({
       description: "Instrucciones vuelta a vuelta, notas personales y subida directa de imágenes.",
     },
     {
+      id: "filet",
+      name: "Filet Crochet Studio",
+      shortName: "Filet Studio",
+      icon: "▦",
+      hotkey: "4",
+      description: "Editor de cuadrícula binaria, colecciones de alfabetos y matrices filet.",
+    },
+    {
       id: "galeria",
       name: "Vitrina & Historial",
       shortName: "Vitrina",
       icon: "🏆",
       badge: knittingSessions.length > 0 ? knittingSessions.length : undefined,
-      hotkey: "4",
+      hotkey: "5",
       description: "Piezas terminadas, evolución del Atelier e historial real de sesiones.",
     },
     {
@@ -587,7 +613,7 @@ export function AtelierBuilding({
       name: "Rincón de Clara",
       shortName: "Clara",
       icon: "🐇",
-      hotkey: "5",
+      hotkey: "6",
       description: "Consejos serenos de Clara la Liebre y propuestas opcionales bajo tu aprobación.",
     },
   ];
@@ -620,6 +646,12 @@ export function AtelierBuilding({
           : activePattern.steps.length > 0
           ? `${activePattern.steps.length} pasos`
           : "Añadir guía o fotos",
+    },
+    {
+      id: "filet",
+      icon: "▦",
+      label: "Filet Studio",
+      hint: "Cuadrícula y alfabetos",
     },
     {
       id: "galeria",
@@ -691,7 +723,7 @@ export function AtelierBuilding({
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {sceneHotspots.map((spot) => {
             const selected = activeTab === spot.id;
             return (
@@ -1262,6 +1294,11 @@ export function AtelierBuilding({
                         <span className="text-[10px] text-[#795548] font-bold block">
                           {proj.technique} • {proj.yarn_details || "Hilado libre"}
                         </span>
+                        {proj.linked_filet_pattern && (
+                          <span className="mt-1 inline-block rounded-full border border-[#314C3C]/50 bg-[#314C3C]/10 px-2 py-0.5 text-[9px] font-black text-[#314C3C]">
+                            📐 Filet v{proj.linked_filet_pattern.version_number} ({proj.linked_filet_pattern.grid_width}×{proj.linked_filet_pattern.grid_height})
+                          </span>
+                        )}
                       </button>
 
                       <span
@@ -1300,6 +1337,20 @@ export function AtelierBuilding({
                         <option value="completed">✨ Terminado</option>
                         <option value="archived">📦 Archivado</option>
                       </select>
+
+                      {proj.linked_filet_pattern && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedProjectId(proj.id);
+                            setFiletInitialMode("guided");
+                            setActiveTab("filet");
+                          }}
+                          className="rounded-lg border border-[#3A2E2B] bg-[#314C3C] px-2 py-1 text-[10px] font-black text-[#FFFDF8] cursor-pointer"
+                        >
+                          Tejer guiado ➜
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -1492,6 +1543,87 @@ export function AtelierBuilding({
             </CozyButton>
           </div>
         </form>
+      )}
+
+      {/* =======================================================================
+          ESTACIÓN 3B: FILET CROCHET STUDIO (MÓDULO DEL ATELIER DE CLARA)
+         ======================================================================= */}
+      {activeTab === "filet" && (
+        <FiletCrochetStudio
+          sessionOwner={sessionOwner}
+          activeProject={activeProject}
+          projects={projects}
+          sessions={knittingSessions}
+          initialStudioMode={filetInitialMode}
+          onSelectProject={(projectId) => setSelectedProjectId(projectId)}
+          onCreateProjectFromPattern={async ({ name, linkedPattern }) => {
+            const res = await fetch("/api/shortcuts/skill-session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "add_knitting_project",
+                title: name,
+                knitting_technique: "Crochet",
+                knitting_total_rows: linkedPattern.total_rows,
+                yarn_details: `Filet Crochet · Malla ${linkedPattern.mesh_size} · ${linkedPattern.grid_width}×${linkedPattern.grid_height}`,
+                linked_filet_pattern: linkedPattern,
+              }),
+            });
+            const data = (await res.json().catch(() => ({}))) as {
+              project?: KnittingProject;
+              error?: string;
+            };
+            if (!res.ok || !data.project) {
+              setNotification({
+                type: "error",
+                message: data.error || "No se pudo crear el proyecto de tejido desde el patrón.",
+              });
+              return;
+            }
+            setSelectedProjectId(data.project.id);
+            setFiletInitialMode("guided");
+            await onRefreshState();
+            setNotification({
+              type: "success",
+              message: `🧶 Proyecto "${data.project.name}" creado desde versión inmutable v${linkedPattern.version_number} y listo en la Mesa Guiada.`,
+            });
+          }}
+          onRefreshState={onRefreshState}
+          sessionBridge={{
+            isActive,
+            isRunning,
+            isPaused,
+            formattedTime,
+            elapsedSeconds: session?.elapsedSeconds || 0,
+            submitting,
+            submissionError,
+            onStartSession: (proj) => {
+              setSelectedProjectId(proj.id);
+              triggerHaptic("light");
+              startSession({
+                domain: "knitting",
+                buildingId: "atelier",
+                resourceId: proj.id,
+                resourceTitle: proj.name,
+                objective: `Sesión guiada Filet: ${proj.name}`,
+              });
+            },
+            onPauseSession: () => pauseSession(),
+            onResumeSession: () => resumeSession(),
+            onFinishSession: async ({ project, notes }) => {
+              const result = await finishSession({
+                project_id: project.id,
+                filet_pattern_version_id: project.linked_filet_pattern?.version_id,
+                stitches_notes: notes,
+              });
+              if (result) {
+                await onRefreshState();
+                return true;
+              }
+              return false;
+            },
+          }}
+        />
       )}
 
       {/* =======================================================================

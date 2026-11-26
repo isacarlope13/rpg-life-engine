@@ -26,6 +26,7 @@ export async function GET(req: Request) {
   const buildingId = (url.searchParams.get("buildingId") || "").trim();
   const resourceId = (url.searchParams.get("id") || "").trim();
   const wantsSignedUrl = url.searchParams.get("signedUrl") === "1";
+  const wantsContent = url.searchParams.get("includeContent") === "1";
   const archivedOnly = url.searchParams.get("archivedOnly") === "1";
 
   if (mode !== "supabase" || !db) {
@@ -33,7 +34,83 @@ export async function GET(req: Request) {
       buildingId: buildingId || undefined,
       archivedOnly,
     });
+    if (wantsContent && resourceId) {
+      const target = localRows.find(
+        (r) =>
+          r.id === resourceId &&
+          r.owner_id === userId &&
+          r.building_id === "atelier" &&
+          r.resource_type === "filet_crochet_studio"
+      );
+      if (!target) {
+        return NextResponse.json(
+          { success: false, error: "Respaldo de Filet Crochet Studio no encontrado." },
+          { status: 404, headers: { "Cache-Control": "no-store" } }
+        );
+      }
+      return NextResponse.json(
+        {
+          success: true,
+          synced: false,
+          id: target.id,
+          title: target.title,
+          filename: target.original_filename,
+          updated_at: target.updated_at,
+          content: target.extracted_text || "",
+        },
+        { headers: { "Cache-Control": "no-store" } }
+      );
+    }
     return NextResponse.json({ success: true, synced: false, resources: localRows });
+  }
+
+  // Lectura privada del contenido JSON de un respaldo de Filet Crochet Studio del propietario
+  if (wantsContent && resourceId) {
+    const { data: row, error } = await db
+      .from("building_resources")
+      .select("id, user_id, building_id, resource_type, title, original_filename, storage_path, extracted_text, updated_at, deleted_at")
+      .eq("id", resourceId)
+      .eq("user_id", userId)
+      .eq("building_id", "atelier")
+      .eq("resource_type", "filet_crochet_studio")
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (error || !row) {
+      return NextResponse.json(
+        { success: false, error: "Respaldo de Filet Crochet Studio no encontrado." },
+        { status: 404, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    let content = typeof row.extracted_text === "string" ? row.extracted_text : "";
+    if (row.storage_path) {
+      if (!String(row.storage_path).startsWith(`${userId}/`)) {
+        return NextResponse.json(
+          { success: false, error: "Ruta de almacenamiento fuera del espacio del propietario." },
+          { status: 403, headers: { "Cache-Control": "no-store" } }
+        );
+      }
+      const { data: downloaded } = await db.storage
+        .from(PRIVATE_BUCKET)
+        .download(String(row.storage_path));
+      if (downloaded && typeof downloaded.text === "function") {
+        content = await downloaded.text();
+      }
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        synced: true,
+        id: row.id,
+        title: row.title,
+        filename: row.original_filename,
+        updated_at: row.updated_at,
+        content,
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   // Generar URL firmada temporal para un recurso específico del propietario
