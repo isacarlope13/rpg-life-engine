@@ -1,0 +1,49 @@
+name: Owner Finance — Validation (No Deploy)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/app/finance/**'
+      - 'src/components/finance/**'
+      - 'src/components/rpg-dashboard.tsx'
+      - 'src/lib/state-builder.ts'
+      - 'src/lib/demo-store.ts'
+      - 'src/app/api/finance/**'
+      - 'src/app/api/shortcuts/**'
+      - 'src/lib/finance/**'
+      - 'src/components/sanctuary/bank-building.tsx'
+      - 'src/components/sanctuary/living-interior-room.tsx'
+      - 'supabase/owner_finance_ledger.sql'
+      - 'tests/owner-finance*.test.ts'
+      - 'tests/auth-signup-ownership.test.ts'
+      - 'tests/rpg-engine.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/owner-finance-validation.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: Typecheck, tests and build (no credentials)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OAKHAVEN_PUBLIC_SIGNUP_ENABLED: 'false'
+      OAKHAVEN_OWNER_USER_ID: '00000000-0000-4000-8000-000000000001'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: TypeScript strict check
+        run: npx tsc --noEmit
+      - name: Run all project unit tests
+        run: npm test
+      - name: Production build without external credentials
+        run: npm run build

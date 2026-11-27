@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { legacyFinanceHeld, legacyFinanceHoldResponse } from "@/lib/finance/guardian";
 import { isSupabaseConfigured, supabaseAdmin } from "@/lib/supabase";
 import { requireShortcutUser } from "@/lib/request-auth";
 
@@ -6,6 +7,7 @@ export async function POST(req: Request) {
   try {
     const authCtx = await requireShortcutUser(req);
     if (!authCtx.ok) return authCtx.response;
+    if (legacyFinanceHeld(authCtx.mode)) return legacyFinanceHoldResponse();
     const { userId, store, db } = authCtx;
 
     if (isSupabaseConfigured && db) {
