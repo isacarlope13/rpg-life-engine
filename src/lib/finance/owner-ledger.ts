@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getSingleUserAccessConfig, isAuthorizedSupabaseUserId } from "@/lib/single-user-guard";
 import { resolveAuthenticatedUser, buildAuthSetCookieHeaders } from "@/lib/auth";
 import { getAppBaseUrl } from "@/lib/app-url";
+import { isSupabaseConfigured, supabaseUrl } from "@/lib/supabase";
 export { validateFinanceRow, movementFingerprint, planImport, transactionTimestamp, validateFinanceItem, signPreview, verifyPreview } from "./finance-validation";
+
+// Dedicated server-only service_role client. Never falls back to the anon key.
+function createFinanceServiceClient():SupabaseClient|null{
+  const serviceKey=(process.env.SUPABASE_SERVICE_ROLE_KEY||"").trim();
+  if(!isSupabaseConfigured||!serviceKey||serviceKey.startsWith("tu-"))return null;
+  return createClient(supabaseUrl,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
+}
 
 export async function requireFinanceOwner(request:Request){
   const config=getSingleUserAccessConfig();
   if(!config.ownerUserId||config.ownerConfigInvalid)return null;
   const session=await resolveAuthenticatedUser(request);
   if(!session||session.mode!=="supabase"||!session.userClient||!isAuthorizedSupabaseUserId(session.userId))return null;
-  return {userId:session.userId,db:session.userClient,refreshedTokens:session.refreshedTokens};
+  const db=createFinanceServiceClient();
+  if(!db)return null;
+  return {userId:session.userId,db,refreshedTokens:session.refreshedTokens};
 }
 export type FinanceOwner=NonNullable<Awaited<ReturnType<typeof requireFinanceOwner>>>;
 export const noStore={"Cache-Control":"private, no-store"};

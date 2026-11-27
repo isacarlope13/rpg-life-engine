@@ -52,9 +52,22 @@ export async function POST(req:Request){
     return reply({error:"Preview missing, altered or expired. Review again."},409);
   const fingerprints=[...new Set(rows.map(movementFingerprint))];
   const {data:existing,error:queryError}=await owner.db.from("owner_finance_transactions")
-    .select("fingerprint").eq("user_id",owner.userId).in("fingerprint",fingerprints);
+    .select("fingerprint,account_id,occurred_at,kind,amount_cop,category,description,payment_method,origin")
+    .eq("user_id",owner.userId).in("fingerprint",fingerprints);
   if(queryError)return reply({error:"Ledger unavailable"},503);
-  const {fresh,duplicateRows}=planImport(rows,new Set<string>((existing||[]).map(x=>x.fingerprint)));
+  const existingByFp=new Map((existing||[]).map(x=>[String(x.fingerprint),x]));
+  for(const row of rows){
+    const hit=existingByFp.get(movementFingerprint(row));
+    if(!hit)continue;
+    const sameAccount=(hit.account_id??null)===(accountId??null);
+    const samePayload=Number(hit.amount_cop)===row.amountCop && hit.kind===row.kind &&
+      Date.parse(String(hit.occurred_at))===Date.parse(transactionTimestamp(row.date)) &&
+      hit.category===row.category && hit.description===row.description && hit.payment_method===row.paymentMethod;
+    if(!samePayload || (accountId!==null && (!sameAccount || hit.origin!=="manual"))){
+      return reply({error:"Fingerprint conflict: payload differs from an existing movement"},409);
+    }
+  }
+  const {fresh,duplicateRows}=planImport(rows,new Set<string>(existingByFp.keys()));
   if(body.mode==="preview")return reply({
     ok:true,preview:true,received:rows.length,newCount:fresh.length,duplicateCount:duplicateRows.length,duplicateRows,
     incomingCop:fresh.filter(x=>x.row.kind==="income").reduce((a,x)=>a+x.row.amountCop,0),
@@ -62,17 +75,20 @@ export async function POST(req:Request){
     accountPreview:fresh.length?accountPreview:null,
     previewTicket:signPreview(owner.userId,rows,signingSecret)
   });
-  if(!fresh.length)return reply({ok:true,inserted:0,skipped:rows.length,balanceUpdated:false});
   if(accountId!==null){
     const row=rows[0];
     const {data,error}=await owner.db.rpc("owner_finance_post_manual",{
-      p_account_id:accountId,p_expected_revision:accountRevision,p_fingerprint:movementFingerprint(row),
+      p_user_id:owner.userId,p_account_id:accountId,p_expected_revision:accountRevision,p_fingerprint:movementFingerprint(row),
       p_occurred_at:transactionTimestamp(row.date),p_kind:row.kind,p_amount_cop:row.amountCop,
       p_category:row.category,p_description:row.description,p_payment_method:row.paymentMethod
     });
-    if(error)return reply({error:"Account posting rejected; review the latest reconciliation and preview again."},error.code==="23514"||error.code==="42501"||error.code==="22023"?409:503);
+    if(error){
+      if(error.code==="23505")return reply({error:"Fingerprint conflict: payload differs from an existing movement"},409);
+      return reply({error:"Account posting rejected; review the latest reconciliation and preview again."},error.code==="23514"||error.code==="42501"||error.code==="22023"?409:503);
+    }
     return reply({ok:true,...data});
   }
+  if(!fresh.length)return reply({ok:true,inserted:0,skipped:rows.length,balanceUpdated:false});
   const inserts=fresh.map(({row,fingerprint})=>({user_id:owner.userId,fingerprint,
     occurred_at:transactionTimestamp(row.date),kind:row.kind,category:row.category,description:row.description,
     amount_cop:row.amountCop,payment_method:row.paymentMethod,origin:source}));
